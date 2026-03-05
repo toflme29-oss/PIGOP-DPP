@@ -1,0 +1,625 @@
+import apiClient from './client'
+
+// ── Tipos ──────────────────────────────────────────────────────────────────────
+
+export type TipoDocumento =
+  | 'oficio' | 'circular' | 'memorandum' | 'acuerdo'
+  | 'convenio' | 'resolucion' | 'informe' | 'otro'
+
+export type Flujo = 'recibido' | 'emitido'
+export type Prioridad = 'normal' | 'urgente' | 'muy_urgente'
+export type EstadoRecibido = 'recibido' | 'turnado' | 'en_atencion' | 'devuelto' | 'respondido' | 'archivado'
+export type EstadoEmitido  = 'borrador' | 'vigente' | 'archivado'
+export type Estado = EstadoRecibido | EstadoEmitido
+
+export interface AreaDPP {
+  codigo:  string
+  nombre:  string
+  titular: string
+  cargo:   string
+}
+
+export interface UsuarioInfo {
+  id: string
+  nombre_completo: string
+  email: string
+}
+
+export interface DocumentoListItem {
+  id: string
+  flujo: Flujo
+  numero_control:       string | null
+  numero_oficio_origen: string | null
+  tipo: TipoDocumento
+  asunto: string
+  remitente_nombre:      string | null
+  remitente_dependencia: string | null
+  dependencia_origen:    string | null
+  dependencia_destino:   string | null
+  fecha_documento:  string | null
+  fecha_recibido:   string | null
+  fecha_limite:     string | null
+  prioridad:        Prioridad
+  estado:           Estado
+  nombre_archivo:   string | null
+  ocr_procesado:    boolean
+  area_turno:       string | null
+  area_turno_nombre: string | null
+  area_turno_confirmada: boolean
+  genera_tramite:   string | null
+  tags:             string[] | null
+  version:          number
+  motivo_devolucion: string | null
+  firmado_digitalmente: boolean | null
+  has_borrador:     boolean
+  creado_en:        string
+}
+
+export interface Documento extends DocumentoListItem {
+  cliente_id:            string
+  descripcion:           string | null
+  datos_extraidos_ia:    Record<string, unknown> | null
+  sugerencia_area_codigo: string | null
+  sugerencia_area_nombre: string | null
+  sugerencia_fundamento:  string | null
+  sugerencia_plazo_dias:  number | null
+  confianza_clasificacion: number | null
+  regla_turno_codigo:    string | null
+  borrador_respuesta:    string | null
+  folio_respuesta:       string | null
+  referencia_elaboro:    string | null
+  referencia_reviso:     string | null
+  url_storage:           string | null
+  mime_type:             string | null
+  firmado_digitalmente:  boolean | null
+  firma_metadata:        Record<string, unknown> | null
+  version:               number
+  devuelto_por_id:       string | null
+  devuelto_en:           string | null
+  motivo_devolucion:     string | null
+  actualizado_en:        string | null
+  creado_por:            UsuarioInfo | null
+  turnado_por:           UsuarioInfo | null
+}
+
+export interface DocumentoRecibidoCreate {
+  cliente_id:            string
+  tipo?:                 TipoDocumento
+  asunto:                string
+  numero_oficio_origen?: string
+  remitente_nombre?:     string
+  remitente_cargo?:      string
+  remitente_dependencia?: string
+  fecha_documento?:      string
+  fecha_recibido?:       string
+  prioridad?:            Prioridad
+  descripcion?:          string
+  tags?:                 string[]
+  // Archivo pre-subido (desde preview-ocr)
+  nombre_archivo?:       string
+  url_storage?:          string
+  mime_type?:            string
+  // Datos OCR pre-procesados (desde preview-ocr)
+  datos_extraidos_ia?:   Record<string, unknown>
+  ocr_procesado?:        boolean
+  sugerencia_area_codigo?: string
+  sugerencia_area_nombre?: string
+  sugerencia_fundamento?:  string
+  sugerencia_plazo_dias?:  number
+  confianza_clasificacion?: number
+  regla_turno_codigo?:   string
+  genera_tramite?:       string
+  fecha_limite?:         string
+}
+
+export interface DocumentoEmitidoCreate {
+  cliente_id:         string
+  tipo:               TipoDocumento
+  asunto:             string
+  numero_control?:    string
+  dependencia_origen?:  string
+  dependencia_destino?: string
+  fecha_documento?:   string
+  estado?:            EstadoEmitido
+  descripcion?:       string
+  referencia_elaboro?: string
+  referencia_reviso?:  string
+  tags?:              string[]
+}
+
+export interface DocumentoUpdate {
+  asunto?:             string
+  numero_control?:     string
+  numero_oficio_origen?: string
+  tipo?:               TipoDocumento
+  remitente_nombre?:   string
+  remitente_cargo?:    string
+  remitente_dependencia?: string
+  dependencia_origen?:  string
+  dependencia_destino?: string
+  fecha_documento?:    string
+  fecha_recibido?:     string
+  prioridad?:          Prioridad
+  estado?:             Estado
+  descripcion?:        string
+  borrador_respuesta?: string
+  folio_respuesta?:    string
+  referencia_elaboro?: string
+  referencia_reviso?:  string
+  firmado_digitalmente?: boolean
+  firma_metadata?:     Record<string, unknown>
+  tags?:               string[]
+}
+
+export interface OficioEstructuradoResult {
+  secciones: {
+    fundamento: string
+    referencia: string
+    objeto:     string
+    cierre:     string
+  }
+  borrador_completo: string
+  message:           string
+}
+
+export interface FirmaResult {
+  firmado_digitalmente: boolean
+  firma_metadata:       Record<string, unknown>
+  message:              string
+}
+
+export interface HistorialItem {
+  id: string
+  tipo_accion: string
+  estado_anterior: string | null
+  estado_nuevo: string | null
+  observaciones: string
+  version: number
+  timestamp: string
+  usuario_nombre: string | null
+}
+
+export interface DevolucionResult {
+  documento_id: string
+  estado: string
+  historial_entry: HistorialItem
+  message: string
+}
+
+export interface CertificadoValidation {
+  valido: boolean
+  serial: string | null
+  rfc: string
+  nombre: string
+  valido_desde: string | null
+  valido_hasta: string | null
+  message: string
+}
+
+export interface LoteFirmaItem {
+  id: string
+  documento_id: string
+  orden: number
+  estado: string
+  hash_documento: string | null
+  qr_data: string | null
+  error_mensaje: string | null
+  firmado_en: string | null
+  asunto?: string
+  numero_oficio_origen?: string
+  folio_respuesta?: string
+}
+
+export interface LoteFirma {
+  id: string
+  nombre: string | null
+  estado: string
+  certificado_serial: string | null
+  certificado_rfc: string | null
+  certificado_nombre: string | null
+  total_documentos: number
+  total_firmados: number
+  total_errores: number
+  progreso_pct: number
+  items: LoteFirmaItem[]
+  creado_en: string
+  completado_en: string | null
+}
+
+export interface FirmaLoteResult {
+  lote_firma: LoteFirma
+  message: string
+}
+
+export interface OCRResult {
+  datos_extraidos: Record<string, unknown>
+  clasificacion:   Record<string, unknown>
+  fecha_limite:    string
+  message:         string
+}
+
+export interface PreviewOCRResult {
+  datos_extraidos: Record<string, unknown>
+  clasificacion:   Record<string, unknown>
+  fecha_limite:    string
+  archivo: {
+    nombre_archivo: string
+    url_storage:    string
+    mime_type:      string
+  }
+  message:         string
+}
+
+// ── Labels y config visual ─────────────────────────────────────────────────────
+
+export const TIPO_LABELS: Record<TipoDocumento, string> = {
+  oficio:     'Oficio',
+  circular:   'Circular',
+  memorandum: 'Memorándum',
+  acuerdo:    'Acuerdo',
+  convenio:   'Convenio',
+  resolucion: 'Resolución',
+  informe:    'Informe',
+  otro:       'Otro',
+}
+
+export const TIPO_ICONS: Record<TipoDocumento, string> = {
+  oficio:     '📄',
+  circular:   '📢',
+  memorandum: '📝',
+  acuerdo:    '🤝',
+  convenio:   '📋',
+  resolucion: '⚖️',
+  informe:    '📊',
+  otro:       '📁',
+}
+
+export const PRIORIDAD_CONFIG: Record<Prioridad, { label: string; color: string; bg: string; dot: string }> = {
+  normal:      { label: 'Normal',      color: '#374151', bg: '#f3f4f6', dot: '#9ca3af' },
+  urgente:     { label: 'Urgente',     color: '#92400e', bg: '#fef3c7', dot: '#d97706' },
+  muy_urgente: { label: 'Muy urgente', color: '#991b1b', bg: '#fee2e2', dot: '#ef4444' },
+}
+
+export const ESTADO_RECIBIDO_CONFIG: Record<EstadoRecibido, { label: string; color: string; bg: string; dot: string; step: number }> = {
+  recibido:    { label: 'Recibido',    color: '#1e40af', bg: '#dbeafe', dot: '#3b82f6', step: 1 },
+  turnado:     { label: 'Turnado',     color: '#92400e', bg: '#fef3c7', dot: '#f59e0b', step: 2 },
+  en_atencion: { label: 'En atención', color: '#7e22ce', bg: '#f3e8ff', dot: '#a855f7', step: 3 },
+  devuelto:    { label: 'Devuelto',    color: '#991b1b', bg: '#fee2e2', dot: '#dc2626', step: 3 },
+  respondido:  { label: 'Respondido',  color: '#065f46', bg: '#d1fae5', dot: '#10b981', step: 4 },
+  archivado:   { label: 'Archivado',   color: '#374151', bg: '#f3f4f6', dot: '#6b7280', step: 5 },
+}
+
+export const ESTADO_EMITIDO_CONFIG: Record<EstadoEmitido, { label: string; color: string; bg: string; dot: string }> = {
+  borrador:  { label: 'Borrador',   color: '#92400e', bg: '#fef3c7', dot: '#d97706' },
+  vigente:   { label: 'Vigente',    color: '#065f46', bg: '#d1fae5', dot: '#10b981' },
+  archivado: { label: 'Archivado',  color: '#374151', bg: '#f3f4f6', dot: '#6b7280' },
+}
+
+// ── Certificados e.firma (bóveda) ─────────────────────────────────────────────
+
+export interface CertificadoInfo {
+  tiene_certificado: boolean
+  vigente: boolean
+  rfc: string | null
+  nombre_titular: string | null
+  numero_serie: string | null
+  valido_desde: string | null
+  valido_hasta: string | null
+  emisor: string | null
+  activo: boolean
+  total_firmas: number
+  registrado_en: string | null
+  ultima_firma_en: string | null
+}
+
+export interface CertificadoRegistro {
+  rfc: string
+  nombre_titular: string
+  numero_serie: string
+  valido_desde: string | null
+  valido_hasta: string | null
+  emisor: string | null
+  message: string
+}
+
+export interface VigenciaResult {
+  vigente: boolean
+  dias_restantes: number | null
+  valido_hasta: string | null
+  message: string
+}
+
+// ── API client ─────────────────────────────────────────────────────────────────
+
+export const documentosApi = {
+  list: async (params?: {
+    flujo?:      string
+    tipo?:       string
+    estado?:     string
+    area_turno?: string
+    cliente_id?: string
+    busqueda?:   string
+    fecha_desde?: string
+    fecha_hasta?: string
+    skip?: number
+    limit?: number
+  }): Promise<DocumentoListItem[]> => {
+    const res = await apiClient.get('/documentos/', { params })
+    return res.data
+  },
+
+  areas: async (): Promise<AreaDPP[]> => {
+    const res = await apiClient.get('/documentos/areas')
+    return res.data
+  },
+
+  get: async (id: string): Promise<Documento> => {
+    const res = await apiClient.get(`/documentos/${id}`)
+    return res.data
+  },
+
+  previewOCR: async (file: File): Promise<PreviewOCRResult> => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await apiClient.post('/documentos/preview-ocr', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  },
+
+  crearRecibido: async (data: DocumentoRecibidoCreate): Promise<Documento> => {
+    const res = await apiClient.post('/documentos/recibido', data)
+    return res.data
+  },
+
+  crearEmitido: async (data: DocumentoEmitidoCreate): Promise<Documento> => {
+    const res = await apiClient.post('/documentos/emitido', data)
+    return res.data
+  },
+
+  update: async (id: string, data: DocumentoUpdate): Promise<Documento> => {
+    const res = await apiClient.put(`/documentos/${id}`, data)
+    return res.data
+  },
+
+  cambiarEstado: async (id: string, estado: Estado): Promise<Documento> => {
+    const res = await apiClient.post(`/documentos/${id}/estado`, null, {
+      params: { nuevo_estado: estado },
+    })
+    return res.data
+  },
+
+  procesarOCR: async (id: string, file: File): Promise<OCRResult> => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await apiClient.post(`/documentos/${id}/procesar-ocr`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  },
+
+  clasificar: async (id: string): Promise<Documento> => {
+    const res = await apiClient.post(`/documentos/${id}/clasificar`)
+    return res.data
+  },
+
+  confirmarTurno: async (id: string, area_codigo: string, area_nombre?: string): Promise<Documento> => {
+    const res = await apiClient.post(`/documentos/${id}/confirmar-turno`, {
+      area_codigo, area_nombre,
+    })
+    return res.data
+  },
+
+  generarBorrador: async (id: string, instrucciones?: string): Promise<Documento> => {
+    const body = instrucciones ? { instrucciones } : undefined
+    const res = await apiClient.post(`/documentos/${id}/generar-borrador`, body)
+    return res.data
+  },
+
+  uploadArchivo: async (id: string, file: File): Promise<Documento> => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await apiClient.post(`/documentos/${id}/upload`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  },
+
+  generarOficioEstructurado: async (id: string, instrucciones?: string): Promise<OficioEstructuradoResult> => {
+    const body = instrucciones ? { instrucciones } : undefined
+    const res = await apiClient.post(`/documentos/${id}/generar-oficio-estructurado`, body)
+    return res.data
+  },
+
+  descargarOficio: async (id: string): Promise<void> => {
+    const res = await apiClient.post(`/documentos/${id}/descargar-oficio`, null, {
+      responseType: 'blob',
+    })
+    const blob = new Blob([res.data], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const disposition = res.headers['content-disposition'] || ''
+    const match = disposition.match(/filename="?([^"]+)"?/)
+    a.download = match ? match[1] : `oficio_${id}.docx`
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    a.remove()
+  },
+
+  firmarDocumento: async (
+    id: string,
+    password: string,
+    cerFile?: File,
+    keyFile?: File,
+  ): Promise<FirmaResult> => {
+    const formData = new FormData()
+    formData.append('password', password)
+    if (cerFile) formData.append('cer_file', cerFile)
+    if (keyFile) formData.append('key_file', keyFile)
+    const res = await apiClient.post(`/documentos/${id}/firmar`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  },
+
+  delete: async (id: string): Promise<{ message: string; success: boolean }> => {
+    const res = await apiClient.delete(`/documentos/${id}`)
+    return res.data
+  },
+
+  // ── Devolución y reenvío ──
+  devolverDocumento: async (id: string, observaciones: string): Promise<DevolucionResult> => {
+    const res = await apiClient.post(`/documentos/${id}/devolver`, { observaciones })
+    return res.data
+  },
+
+  reenviarDocumento: async (id: string, comentario?: string): Promise<Documento> => {
+    const res = await apiClient.post(`/documentos/${id}/reenviar`, { comentario: comentario || '' })
+    return res.data
+  },
+
+  getHistorial: async (id: string): Promise<HistorialItem[]> => {
+    const res = await apiClient.get(`/documentos/${id}/historial`)
+    return res.data
+  },
+
+  listarDevueltos: async (areaTurno?: string): Promise<Documento[]> => {
+    const params = areaTurno ? { area_turno: areaTurno } : {}
+    const res = await apiClient.get('/documentos/devueltos', { params })
+    return res.data
+  },
+
+  /** Obtener siguiente folio consecutivo */
+  siguienteFolio: async (tipo: string = 'OFICIO'): Promise<{ folio: string; numero: number; tipo: string; anio: number }> => {
+    const res = await apiClient.get('/documentos/siguiente-folio', { params: { tipo } })
+    return res.data
+  },
+
+  /** Obtener PDF del oficio como blob URL (para visor embebido) */
+  obtenerOficioPdfUrl: async (id: string): Promise<string> => {
+    const res = await apiClient.get(`/documentos/${id}/descargar-oficio-pdf`, {
+      responseType: 'blob',
+    })
+    const blob = new Blob([res.data], { type: 'application/pdf' })
+    return window.URL.createObjectURL(blob)
+  },
+
+  /** Obtener URL del archivo original (turnado/escaneado) como blob URL */
+  obtenerArchivoOriginalUrl: async (id: string): Promise<string> => {
+    const res = await apiClient.get(`/documentos/${id}/archivo-original`, {
+      responseType: 'blob',
+    })
+    const blob = new Blob([res.data], { type: res.headers['content-type'] || 'application/pdf' })
+    return window.URL.createObjectURL(blob)
+  },
+
+  /** Descargar PDF del oficio directamente */
+  descargarOficioPdf: async (id: string): Promise<void> => {
+    const res = await apiClient.get(`/documentos/${id}/descargar-oficio-pdf`, {
+      responseType: 'blob',
+    })
+    const blob = new Blob([res.data], { type: 'application/pdf' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const disposition = res.headers['content-disposition'] || ''
+    const match = disposition.match(/filename="?([^"]+)"?/)
+    a.download = match ? match[1] : `oficio_${id}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    a.remove()
+  },
+}
+
+export const firmaLoteApi = {
+  validarCertificado: async (cer: File, key: File, password: string): Promise<CertificadoValidation> => {
+    const formData = new FormData()
+    formData.append('cer_file', cer)
+    formData.append('key_file', key)
+    formData.append('password', password)
+    const res = await apiClient.post('/firma-lote/validar-certificado', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  },
+
+  crear: async (documentoIds: string[]): Promise<LoteFirma> => {
+    const res = await apiClient.post('/firma-lote/crear', { documento_ids: documentoIds })
+    return res.data
+  },
+
+  ejecutar: async (
+    loteId: string,
+    password: string,
+    cer?: File,
+    key?: File,
+  ): Promise<FirmaLoteResult> => {
+    const formData = new FormData()
+    formData.append('password', password)
+    if (cer) formData.append('cer_file', cer)
+    if (key) formData.append('key_file', key)
+    const res = await apiClient.post(`/firma-lote/${loteId}/ejecutar`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  },
+
+  get: async (loteId: string): Promise<LoteFirma> => {
+    const res = await apiClient.get(`/firma-lote/${loteId}`)
+    return res.data
+  },
+
+  list: async (): Promise<LoteFirma[]> => {
+    const res = await apiClient.get('/firma-lote/')
+    return res.data
+  },
+}
+
+export const certificadosApi = {
+  /** Obtener info del certificado registrado (sin clave privada) */
+  miCertificado: async (): Promise<CertificadoInfo> => {
+    const res = await apiClient.get('/certificados/mi-certificado')
+    return res.data
+  },
+
+  /** Registrar certificado e.firma en la bóveda cifrada */
+  registrar: async (cer: File, key: File, password: string): Promise<CertificadoRegistro> => {
+    const formData = new FormData()
+    formData.append('cer_file', cer)
+    formData.append('key_file', key)
+    formData.append('password', password)
+    const res = await apiClient.post('/certificados/registrar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  },
+
+  /** Validar vigencia del certificado */
+  validarVigencia: async (): Promise<VigenciaResult> => {
+    const res = await apiClient.post('/certificados/validar-vigencia')
+    return res.data
+  },
+
+  /** Revocar certificado */
+  revocar: async (): Promise<{ message: string; success: boolean }> => {
+    const res = await apiClient.delete('/certificados/revocar')
+    return res.data
+  },
+
+  /** Renovar certificado con nuevos archivos */
+  renovar: async (cer: File, key: File, password: string): Promise<CertificadoRegistro> => {
+    const formData = new FormData()
+    formData.append('cer_file', cer)
+    formData.append('key_file', key)
+    formData.append('password', password)
+    const res = await apiClient.post('/certificados/renovar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  },
+}

@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: pigop-backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://pigop:pigop_pass@postgres:5432/pigop_db
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      DEBUG: "True"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-placeholder}
+      GCS_BUCKET: ${GCS_BUCKET:-pigop-documents-dev}
+      GCS_PROJECT_ID: ${GCS_PROJECT_ID:-your-project}
+      SAP_MOCK_MODE: "True"
+      ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:5173"
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./scripts:/app/scripts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "
+        echo 'Esperando migraciones...' &&
+        alembic upgrade head &&
+        echo 'Ejecutando script inicial...' &&
+        python scripts/init_db.py &&
+        echo 'Iniciando servidor...' &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      "
+    networks:
+      - pigop-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: pigop-postgres
+    environment:
+      POSTGRES_USER: pigop
+      POSTGRES_PASSWORD: pigop_pass
+      POSTGRES_DB: pigop_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pigop -d pigop_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pigop-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: pigop-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pigop-network
+    restart: unless-stopped
+
+networks:
+  pigop-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:

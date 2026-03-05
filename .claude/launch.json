@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pigop-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173,
+      "cwd": "${workspaceFolder}/pigop-frontend"
+    },
+    {
+      "name": "pigop-backend",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["run_dev.py"],
+      "port": 8000,
+      "cwd": "${workspaceFolder}/pigop-backend"
+    }
+  ]
+}

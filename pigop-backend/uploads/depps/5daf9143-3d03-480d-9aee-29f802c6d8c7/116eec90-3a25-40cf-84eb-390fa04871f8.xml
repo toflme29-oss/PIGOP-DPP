@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
+    Total="95000.00" SubTotal="81896.55" Fecha="2026-02-01T10:00:00"
+    Moneda="MXN" FormaPago="03" MetodoPago="PUE">
+  <cfdi:Emisor Rfc="SEDI010101XYZ" Nombre="Servicios Digitales SA de CV"/>
+  <cfdi:Receptor Rfc="GEM261011I62" Nombre="Gobierno del Estado de Michoacan" UsoCFDI="G03"/>
+  <cfdi:Conceptos>
+    <cfdi:Concepto Descripcion="Desarrollo de software y licencias"
+        Cantidad="1" ValorUnitario="81896.55" Importe="81896.55"/>
+  </cfdi:Conceptos>
+  <cfdi:Complemento>
+    <tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
+        UUID="F1A2B3C4-D5E6-7890-FEDC-BA9876543210"/>
+  </cfdi:Complemento>
+</cfdi:Comprobante>
