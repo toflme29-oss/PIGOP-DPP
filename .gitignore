@@ -1,0 +1,42 @@
+# ── Secretos y configuración local ──
+.env
+.env.*
+*.env
+
+# ── Bases de datos locales ──
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Python ──
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+
+# ── Node / Frontend ──
+node_modules/
+dist/
+.vite/
+
+# ── Archivos subidos (documentos locales) ──
+pigop-backend/uploaded_files/
+pigop-backend/files/
+pigop-backend/uploads/
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ── Logs ──
+*.log
+npm-debug.log*
+
+# ── Claude ──
+.claude/

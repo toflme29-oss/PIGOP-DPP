@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import {
   usuariosApi, clientesAdminApi,
-  ROL_LABELS, ROL_COLORS, TIPO_CLIENTE_LABELS,
+  ROL_LABELS, ROL_COLORS, TIPO_CLIENTE_LABELS, MODULOS_DISPONIBLES,
   type UsuarioAdmin, type ClienteAdmin,
   type UsuarioCreate, type ClienteCreate,
 } from '../api/usuarios'
@@ -25,7 +25,7 @@ import { formatDate } from '../utils'
 
 // ── Constantes ─────────────────────────────────────────────────────────────────
 const GUINDA = '#911A3A'
-const ROLES = ['superadmin', 'admin_cliente', 'analista', 'consulta'] as const
+const ROLES = ['superadmin', 'admin_cliente', 'secretaria', 'analista', 'consulta'] as const
 const TIPOS_CLIENTE = ['centralizada', 'paraestatal', 'autonoma', 'poder'] as const
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -112,6 +112,9 @@ function TablaUsuarios({
               <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
                 Cliente / Dependencia
               </th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                Módulos
+              </th>
               <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
                 Estado
               </th>
@@ -188,6 +191,28 @@ function TablaUsuarios({
                   </span>
                 </td>
 
+                {/* Módulos de acceso */}
+                <td className="px-4 py-3">
+                  {u.rol === 'superadmin' || u.rol === 'admin_cliente' ? (
+                    <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                      Todos
+                    </span>
+                  ) : (u.modulos_acceso ?? []).length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {(u.modulos_acceso ?? []).map(m => {
+                        const mod = MODULOS_DISPONIBLES.find(md => md.id === m)
+                        return (
+                          <span key={m} className="text-[10px] font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                            {mod?.label ?? m}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-gray-300">Ninguno</span>
+                  )}
+                </td>
+
                 {/* Estado */}
                 <td className="px-4 py-3 text-center">
                   <EstadoBadge activo={u.activo} />
@@ -225,7 +250,7 @@ function TablaUsuarios({
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">
+                <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">
                   {search ? 'No se encontraron usuarios con esa búsqueda.' : 'No hay usuarios registrados.'}
                 </td>
               </tr>
@@ -458,6 +483,42 @@ function ModalCrearUsuario({
               )}
             </div>
           </div>
+
+          {/* Módulos de acceso — visible solo para roles que no son admin/superadmin */}
+          {form.rol !== 'superadmin' && form.rol !== 'admin_cliente' && (
+            <div>
+              <label className="text-xs font-semibold text-gray-700 block mb-2">
+                Módulos de acceso
+              </label>
+              <div className="space-y-2">
+                {MODULOS_DISPONIBLES.map(mod => {
+                  const checked = (form.modulos_acceso ?? []).includes(mod.id)
+                  return (
+                    <label key={mod.id} className="flex items-center gap-2 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          const current = form.modulos_acceso ?? []
+                          const next = checked
+                            ? current.filter(m => m !== mod.id)
+                            : [...current, mod.id]
+                          set('modulos_acceso', next)
+                        }}
+                        className="w-3.5 h-3.5 rounded border-gray-300 accent-[#911A3A]"
+                      />
+                      <span className="text-xs text-gray-700 group-hover:text-gray-900">
+                        {mod.label}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1.5">
+                Director y Superadmin acceden a todos los módulos automáticamente.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

@@ -8,8 +8,8 @@ export type TipoDocumento =
 
 export type Flujo = 'recibido' | 'emitido'
 export type Prioridad = 'normal' | 'urgente' | 'muy_urgente'
-export type EstadoRecibido = 'recibido' | 'turnado' | 'en_atencion' | 'devuelto' | 'respondido' | 'archivado'
-export type EstadoEmitido  = 'borrador' | 'vigente' | 'archivado'
+export type EstadoRecibido = 'recibido' | 'turnado' | 'en_atencion' | 'devuelto' | 'respondido' | 'firmado' | 'archivado'
+export type EstadoEmitido  = 'borrador' | 'en_revision' | 'vigente' | 'archivado'
 export type Estado = EstadoRecibido | EstadoEmitido
 
 export interface AreaDPP {
@@ -17,6 +17,13 @@ export interface AreaDPP {
   nombre:  string
   titular: string
   cargo:   string
+}
+
+export interface PlantillaOficio {
+  categoria:        string
+  nombre:           string
+  area_origen:      string
+  fundamento_legal: string
 }
 
 export interface UsuarioInfo {
@@ -47,10 +54,12 @@ export interface DocumentoListItem {
   area_turno_nombre: string | null
   area_turno_confirmada: boolean
   genera_tramite:   string | null
+  instrucciones_turno: string | null
   tags:             string[] | null
   version:          number
   motivo_devolucion: string | null
   firmado_digitalmente: boolean | null
+  requiere_respuesta: boolean
   has_borrador:     boolean
   creado_en:        string
 }
@@ -95,6 +104,7 @@ export interface DocumentoRecibidoCreate {
   prioridad?:            Prioridad
   descripcion?:          string
   tags?:                 string[]
+  requiere_respuesta?:   boolean
   // Archivo pre-subido (desde preview-ocr)
   nombre_archivo?:       string
   url_storage?:          string
@@ -124,6 +134,9 @@ export interface DocumentoEmitidoCreate {
   descripcion?:       string
   referencia_elaboro?: string
   referencia_reviso?:  string
+  area_turno?:        string
+  area_turno_nombre?: string
+  folio_respuesta?:   string
   tags?:              string[]
 }
 
@@ -285,14 +298,16 @@ export const ESTADO_RECIBIDO_CONFIG: Record<EstadoRecibido, { label: string; col
   turnado:     { label: 'Turnado',     color: '#92400e', bg: '#fef3c7', dot: '#f59e0b', step: 2 },
   en_atencion: { label: 'En atención', color: '#7e22ce', bg: '#f3e8ff', dot: '#a855f7', step: 3 },
   devuelto:    { label: 'Devuelto',    color: '#991b1b', bg: '#fee2e2', dot: '#dc2626', step: 3 },
-  respondido:  { label: 'Respondido',  color: '#065f46', bg: '#d1fae5', dot: '#10b981', step: 4 },
-  archivado:   { label: 'Archivado',   color: '#374151', bg: '#f3f4f6', dot: '#6b7280', step: 5 },
+  respondido:  { label: 'Respondido',  color: '#0369a1', bg: '#e0f2fe', dot: '#0ea5e9', step: 4 },
+  firmado:     { label: 'Firmado',     color: '#065f46', bg: '#d1fae5', dot: '#10b981', step: 5 },
+  archivado:   { label: 'Archivado',   color: '#374151', bg: '#f3f4f6', dot: '#6b7280', step: 6 },
 }
 
 export const ESTADO_EMITIDO_CONFIG: Record<EstadoEmitido, { label: string; color: string; bg: string; dot: string }> = {
-  borrador:  { label: 'Borrador',   color: '#92400e', bg: '#fef3c7', dot: '#d97706' },
-  vigente:   { label: 'Vigente',    color: '#065f46', bg: '#d1fae5', dot: '#10b981' },
-  archivado: { label: 'Archivado',  color: '#374151', bg: '#f3f4f6', dot: '#6b7280' },
+  borrador:    { label: 'Borrador',     color: '#92400e', bg: '#fef3c7', dot: '#d97706' },
+  en_revision: { label: 'En revisión',  color: '#7e22ce', bg: '#f3e8ff', dot: '#a855f7' },
+  vigente:     { label: 'Vigente',      color: '#065f46', bg: '#d1fae5', dot: '#10b981' },
+  archivado:   { label: 'Archivado',    color: '#374151', bg: '#f3f4f6', dot: '#6b7280' },
 }
 
 // ── Certificados e.firma (bóveda) ─────────────────────────────────────────────
@@ -353,6 +368,14 @@ export const documentosApi = {
     return res.data
   },
 
+  /** Obtener catálogo de plantillas de oficios (opcionalmente por área) */
+  plantillas: async (areaCodigo?: string): Promise<PlantillaOficio[]> => {
+    const params: Record<string, string> = {}
+    if (areaCodigo) params.area_codigo = areaCodigo
+    const res = await apiClient.get('/documentos/plantillas', { params })
+    return res.data
+  },
+
   get: async (id: string): Promise<Documento> => {
     const res = await apiClient.get(`/documentos/${id}`)
     return res.data
@@ -403,9 +426,9 @@ export const documentosApi = {
     return res.data
   },
 
-  confirmarTurno: async (id: string, area_codigo: string, area_nombre?: string): Promise<Documento> => {
+  confirmarTurno: async (id: string, area_codigo: string, area_nombre?: string, instrucciones?: string): Promise<Documento> => {
     const res = await apiClient.post(`/documentos/${id}/confirmar-turno`, {
-      area_codigo, area_nombre,
+      area_codigo, area_nombre, instrucciones: instrucciones || undefined,
     })
     return res.data
   },
@@ -493,9 +516,14 @@ export const documentosApi = {
     return res.data
   },
 
-  /** Obtener siguiente folio consecutivo */
-  siguienteFolio: async (tipo: string = 'OFICIO'): Promise<{ folio: string; numero: number; tipo: string; anio: number }> => {
-    const res = await apiClient.get('/documentos/siguiente-folio', { params: { tipo } })
+  /** Obtener siguiente folio consecutivo (con área opcional para formato institucional) */
+  siguienteFolio: async (
+    tipo: string = 'OFICIO',
+    areaCodigo?: string,
+  ): Promise<{ folio: string; numero: number; anio: number; area_codigo?: string; prefijo?: string }> => {
+    const params: Record<string, string> = { tipo }
+    if (areaCodigo) params.area_codigo = areaCodigo
+    const res = await apiClient.get('/documentos/siguiente-folio', { params })
     return res.data
   },
 

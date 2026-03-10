@@ -32,7 +32,9 @@ os.environ.setdefault("STORAGE_BACKEND", "local")
 os.environ.setdefault("SUPERADMIN_EMAIL", "admin@pigop.gob.mx")
 os.environ.setdefault("SUPERADMIN_PASSWORD", "Admin.2026!")
 os.environ["ALLOWED_ORIGINS"] = (
-    '["http://localhost:3000","http://localhost:5173","http://localhost:8000"]'
+    '["http://localhost:3000","http://localhost:5173","http://localhost:5174",'
+    '"http://localhost:8000","http://192.168.10.232:5173",'
+    '"http://192.168.10.232:5174","http://192.168.10.232:8000"]'
 )
 
 # ── Imports post-config ───────────────────────────────────────────────────────
@@ -85,6 +87,10 @@ _NUEVAS_COLUMNAS_DOC = [
     "ALTER TABLE documentos_oficiales ADD COLUMN jefe_departamento_nombre VARCHAR(200)",
     "ALTER TABLE documentos_oficiales ADD COLUMN firmado_digitalmente INTEGER DEFAULT 0",
     "ALTER TABLE documentos_oficiales ADD COLUMN firma_metadata TEXT",
+    # ── Instrucciones de turno ──
+    "ALTER TABLE documentos_oficiales ADD COLUMN instrucciones_turno TEXT",
+    # ── Para conocimiento ──
+    "ALTER TABLE documentos_oficiales ADD COLUMN requiere_respuesta INTEGER DEFAULT 1",
     # ── Devolución y versionado (Fase firma por lote) ──
     "ALTER TABLE documentos_oficiales ADD COLUMN version INTEGER DEFAULT 1",
     "ALTER TABLE documentos_oficiales ADD COLUMN devuelto_por_id VARCHAR(36)",
@@ -99,6 +105,19 @@ with sync_engine.connect() as _mc:
             pass  # la columna ya existe
     _mc.commit()
 print("✅ Columnas documentos_oficiales actualizadas")
+
+# ── Migración de usuarios (columnas nuevas) ─────────────────────────────────
+_NUEVAS_COLUMNAS_USR = [
+    "ALTER TABLE usuarios ADD COLUMN modulos_acceso TEXT DEFAULT '[]'",
+]
+with sync_engine.connect() as _uc:
+    for _stmt in _NUEVAS_COLUMNAS_USR:
+        try:
+            _uc.execute(text(_stmt))
+        except Exception:
+            pass  # la columna ya existe
+    _uc.commit()
+print("✅ Columnas usuarios actualizadas")
 
 # ── Crear tablas de bóveda de certificados y bitácora de firma ──────────────
 _TABLAS_BOVEDA = [
@@ -376,11 +395,10 @@ print()
 print("=" * 60)
 print("🚀  PIGOP Backend — Fase 3 (Gemini AI + OCR + Validación IA)")
 print("=" * 60)
-print(f"   Servidor:   http://localhost:8000")
+print(f"   Local:      http://localhost:8000")
+print(f"   Red:        http://192.168.10.232:8000")
 print(f"   Swagger UI: http://localhost:8000/docs")
-print(f"   ReDoc:      http://localhost:8000/redoc")
 print(f"   Health:     http://localhost:8000/health")
-print(f"   Archivos:   http://localhost:8000/files/")
 print()
 print(f"   Email:      {EMAIL}")
 print(f"   Password:   {PWD}")

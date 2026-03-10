@@ -42,8 +42,13 @@ class Usuario(Base):
     password_hash = Column(String(255), nullable=False)
     nombre_completo = Column(String(255), nullable=True)
 
-    # superadmin | admin_cliente | analista | consulta
+    # superadmin | admin_cliente | secretaria | analista | consulta
     rol = Column(String(50), nullable=False, default="analista")
+
+    # Módulos a los que tiene acceso (JSON array)
+    # Posibles: "gestion_documental", "validacion_depp", "certificaciones", "minutas"
+    # superadmin y admin_cliente siempre tienen acceso a todo (este campo se ignora para ellos)
+    modulos_acceso = Column(JSON, default=list, nullable=False)
 
     activo = Column(Boolean, default=True)
     ultimo_acceso = Column(DateTime(timezone=True), nullable=True)

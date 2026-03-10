@@ -1,8 +1,16 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+# Módulos disponibles en PIGOP
+MODULOS_DISPONIBLES = [
+    "gestion_documental",
+    "validacion_depp",
+    "certificaciones",
+    "minutas",
+]
 
 
 # ── Cliente (UPP / Dependencia) ───────────────────────────────────────────────
@@ -40,9 +48,13 @@ class UsuarioBase(BaseModel):
     nombre_completo: Optional[str] = None
     rol: str = Field(
         default="analista",
-        description="superadmin | admin_cliente | analista | consulta",
+        description="superadmin | admin_cliente | secretaria | analista | consulta",
     )
     activo: bool = True
+    modulos_acceso: List[str] = Field(
+        default_factory=list,
+        description="Módulos a los que tiene acceso: gestion_documental, validacion_depp, certificaciones, minutas",
+    )
 
 
 class UsuarioCreate(UsuarioBase):
@@ -55,6 +67,7 @@ class UsuarioUpdate(BaseModel):
     rol: Optional[str] = None
     activo: Optional[bool] = None
     cliente_id: Optional[UUID] = None
+    modulos_acceso: Optional[List[str]] = None
 
 
 class UsuarioResponse(UsuarioBase):

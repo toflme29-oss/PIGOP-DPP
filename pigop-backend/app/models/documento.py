@@ -71,6 +71,9 @@ class DocumentoOficial(Base):
     # Emitidos:   borrador | vigente | archivado
     estado = Column(String(30), default="borrador", nullable=False, index=True)
 
+    # ── Para conocimiento (oficios que no requieren respuesta) ───────────────
+    requiere_respuesta = Column(Boolean, default=True, nullable=False)
+
     # ── Descripción / notas adicionales ──────────────────────────────────────
     descripcion = Column(Text, nullable=True)
 
@@ -102,6 +105,7 @@ class DocumentoOficial(Base):
     area_turno_confirmada = Column(Boolean, default=False)
     turnado_por_id      = Column(String(36), ForeignKey("usuarios.id"), nullable=True)
     turnado_en          = Column(DateTime(timezone=True), nullable=True)
+    instrucciones_turno = Column(Text, nullable=True)   # instrucciones del Director al turnar
 
     # ── Borrador de respuesta ─────────────────────────────────────────────────
     borrador_respuesta = Column(Text, nullable=True)           # texto del borrador

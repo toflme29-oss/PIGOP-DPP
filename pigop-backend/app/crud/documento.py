@@ -174,10 +174,11 @@ class CRUDDocumento(CRUDBase[DocumentoOficial]):
         area_codigo: str,
         area_nombre: str,
         turnado_por_id: str,
+        instrucciones: str | None = None,
     ) -> DocumentoOficial:
         from app.services.correspondencia_service import AREAS_DPP
         info = AREAS_DPP.get(area_codigo, {})
-        upd = {
+        upd: dict = {
             "area_turno":           area_codigo,
             "area_turno_nombre":    area_nombre or info.get("nombre", area_codigo),
             "area_turno_confirmada": True,
@@ -185,6 +186,8 @@ class CRUDDocumento(CRUDBase[DocumentoOficial]):
             "turnado_por_id":       turnado_por_id,
             "turnado_en":           datetime.now(timezone.utc),
         }
+        if instrucciones:
+            upd["instrucciones_turno"] = instrucciones
         return await self.update(db, db_obj=db_obj, obj_in=upd)
 
     async def guardar_borrador(
@@ -296,6 +299,8 @@ class CRUDDocumento(CRUDBase[DocumentoOficial]):
         documento_id: str,
         usuario_id: str,
         version: int,
+        estado_anterior: str = "en_atencion",
+        estado_nuevo: str = "firmado",
         observaciones: str = "Firma electrónica aplicada.",
     ) -> HistorialDocumento:
         """Registra la acción de firma en el historial."""
@@ -303,8 +308,8 @@ class CRUDDocumento(CRUDBase[DocumentoOficial]):
             documento_id=documento_id,
             usuario_id=usuario_id,
             tipo_accion="firma",
-            estado_anterior="en_atencion",
-            estado_nuevo="respondido",
+            estado_anterior=estado_anterior,
+            estado_nuevo=estado_nuevo,
             observaciones=observaciones,
             version=version,
         )

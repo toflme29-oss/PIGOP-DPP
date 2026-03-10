@@ -59,3 +59,23 @@ async def get_current_superadmin(
     if current_user.rol != "superadmin":
         raise ForbiddenError("Se requieren permisos de superadministrador.")
     return current_user
+
+
+def require_module(modulo: str):
+    """
+    Factory de dependencia que valida acceso a un módulo específico.
+    superadmin y admin_cliente siempre tienen acceso a todo.
+
+    Uso:
+        @router.get("/", dependencies=[Depends(require_module("gestion_documental"))])
+    """
+    async def _check(
+        current_user: Usuario = Depends(get_current_active_user),
+    ) -> Usuario:
+        if current_user.rol in ("superadmin", "admin_cliente"):
+            return current_user
+        modulos = current_user.modulos_acceso or []
+        if modulo not in modulos:
+            raise ForbiddenError(f"No tienes acceso al módulo '{modulo}'.")
+        return current_user
+    return _check

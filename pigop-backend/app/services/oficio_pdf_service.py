@@ -62,6 +62,7 @@ class OficioPdfService:
         copias: Optional[list[str]] = None,
         incluir_firma_visual: bool = False,
         sello_digital_data: Optional[dict] = None,
+        asunto: Optional[str] = None,
     ) -> bytes:
         """
         Genera un PDF del oficio institucional.
@@ -132,21 +133,21 @@ class OficioPdfService:
             leading=9,
         )
 
-        # ── Header institucional ────────────────────────────────────────────
-        header_path = LOGOS_DIR / "header_dpp.png"
-        if header_path.exists():
-            img = Image(str(header_path), width=6.5 * inch, height=0.75 * inch)
-            img.hAlign = "CENTER"
-            elements.append(img)
-        else:
-            elements.append(Paragraph(
-                '<font color="#911A3A"><b>SECRETARÍA DE FINANZAS Y ADMINISTRACIÓN</b></font>',
-                ParagraphStyle("H1", parent=s_center, fontSize=10, textColor=GUINDA),
-            ))
-            elements.append(Paragraph(
-                '<font color="#911A3A"><b>DIRECCIÓN DE PROGRAMACIÓN Y PRESUPUESTO</b></font>',
-                ParagraphStyle("H2", parent=s_center, fontSize=9, textColor=GUINDA),
-            ))
+        # ── Identidad institucional: Escudo + Gobierno del Estado ──
+        # Formato oficial: escudo izquierda + texto del Gobierno del Estado
+        # NO incluir SFA/Subsecretaría/DPP como encabezado
+        s_left = ParagraphStyle("Left", parent=s_normal, alignment=0)  # 0 = LEFT
+        escudo_path = LOGOS_DIR / "escudo_mich.png"
+        if escudo_path.exists():
+            esc_img = Image(str(escudo_path), width=0.6 * inch, height=0.6 * inch)
+            esc_img.hAlign = "LEFT"
+            elements.append(esc_img)
+            elements.append(Spacer(1, 2))
+
+        elements.append(Paragraph(
+            '<font color="#911A3A"><b>Gobierno del Estado de Michoacán de Ocampo</b></font>',
+            ParagraphStyle("H1", parent=s_left, fontSize=9, textColor=GUINDA),
+        ))
 
         # Línea separadora guinda
         elements.append(Spacer(1, 4))
@@ -159,16 +160,54 @@ class OficioPdfService:
         ))
         elements.append(Spacer(1, 10))
 
-        # ── Folio + Fecha (derecha) ─────────────────────────────────────────
-        elements.append(Paragraph(
-            f'<b>OFICIO No. {folio_respuesta}</b>',
-            s_right,
-        ))
+        # ── Recuadro institucional (tabla derecha) ──────────────────────────
+        asunto_corto = self._truncar_asunto(asunto or "El que se indica")
+        s_recuadro_label = ParagraphStyle(
+            "RecLabel", fontSize=7, fontName="Helvetica-Bold",
+            leading=9, textColor=colors.HexColor("#333333"),
+        )
+        s_recuadro_value = ParagraphStyle(
+            "RecValue", fontSize=7, fontName="Helvetica",
+            leading=9, textColor=colors.HexColor("#333333"),
+        )
+        recuadro_data = [
+            ["Dependencia:", "Secretaría de Finanzas y Administración"],
+            ["Sub-dependencia:", "Subsecretaría de Finanzas"],
+            ["Oficina:", "Dirección de Programación y Presupuesto"],
+            ["No. de oficio:", folio_respuesta or "—"],
+            ["Expediente:", "General"],
+            ["Asunto:", asunto_corto],
+        ]
+        recuadro_rows = [
+            [
+                Paragraph(f'<b>{row[0]}</b>', s_recuadro_label),
+                Paragraph(row[1], s_recuadro_value),
+            ]
+            for row in recuadro_data
+        ]
+        recuadro_table = Table(
+            recuadro_rows,
+            colWidths=[1.0 * inch, 2.2 * inch],
+            hAlign="RIGHT",
+        )
+        recuadro_table.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
+            ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING", (0, 0), (-1, -1), 1),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ]))
+        elements.append(recuadro_table)
+        elements.append(Spacer(1, 8))
+
+        # Fecha debajo del recuadro
         elements.append(Paragraph(
             f'{lugar}, {fecha_respuesta}',
             s_right,
         ))
-        elements.append(Spacer(1, 24))
+        elements.append(Spacer(1, 14))
 
         # ── Destinatario ────────────────────────────────────────────────────
         elements.append(Paragraph(f'<b>C. {destinatario_nombre.upper()}</b>', s_bold))
@@ -242,10 +281,15 @@ class OficioPdfService:
 
         # ── Copias ──────────────────────────────────────────────────────────
         if copias:
+            s_copias = ParagraphStyle(
+                "OfCopias", parent=s_normal,
+                fontSize=7, leading=9,
+            )
             elements.append(Spacer(1, 24))
             for i, copia in enumerate(copias):
-                prefix = "c.c.p.- " if i == 0 else "        "
-                elements.append(Paragraph(f'{prefix}{copia}', s_small))
+                prefix = "c.c.p. " if i == 0 else "       "
+                safe_copia = copia.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                elements.append(Paragraph(f'{prefix}{safe_copia}', s_copias))
 
         # ── Referencia ──────────────────────────────────────────────────────
         if referencia_elaboro or referencia_reviso:
@@ -256,6 +300,13 @@ class OficioPdfService:
         # ── Build ───────────────────────────────────────────────────────────
         doc.build(elements)
         return buffer.getvalue()
+
+    @staticmethod
+    def _truncar_asunto(asunto: str, max_chars: int = 55) -> str:
+        """Trunca el asunto para que quepa en el recuadro PDF."""
+        if len(asunto) <= max_chars:
+            return asunto
+        return asunto[:max_chars - 3].rstrip() + "..."
 
     def _add_sello_digital_pdf(
         self,

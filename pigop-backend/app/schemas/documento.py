@@ -7,8 +7,8 @@ TIPOS_VALIDOS = [
     "oficio", "circular", "memorandum", "acuerdo",
     "convenio", "resolucion", "informe", "otro",
 ]
-ESTADOS_RECIBIDO = ["recibido", "turnado", "en_atencion", "devuelto", "respondido", "archivado"]
-ESTADOS_EMITIDO  = ["borrador", "vigente", "archivado"]
+ESTADOS_RECIBIDO = ["recibido", "turnado", "en_atencion", "devuelto", "respondido", "firmado", "archivado"]
+ESTADOS_EMITIDO  = ["borrador", "en_revision", "vigente", "archivado"]
 PRIORIDADES      = ["normal", "urgente", "muy_urgente"]
 FLUJOS           = ["recibido", "emitido"]
 
@@ -29,6 +29,7 @@ class DocumentoRecibidoCreate(BaseModel):
     prioridad:        Optional[str] = Field("normal")
     descripcion:      Optional[str] = None
     tags:             Optional[List[str]] = None
+    requiere_respuesta: bool = True
     # ── Archivo pre-subido (desde preview-ocr) ──
     nombre_archivo: Optional[str] = None
     url_storage:    Optional[str] = None
@@ -59,6 +60,9 @@ class DocumentoEmitidoCreate(BaseModel):
     descripcion:     Optional[str] = None
     referencia_elaboro: Optional[str] = Field(None, max_length=50)
     referencia_reviso:  Optional[str] = Field(None, max_length=50)
+    area_turno:      Optional[str] = Field(None, max_length=10, description="Código del área de origen (DIR, SCG, SPF...)")
+    area_turno_nombre: Optional[str] = Field(None, max_length=200, description="Nombre del área de origen")
+    folio_respuesta: Optional[str] = Field(None, max_length=100, description="Folio institucional auto-generado")
     tags: Optional[List[str]] = None
 
 
@@ -90,6 +94,7 @@ class DocumentoUpdate(BaseModel):
 class ConfirmarTurnoInput(BaseModel):
     area_codigo: str = Field(..., description="Código del área (ej: DREP, DCP, DASP...)")
     area_nombre: Optional[str] = None
+    instrucciones: Optional[str] = Field(None, max_length=2000, description="Instrucciones del Director al turnar")
 
 
 # ── Schemas de respuesta ──────────────────────────────────────────────────────
@@ -123,9 +128,11 @@ class DocumentoListResponse(BaseModel):
     area_turno_nombre: Optional[str]
     area_turno_confirmada: bool
     genera_tramite:   Optional[str]
+    instrucciones_turno: Optional[str] = None
     version:          int = 1
     motivo_devolucion: Optional[str] = None
     firmado_digitalmente: Optional[bool] = None
+    requiere_respuesta: bool = True
     has_borrador:     bool = False
     tags:             Optional[List[str]]
     creado_en:        datetime

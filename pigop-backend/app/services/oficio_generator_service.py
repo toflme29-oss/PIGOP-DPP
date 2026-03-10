@@ -49,19 +49,31 @@ class OficioGeneratorService:
         copias: Optional[list[str]] = None,
         incluir_firma_visual: bool = False,
         sello_digital_data: Optional[dict] = None,
+        asunto: Optional[str] = None,
     ) -> bytes:
         """
         Genera un oficio de respuesta completo en formato DOCX.
+        Incluye recuadro institucional superior derecho.
         Retorna los bytes del archivo .docx.
         """
         doc = Document()
 
         self._set_page_margins(doc)
         self._set_default_font(doc)
-        self._add_header_image(doc)
-        self._add_separator_line(doc)
-        self._add_folio_fecha(doc, folio_respuesta, lugar, fecha_respuesta)
-        self._add_empty_lines(doc, 2)
+
+        # ── Encabezado institucional: Escudo + Gobierno del Estado ──
+        # Formato oficial: escudo arriba izquierda + recuadro arriba derecha
+        self._add_identidad_institucional(doc)
+
+        # ── Recuadro institucional (datos del oficio) ──
+        self._add_recuadro_institucional(
+            doc,
+            folio=folio_respuesta,
+            asunto_corto=self._truncar_asunto(asunto or "El que se indica"),
+        )
+        # Fecha debajo del recuadro
+        self._add_fecha(doc, lugar, fecha_respuesta)
+        self._add_empty_lines(doc, 1)
         self._add_destinatario(doc, destinatario_nombre, destinatario_cargo, destinatario_dependencia)
         self._add_empty_lines(doc, 1)
 
@@ -142,23 +154,43 @@ class OficioGeneratorService:
         style.paragraph_format.space_after = Pt(0)
         style.paragraph_format.space_before = Pt(0)
 
+    def _add_identidad_institucional(self, doc: Document) -> None:
+        """
+        Agrega la identidad institucional del Gobierno del Estado.
+        Formato oficial: Escudo del Estado + "Gobierno del Estado de Michoacán de Ocampo"
+        alineado a la izquierda, tal como aparece en los oficios modelo.
+        NO incluye SFA/Subsecretaría/DPP como encabezado — esos datos
+        van en el recuadro institucional.
+        """
+        # Escudo del Estado de Michoacán (si existe)
+        escudo_path = LOGOS_DIR / "escudo_mich.png"
+        if escudo_path.exists():
+            pe = doc.add_paragraph()
+            pe.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            pe.paragraph_format.space_after = Pt(2)
+            pe.paragraph_format.space_before = Pt(0)
+            run_e = pe.add_run()
+            run_e.add_picture(str(escudo_path), height=Cm(1.8))
+
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p.paragraph_format.space_after = Pt(0)
+        p.paragraph_format.space_before = Pt(2)
+        run = p.add_run("Gobierno del Estado de Michoacán de Ocampo")
+        run.bold = True
+        run.font.size = Pt(9)
+        run.font.color.rgb = GUINDA
+
+        # Línea separadora guinda debajo
+        self._add_separator_line(doc)
+
     def _add_header_image(self, doc: Document) -> None:
-        """Agrega la imagen del membrete institucional."""
+        """Agrega la imagen del membrete institucional (incluye recuadro vacío).
+        NOTA: No usar junto con _add_recuadro_institucional() para evitar duplicar recuadro.
+        """
         header_path = LOGOS_DIR / "header_dpp.png"
         if not header_path.exists():
-            # Fallback: texto simple
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            run = p.add_run("SECRETARÍA DE FINANZAS Y ADMINISTRACIÓN")
-            run.bold = True
-            run.font.size = Pt(10)
-            run.font.color.rgb = GUINDA
-            p2 = doc.add_paragraph()
-            p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            run2 = p2.add_run("DIRECCIÓN DE PROGRAMACIÓN Y PRESUPUESTO")
-            run2.bold = True
-            run2.font.size = Pt(9)
-            run2.font.color.rgb = GUINDA
+            self._add_header_text(doc)
             return
 
         p = doc.add_paragraph()
@@ -188,8 +220,113 @@ class OficioGeneratorService:
         pBdr.append(bottom)
         pPr.append(pBdr)
 
+    def _add_recuadro_institucional(
+        self, doc: Document,
+        folio: str,
+        asunto_corto: str = "El que se indica",
+        oficina: str = "Dirección de Programación y Presupuesto",
+    ) -> None:
+        """
+        Agrega el recuadro institucional superior derecho.
+        6 filas × 2 columnas: etiqueta | valor.
+        Formato del modelo oficial de la DPP.
+        """
+        rows_data = [
+            ("Dependencia:", "Secretaría de Finanzas y Administración"),
+            ("Sub-dependencia:", "Subsecretaría de Finanzas"),
+            ("Oficina:", oficina),
+            ("No. de oficio:", folio or "—"),
+            ("Expediente:", "General"),
+            ("Asunto:", asunto_corto),
+        ]
+
+        table = doc.add_table(rows=len(rows_data), cols=2)
+        table.autofit = False
+
+        # Alinear tabla a la derecha
+        tbl = table._tbl
+        tbl_pr = tbl.tblPr if tbl.tblPr is not None else tbl.makeelement(qn("w:tblPr"), {})
+        jc = tbl_pr.makeelement(qn("w:jc"), {qn("w:val"): "right"})
+        tbl_pr.append(jc)
+
+        # Ancho total ~8cm: etiqueta 2.5cm + valor 5.5cm
+        table.columns[0].width = Cm(2.5)
+        table.columns[1].width = Cm(5.5)
+
+        # Bordes sutiles
+        tbl_borders = tbl_pr.makeelement(qn("w:tblBorders"), {})
+        for border_name in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            border_el = tbl_borders.makeelement(
+                qn(f"w:{border_name}"),
+                {
+                    qn("w:val"): "single",
+                    qn("w:sz"): "4",
+                    qn("w:space"): "0",
+                    qn("w:color"): "999999",
+                },
+            )
+            tbl_borders.append(border_el)
+        tbl_pr.append(tbl_borders)
+        if tbl.tblPr is None:
+            tbl.insert(0, tbl_pr)
+
+        # Llenar datos
+        for i, (label, value) in enumerate(rows_data):
+            row = table.rows[i]
+
+            # Celda etiqueta
+            cell_label = row.cells[0]
+            cell_label.width = Cm(2.5)
+            p_label = cell_label.paragraphs[0]
+            p_label.paragraph_format.space_after = Pt(0)
+            p_label.paragraph_format.space_before = Pt(0)
+            run_label = p_label.add_run(label)
+            run_label.bold = True
+            run_label.font.name = "Arial"
+            run_label.font.size = Pt(7)
+            run_label.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
+
+            # Celda valor
+            cell_value = row.cells[1]
+            cell_value.width = Cm(5.5)
+            p_value = cell_value.paragraphs[0]
+            p_value.paragraph_format.space_after = Pt(0)
+            p_value.paragraph_format.space_before = Pt(0)
+            run_value = p_value.add_run(value)
+            run_value.font.name = "Arial"
+            run_value.font.size = Pt(7)
+            run_value.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
+
+            # Padding mínimo en celdas
+            for cell in (cell_label, cell_value):
+                tc_pr = cell._tc.get_or_add_tcPr()
+                mar = tc_pr.makeelement(qn("w:tcMar"), {})
+                for side in ("top", "bottom", "start", "end"):
+                    side_el = mar.makeelement(
+                        qn(f"w:{side}"),
+                        {qn("w:w"): "30", qn("w:type"): "dxa"},
+                    )
+                    mar.append(side_el)
+                tc_pr.append(mar)
+
+    def _add_fecha(self, doc: Document, lugar: str, fecha: str) -> None:
+        """Solo la línea de fecha, alineada a la derecha."""
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p.paragraph_format.space_before = Pt(8)
+        p.paragraph_format.space_after = Pt(0)
+        run = p.add_run(f"{lugar}, {fecha}")
+        run.font.size = Pt(11)
+
+    @staticmethod
+    def _truncar_asunto(asunto: str, max_chars: int = 60) -> str:
+        """Trunca el asunto para que quepa en el recuadro."""
+        if len(asunto) <= max_chars:
+            return asunto
+        return asunto[:max_chars - 3].rstrip() + "..."
+
     def _add_folio_fecha(self, doc: Document, folio: str, lugar: str, fecha: str) -> None:
-        """Bloque de folio y fecha, alineado a la derecha."""
+        """Bloque de folio y fecha, alineado a la derecha (legacy, mantenido por compatibilidad)."""
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         p.paragraph_format.space_after = Pt(2)
@@ -268,13 +405,17 @@ class OficioGeneratorService:
         run_cargo.font.size = Pt(11)
 
     def _add_copias(self, doc: Document, copias: list[str]) -> None:
-        """Bloque de copias (c.c.p.)."""
+        """Bloque de copias institucionales (c.c.p.)."""
         for i, copia in enumerate(copias):
             p = doc.add_paragraph()
-            p.paragraph_format.space_after = Pt(0)
-            prefix = "c.c.p.- " if i == 0 else "\t"
+            p.paragraph_format.space_after = Pt(1)
+            if i == 0:
+                prefix = "c.c.p. "
+            else:
+                prefix = "       "  # Indentación para alinear con primera copia
             run = p.add_run(f"{prefix}{copia}")
-            run.font.size = Pt(6)
+            run.font.size = Pt(7)
+            run.font.name = "Arial"
             run.font.color.rgb = RGBColor(0, 0, 0)
 
     def _add_referencia(

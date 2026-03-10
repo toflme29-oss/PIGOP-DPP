@@ -5,7 +5,7 @@ import {
   ChevronDown, X, CheckCircle2, Archive, Clock, Filter,
   Wand2, Send, AlertTriangle, Eye, Edit3, RotateCcw,
   ArrowRight, InboxIcon, SendIcon, Zap, Building2,
-  Download, Shield, BookOpen, FileSignature, Scale, Stamp,
+  Download, Shield, BookOpen, FileSignature,
   History, CornerUpLeft, RefreshCw, Copy, Lock, Hash,
 } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -18,9 +18,10 @@ import {
   type DocumentoListItem, type Documento,
   type DocumentoRecibidoCreate, type DocumentoEmitidoCreate,
   type DocumentoUpdate, type PreviewOCRResult,
-  type OficioEstructuradoResult, type HistorialItem,
+  type HistorialItem,
   type TipoDocumento, type Prioridad, type EstadoEmitido,
   type AreaDPP,
+  type PlantillaOficio,
   type CertificadoInfo,
 } from '../api/documentos'
 import { clientesApi } from '../api/depps'
@@ -78,7 +79,7 @@ function PrioridadBadge({ prioridad }: { prioridad: Prioridad }) {
 }
 
 // ── Pipeline de progreso ───────────────────────────────────────────────────────
-const PASOS_RECIBIDO = ['Recibido', 'Turnado', 'En atención', 'Respondido']
+const PASOS_RECIBIDO = ['Recibido', 'Turnado', 'En atención', 'Respondido', 'Firmado']
 function PipelineRecibido({ estado }: { estado: string }) {
   const cfg = ESTADO_RECIBIDO_CONFIG[estado as keyof typeof ESTADO_RECIBIDO_CONFIG]
   const step = cfg?.step ?? 0
@@ -484,6 +485,24 @@ function ModalRegistrarRecibido({
                   value={form.descripcion ?? ''} onChange={e => set('descripcion', e.target.value)} />
               </div>
 
+              {/* Checkbox: requiere respuesta */}
+              <label className="flex items-center gap-2 cursor-pointer group bg-gray-50 rounded-lg px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  checked={form.requiere_respuesta !== false}
+                  onChange={e => set('requiere_respuesta', e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-gray-300 accent-[#911A3A]"
+                />
+                <div>
+                  <p className="text-xs font-medium text-gray-700 group-hover:text-gray-900">
+                    Este documento requiere respuesta
+                  </p>
+                  <p className="text-[10px] text-gray-400">
+                    Desmarcar para oficios de conocimiento, circulares o notificaciones
+                  </p>
+                </div>
+              </label>
+
               <div className="flex justify-between items-center gap-2 pt-2 border-t border-gray-100">
                 <button type="button"
                   onClick={() => { setStep('upload'); setOcrResult(null); setFileName('') }}
@@ -579,6 +598,24 @@ function ModalRegistrarRecibido({
                   value={form.descripcion ?? ''} onChange={e => set('descripcion', e.target.value)} />
               </div>
 
+              {/* Checkbox: requiere respuesta */}
+              <label className="flex items-center gap-2 cursor-pointer group bg-gray-50 rounded-lg px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  checked={form.requiere_respuesta !== false}
+                  onChange={e => set('requiere_respuesta', e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-gray-300 accent-[#911A3A]"
+                />
+                <div>
+                  <p className="text-xs font-medium text-gray-700 group-hover:text-gray-900">
+                    Este documento requiere respuesta
+                  </p>
+                  <p className="text-[10px] text-gray-400">
+                    Desmarcar para oficios de conocimiento, circulares o notificaciones
+                  </p>
+                </div>
+              </label>
+
               <div className="flex justify-between items-center gap-2 pt-2 border-t border-gray-100">
                 <button type="button"
                   onClick={() => setStep('upload')}
@@ -603,12 +640,20 @@ function ModalNuevoEmitido({
 }: { onClose: () => void; onCreated: (doc: DocumentoListItem) => void }) {
   const { user } = useAuth()
   const { data: clientes } = useQuery({ queryKey: ['clientes'], queryFn: clientesApi.list, enabled: user?.rol === 'superadmin' })
+  const { data: areasDisponibles } = useQuery({ queryKey: ['areas-dpp'], queryFn: documentosApi.areas })
   const qc = useQueryClient()
   const mutation = useMutation({
     mutationFn: documentosApi.crearEmitido,
     onSuccess: (doc) => { qc.invalidateQueries({ queryKey: ['documentos'] }); onCreated(doc) },
   })
   const clienteId = user?.rol === 'superadmin' ? (clientes?.[0]?.id ?? '') : (user?.cliente_id ?? '')
+  const [modo, setModo] = useState<'elegir' | 'subir' | 'generar'>('elegir')
+  const [areaOrigen, setAreaOrigen] = useState('')
+  const [folioGenerado, setFolioGenerado] = useState('')
+  const [folioEditado, setFolioEditado] = useState(false)
+  const [plantillas, setPlantillas] = useState<PlantillaOficio[]>([])
+  const [plantillaSel, setPlantillaSel] = useState('')
+  const [cargandoFolio, setCargandoFolio] = useState(false)
   const [form, setForm] = useState<DocumentoEmitidoCreate>({
     cliente_id: clienteId,
     tipo: 'oficio',
@@ -622,108 +667,291 @@ function ModalNuevoEmitido({
     referencia_reviso: '',
   })
   const [err, setErr] = useState('')
+  const [archivoSubir, setArchivoSubir] = useState<File | null>(null)
+  const fileRefModal = useRef<HTMLInputElement>(null)
   const set = (k: keyof DocumentoEmitidoCreate, v: unknown) => setForm(p => ({ ...p, [k]: v }))
+
+  // Auto-generar folio al seleccionar área
+  const handleAreaChange = async (codigo: string) => {
+    setAreaOrigen(codigo)
+    setFolioEditado(false)
+    if (!codigo) { setFolioGenerado(''); setPlantillas([]); setPlantillaSel(''); return }
+    setCargandoFolio(true)
+    try {
+      const r = await documentosApi.siguienteFolio('OFICIO', codigo)
+      setFolioGenerado(r.folio)
+      set('numero_control', r.folio)
+    } catch { /* keep empty */ }
+    setCargandoFolio(false)
+    // Cargar plantillas para el área
+    try {
+      const p = await documentosApi.plantillas(codigo)
+      setPlantillas(p)
+    } catch { setPlantillas([]) }
+    setPlantillaSel('')
+  }
+
+  // Al seleccionar plantilla, prellenar asunto
+  const handlePlantillaChange = (cat: string) => {
+    setPlantillaSel(cat)
+    if (!cat) return
+    const p = plantillas.find(x => x.categoria === cat)
+    if (p && !form.asunto.trim()) {
+      set('asunto', p.nombre)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setErr('')
     if (!form.asunto.trim()) { setErr('El asunto es obligatorio.'); return }
-    try { await mutation.mutateAsync({ ...form, cliente_id: form.cliente_id || clienteId }) }
+    if (!areaOrigen) { setErr('Seleccione el área de origen.'); return }
+    // Agregar area_turno y folio al form data
+    const areaInfo = areasDisponibles?.find(a => a.codigo === areaOrigen)
+    const folioFinal = folioEditado ? (form.numero_control ?? '') : folioGenerado
+    try {
+      const doc = await mutation.mutateAsync({
+        ...form,
+        cliente_id: form.cliente_id || clienteId,
+        area_turno: areaOrigen,
+        area_turno_nombre: areaInfo?.nombre || '',
+        folio_respuesta: folioFinal,
+        numero_control: folioFinal,
+      })
+      // Si hay archivo para subir, subirlo después de crear
+      if (archivoSubir && doc.id) {
+        try { await documentosApi.uploadArchivo(doc.id, archivoSubir) } catch { /* error de upload no bloquea */ }
+        qc.invalidateQueries({ queryKey: ['documentos'] })
+      }
+    }
     catch (e: unknown) { setErr((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Error al crear.') }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#FDF2F4' }}>
               <SendIcon size={14} style={{ color: GUINDA }} />
             </div>
-            <h2 className="font-semibold text-gray-900 text-sm">Nuevo documento emitido</h2>
+            <h2 className="font-semibold text-gray-900 text-sm">
+              {modo === 'elegir' ? 'Nuevo documento emitido' : modo === 'subir' ? 'Subir documento existente' : 'Generar documento con IA'}
+            </h2>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
-        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-          {err && <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2">{err}</div>}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Tipo</label>
-              <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                value={form.tipo} onChange={e => set('tipo', e.target.value as TipoDocumento)}>
-                {TIPOS.map(t => <option key={t} value={t}>{TIPO_ICONS[t]} {TIPO_LABELS[t]}</option>)}
-              </select>
+        {/* ── Pantalla de elección ── */}
+        {modo === 'elegir' && (
+          <div className="px-6 py-6 space-y-4">
+            <p className="text-xs text-gray-500 text-center">Seleccione cómo desea crear el documento</p>
+            <div className="grid grid-cols-1 gap-3">
+              <button onClick={() => setModo('subir')}
+                className="group flex items-start gap-4 p-4 border-2 border-gray-200 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-all text-left">
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-blue-50 group-hover:bg-blue-100 transition-colors">
+                  <Upload size={20} className="text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-800 mb-0.5">Subir documento existente</p>
+                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                    Suba un PDF, Word o imagen de un documento ya elaborado para registrarlo y firmarlo digitalmente.
+                  </p>
+                </div>
+              </button>
+              <button onClick={() => setModo('generar')}
+                className="group flex items-start gap-4 p-4 border-2 border-gray-200 rounded-xl hover:border-purple-300 hover:bg-purple-50/30 transition-all text-left">
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-purple-50 group-hover:bg-purple-100 transition-colors">
+                  <Wand2 size={20} className="text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-800 mb-0.5">Generar nuevo con IA</p>
+                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                    Cree un documento desde cero con asistencia de inteligencia artificial. Podrá editar y firmar después.
+                  </p>
+                </div>
+              </button>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Estado</label>
-              <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                value={form.estado} onChange={e => set('estado', e.target.value as EstadoEmitido)}>
-                <option value="borrador">📝 Borrador</option>
-                <option value="vigente">✅ Vigente</option>
-              </select>
+            <div className="flex justify-end pt-1">
+              <button type="button" onClick={onClose}
+                className="px-4 py-2 text-sm text-gray-600 rounded-lg border border-gray-300 hover:bg-gray-50">Cancelar</button>
             </div>
           </div>
+        )}
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Número de control / folio</label>
-            <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              placeholder="DPP/OFICIO/00001/2026"
-              value={form.numero_control ?? ''} onChange={e => set('numero_control', e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Asunto <span className="text-red-500">*</span></label>
-            <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              placeholder="Asunto del oficio"
-              value={form.asunto} onChange={e => set('asunto', e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Destinatario</label>
-            <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              placeholder="Dependencia o persona destino"
-              value={form.dependencia_destino ?? ''} onChange={e => set('dependencia_destino', e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Fecha del documento</label>
-            <input type="date" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              value={form.fecha_documento ?? ''} onChange={e => set('fecha_documento', e.target.value)} />
-          </div>
+        {/* ── Formulario (subir o generar) ── */}
+        {(modo === 'subir' || modo === 'generar') && (
+          <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+            <button type="button" onClick={() => { setModo('elegir'); setErr(''); setArchivoSubir(null) }}
+              className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-700 -mt-1 mb-1">
+              <CornerUpLeft size={12} /> Cambiar opción
+            </button>
 
-          {/* Referencia interna MAFM/elaboro/reviso */}
-          <div className="bg-gray-50 rounded-xl p-3">
-            <p className="text-xs font-medium text-gray-600 mb-2">Referencia interna <span className="font-normal text-gray-400">(MAFM / elaboró / revisó)</span></p>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[10px] text-gray-500 mb-1">Elaboró (iniciales)</label>
-                <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm uppercase"
-                  placeholder="maca"
-                  maxLength={10}
-                  value={form.referencia_elaboro ?? ''} onChange={e => set('referencia_elaboro', e.target.value.toLowerCase())} />
+            {err && <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2">{err}</div>}
+
+            {/* Zona de subida de archivo (solo en modo subir) */}
+            {modo === 'subir' && (
+              <div className="space-y-2">
+                <input ref={fileRefModal} type="file" accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp,.doc,.docx"
+                  className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) setArchivoSubir(f) }} />
+                {archivoSubir ? (
+                  <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                    <FileText size={18} className="text-blue-600 flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium text-blue-800 truncate">{archivoSubir.name}</p>
+                      <p className="text-[10px] text-blue-600">{(archivoSubir.size / 1024 / 1024).toFixed(2)} MB</p>
+                    </div>
+                    <button type="button" onClick={() => setArchivoSubir(null)} className="text-blue-400 hover:text-blue-600">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <div onClick={() => fileRefModal.current?.click()}
+                    className="border-2 border-dashed border-blue-200 rounded-xl py-5 px-4 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-all">
+                    <Upload size={22} className="mx-auto mb-2 text-blue-500" />
+                    <p className="text-xs font-medium text-gray-700 mb-0.5">Seleccionar archivo</p>
+                    <p className="text-[10px] text-gray-400">PDF, Word, JPG, PNG — Max. 20 MB</p>
+                  </div>
+                )}
               </div>
-              <div>
-                <label className="block text-[10px] text-gray-500 mb-1">Revisó (iniciales)</label>
-                <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm uppercase"
-                  placeholder="beos"
-                  maxLength={10}
-                  value={form.referencia_reviso ?? ''} onChange={e => set('referencia_reviso', e.target.value.toLowerCase())} />
-              </div>
-            </div>
-            {(form.referencia_elaboro || form.referencia_reviso) && (
-              <p className="text-xs text-gray-500 mt-1.5">
-                Referencia: <span className="font-mono font-medium text-gray-700">
-                  MAFM/{form.referencia_elaboro || '???'}/{form.referencia_reviso || '???'}
-                </span>
-              </p>
             )}
-          </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-            <button type="button" onClick={onClose}
-              className="px-4 py-2 text-sm text-gray-600 rounded-lg border border-gray-300 hover:bg-gray-50">Cancelar</button>
-            <Button type="submit" size="sm" loading={mutation.isPending}>
-              <Plus size={14} /> Crear
-            </Button>
-          </div>
-        </form>
+            {/* Indicador de modo IA */}
+            {modo === 'generar' && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-100 rounded-lg">
+                <Wand2 size={13} className="text-purple-600" />
+                <p className="text-[11px] text-purple-700 font-medium">
+                  El contenido se generará con IA después de registrar. Podrá editarlo en el panel.
+                </p>
+              </div>
+            )}
+
+            {/* ── Área de origen + folio automático ── */}
+            <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3 space-y-3">
+              <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
+                <Building2 size={13} /> Área de origen y folio
+              </p>
+              <div>
+                <label className="block text-[10px] text-gray-600 mb-1">Área de origen <span className="text-red-500">*</span></label>
+                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  value={areaOrigen} onChange={e => handleAreaChange(e.target.value)}>
+                  <option value="">— Seleccionar área —</option>
+                  {areasDisponibles?.map(a => (
+                    <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              {areaOrigen && (
+                <div>
+                  <label className="block text-[10px] text-gray-600 mb-1">
+                    No. de oficio {cargandoFolio && <span className="text-amber-600">(generando...)</span>}
+                  </label>
+                  <div className="flex gap-2 items-center">
+                    <input className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono"
+                      placeholder="SFA/SF/DPP/SPFP/0001/2026"
+                      value={folioEditado ? (form.numero_control ?? '') : folioGenerado}
+                      onChange={e => { setFolioEditado(true); set('numero_control', e.target.value) }} />
+                    {folioEditado && (
+                      <button type="button" onClick={() => { setFolioEditado(false); set('numero_control', folioGenerado) }}
+                        className="text-[10px] text-amber-600 hover:text-amber-800 whitespace-nowrap">
+                        <RefreshCw size={12} />
+                      </button>
+                    )}
+                  </div>
+                  {!folioEditado && folioGenerado && (
+                    <p className="text-[10px] text-gray-400 mt-1">Folio auto-generado. Puede editarlo manualmente.</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ── Plantilla / categoría (opcional) ── */}
+            {plantillas.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Plantilla de oficio <span className="text-gray-400 font-normal">(opcional)</span>
+                </label>
+                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  value={plantillaSel} onChange={e => handlePlantillaChange(e.target.value)}>
+                  <option value="">— Sin plantilla —</option>
+                  {plantillas.map(p => (
+                    <option key={p.categoria} value={p.categoria}>{p.nombre}</option>
+                  ))}
+                </select>
+                {plantillaSel && (() => {
+                  const p = plantillas.find(x => x.categoria === plantillaSel)
+                  return p ? (
+                    <p className="text-[10px] text-gray-500 mt-1 italic">{p.fundamento_legal}</p>
+                  ) : null
+                })()}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Tipo</label>
+                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  value={form.tipo} onChange={e => set('tipo', e.target.value as TipoDocumento)}>
+                  {TIPOS.map(t => <option key={t} value={t}>{TIPO_ICONS[t]} {TIPO_LABELS[t]}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Fecha</label>
+                <input type="date" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  value={form.fecha_documento ?? ''} onChange={e => set('fecha_documento', e.target.value)} />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Asunto <span className="text-red-500">*</span></label>
+              <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                placeholder="Asunto del oficio"
+                value={form.asunto} onChange={e => set('asunto', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Destinatario</label>
+              <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                placeholder="Dependencia o persona destino"
+                value={form.dependencia_destino ?? ''} onChange={e => set('dependencia_destino', e.target.value)} />
+            </div>
+
+            {/* Referencia interna MAFM/elaboro/reviso */}
+            <div className="bg-gray-50 rounded-xl p-3">
+              <p className="text-xs font-medium text-gray-600 mb-2">Referencia interna <span className="font-normal text-gray-400">(MAFM / elaboró / revisó)</span></p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-1">Elaboró (iniciales)</label>
+                  <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm uppercase"
+                    placeholder="maca"
+                    maxLength={10}
+                    value={form.referencia_elaboro ?? ''} onChange={e => set('referencia_elaboro', e.target.value.toLowerCase())} />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-1">Revisó (iniciales)</label>
+                  <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm uppercase"
+                    placeholder="beos"
+                    maxLength={10}
+                    value={form.referencia_reviso ?? ''} onChange={e => set('referencia_reviso', e.target.value.toLowerCase())} />
+                </div>
+              </div>
+              {(form.referencia_elaboro || form.referencia_reviso) && (
+                <p className="text-xs text-gray-500 mt-1.5">
+                  Referencia: <span className="font-mono font-medium text-gray-700">
+                    MAFM/{form.referencia_elaboro || '???'}/{form.referencia_reviso || '???'}
+                  </span>
+                </p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <button type="button" onClick={onClose}
+                className="px-4 py-2 text-sm text-gray-600 rounded-lg border border-gray-300 hover:bg-gray-50">Cancelar</button>
+              <Button type="submit" size="sm" loading={mutation.isPending}>
+                {modo === 'subir' ? <><Upload size={14} /> Registrar</> : <><Wand2 size={14} /> Crear borrador</>}
+              </Button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   )
@@ -736,13 +964,12 @@ function PanelRecibido({
   const { user } = useAuth()
   const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
-  const [tab, setTab] = useState<'info' | 'ocr' | 'borrador' | 'documento' | 'historial'>('info')
+  const [tab, setTab] = useState<'info' | 'ocr' | 'documento' | 'historial'>('info')
   const [editBorrador, setEditBorrador] = useState(false)
   const [borradorText, setBorradorText] = useState(doc.borrador_respuesta ?? '')
   const [procesando, setProcesando] = useState(false)
   const [generando, setGenerando] = useState(false)
-  const [generandoEstructurado, setGenerandoEstructurado] = useState(false)
-  const [seccionesIA, setSeccionesIA] = useState<OficioEstructuradoResult['secciones'] | null>(null)
+  // seccionesIA y generandoEstructurado eliminados — ahora se usa un solo botón unificado
   const [descargando, setDescargando] = useState(false)
   const [firmando, setFirmando] = useState(false)
   const [firmaPassword, setFirmaPassword] = useState('')
@@ -762,7 +989,19 @@ function PanelRecibido({
   const [elaboroLocal, setElaboro] = useState(doc.referencia_elaboro ?? '')
   const [revisoLocal, setReviso] = useState(doc.referencia_reviso ?? '')
   const [instruccionesIA, setInstruccionesIA] = useState('')
-  const isDirector = user?.rol === 'admin_cliente' || user?.rol === 'superadmin'
+  // ── Roles reales de la DPP ──
+  // Director = admin_cliente (firma, revisa, devuelve)
+  // Área responsable = analista (genera respuesta, edita, envía para firma)
+  // Secretaría = secretaria (registra, turna, consulta)
+  // Superadmin = acceso total (para desarrollo/soporte)
+  const isDirector = user?.rol === 'admin_cliente'
+  const isSuperadmin = user?.rol === 'superadmin'
+  const isSecretaria = user?.rol === 'secretaria'
+  const isArea = user?.rol === 'analista'
+  const canTurnar = isDirector || isSecretaria || isSuperadmin
+  const canGenerarRespuesta = isArea || isDirector || isSuperadmin  // Área + Director + Super
+  const canFirmar = isDirector  // SOLO Director firma (no superadmin, no área, no secretaría)
+  const canEnviarParaFirma = isArea || isSuperadmin  // Área envía para firma
 
   // Auto-cargar original al montar
   useEffect(() => {
@@ -781,9 +1020,10 @@ function PanelRecibido({
     onRefetch()
   }
 
+  const [instruccionesTurno, setInstruccionesTurno] = useState('')
   const turnarMutation = useMutation({
     mutationFn: ({ cod, nom }: { cod: string; nom: string }) =>
-      documentosApi.confirmarTurno(doc.id, cod, nom),
+      documentosApi.confirmarTurno(doc.id, cod, nom, instruccionesTurno || undefined),
     onSuccess: invalidate,
   })
 
@@ -806,20 +1046,12 @@ function PanelRecibido({
 
   const handleBorrador = async (instrucciones?: string) => {
     setGenerando(true)
-    try { await documentosApi.generarBorrador(doc.id, instrucciones || instruccionesIA || undefined); invalidate(); setTab('borrador') }
+    try { await documentosApi.generarBorrador(doc.id, instrucciones || instruccionesIA || undefined); invalidate() }
     catch { /* error */ }
     finally { setGenerando(false) }
   }
 
-  const handleOficioEstructurado = async (instrucciones?: string) => {
-    setGenerandoEstructurado(true)
-    try {
-      const result = await documentosApi.generarOficioEstructurado(doc.id, instrucciones || instruccionesIA || undefined)
-      setSeccionesIA(result.secciones)
-      invalidate()
-    } catch { /* error */ }
-    finally { setGenerandoEstructurado(false) }
-  }
+  // handleOficioEstructurado eliminado — unificado en handleBorrador
 
   const handleDescargarOficio = async () => {
     setDescargando(true)
@@ -935,12 +1167,24 @@ function PanelRecibido({
         </div>
       )}
 
+      {/* Badge "Para conocimiento" */}
+      {!doc.requiere_respuesta && (
+        <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
+          <BookOpen size={12} className="text-blue-600 flex-shrink-0" />
+          <span className="text-[10px] font-medium text-blue-700">Documento para conocimiento — no requiere respuesta</span>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex border-b border-gray-100">
-        {(['info', 'ocr', 'borrador', ...(doc.borrador_respuesta ? ['documento'] : []), 'historial'] as const).map(t => (
+        {([
+          'info',
+          'ocr',
+          ...(doc.requiere_respuesta !== false && doc.borrador_respuesta ? ['documento'] : []),
+          'historial',
+        ] as const).map(t => (
           <button key={t} onClick={() => {
             setTab(t as typeof tab)
-            // Auto-cargar PDF al seleccionar tab Documento
             if (t === 'documento' && !pdfUrl && !loadingPdf) {
               setLoadingPdf(true)
               documentosApi.obtenerOficioPdfUrl(doc.id)
@@ -952,7 +1196,7 @@ function PanelRecibido({
             className={clsx('flex-1 py-2 text-xs font-medium transition-colors',
               tab === t ? 'border-b-2 text-gray-900' : 'text-gray-500 hover:text-gray-700')}
             style={tab === t ? { borderColor: GUINDA, color: GUINDA } : {}}>
-            {t === 'info' ? 'Datos' : t === 'ocr' ? '🤖 IA' : t === 'borrador' ? '✍️ Borrador' : t === 'documento' ? '📄 Documento' : '📋 Historial'}
+            {t === 'info' ? 'Datos' : t === 'ocr' ? '🤖 IA' : t === 'documento' ? '📄 Documento' : '📋 Historial'}
           </button>
         ))}
       </div>
@@ -981,7 +1225,7 @@ function PanelRecibido({
                   </div>
                 )}
                 <div className="flex gap-2">
-                  <button onClick={() => { setTab('borrador'); setEditBorrador(true); setBorradorText(doc.borrador_respuesta ?? '') }}
+                  <button onClick={() => { setTab('ocr'); setEditBorrador(true); setBorradorText(doc.borrador_respuesta ?? '') }}
                     className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs rounded-lg font-medium border border-red-300 text-red-700 hover:bg-red-100 transition-colors">
                     <Edit3 size={11} /> Corregir borrador
                   </button>
@@ -1002,6 +1246,39 @@ function PanelRecibido({
                 <History size={12} className="text-amber-600" />
                 <span className="text-[10px] font-medium text-amber-700">Versión {doc.version}</span>
                 <span className="text-[10px] text-amber-500">— {doc.version - 1} corrección{doc.version > 2 ? 'es' : ''}</span>
+              </div>
+            )}
+
+            {/* ── Visor del oficio original (duplicado en tab Datos) ── */}
+            {doc.url_storage && (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
+                  <Eye size={10} /> Documento original
+                </p>
+                {loadingOriginal ? (
+                  <div className="flex items-center justify-center py-6 text-gray-400">
+                    <RotateCcw size={14} className="animate-spin mr-2" />
+                    <span className="text-xs">Cargando…</span>
+                  </div>
+                ) : originalUrl ? (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-100" style={{ height: 260 }}>
+                    <iframe src={originalUrl} title="Oficio original" className="w-full h-full" style={{ border: 'none' }} />
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center py-4 bg-gray-50 rounded-lg">
+                    <button onClick={() => {
+                      setLoadingOriginal(true)
+                      documentosApi.obtenerArchivoOriginalUrl(doc.id)
+                        .then(url => setOriginalUrl(url))
+                        .catch(() => {})
+                        .finally(() => setLoadingOriginal(false))
+                    }}
+                      className="text-xs text-gray-500 underline hover:text-gray-700">Cargar documento</button>
+                  </div>
+                )}
+                {doc.nombre_archivo && (
+                  <p className="text-[10px] text-gray-400 text-center truncate">{doc.nombre_archivo}</p>
+                )}
               </div>
             )}
 
@@ -1071,11 +1348,17 @@ function PanelRecibido({
                     <CheckCircle2 size={10} /> Turno confirmado
                   </p>
                   <p className="text-xs font-semibold text-green-900">{doc.area_turno_nombre}</p>
+                  {doc.instrucciones_turno && (
+                    <div className="mt-1.5 bg-white/60 rounded px-2 py-1.5">
+                      <p className="text-[10px] font-medium text-green-700 mb-0.5">Instrucciones:</p>
+                      <p className="text-[11px] text-green-900 leading-snug">{doc.instrucciones_turno}</p>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Selector de área */}
-              {!doc.area_turno_confirmada && (
+              {/* Selector de área — solo Director y Secretaría pueden turnar */}
+              {!doc.area_turno_confirmada && canTurnar && (
                 <div className="space-y-2">
                   <select
                     className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs"
@@ -1087,6 +1370,16 @@ function PanelRecibido({
                       <option key={a.codigo} value={a.codigo}>{a.nombre}</option>
                     ))}
                   </select>
+                  {/* Instrucciones del Director al turnar */}
+                  {isDirector && (
+                    <textarea
+                      className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs resize-none focus:ring-1 focus:ring-[#911A3A]/40 focus:border-[#911A3A] focus:outline-none"
+                      rows={2}
+                      placeholder="Instrucciones para el área (opcional)…"
+                      value={instruccionesTurno}
+                      onChange={e => setInstruccionesTurno(e.target.value)}
+                    />
+                  )}
                   <button
                     onClick={() => {
                       const sel = document.getElementById('area-select') as HTMLSelectElement
@@ -1102,6 +1395,9 @@ function PanelRecibido({
                   </button>
                 </div>
               )}
+              {!doc.area_turno_confirmada && !canTurnar && (
+                <p className="text-[10px] text-gray-400 italic">Pendiente de turno por Director o Secretaría.</p>
+              )}
             </div>
 
             {/* Pipeline */}
@@ -1109,7 +1405,7 @@ function PanelRecibido({
               <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Estado del trámite</p>
               <PipelineRecibido estado={doc.estado} />
               <div className="flex gap-1 mt-2 flex-wrap">
-                {(['en_atencion', 'respondido', 'archivado'] as const).map(e => (
+                {(['en_atencion', 'respondido'] as const).map(e => (
                   <button key={e} onClick={() => estadoMutation.mutate(e)}
                     disabled={doc.estado === e}
                     className={clsx(
@@ -1190,35 +1486,165 @@ function PanelRecibido({
               </div>
             )}
 
-            {/* ── Generación de respuesta con IA ── */}
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <Wand2 size={14} className="text-blue-600" />
-                <p className="text-xs font-medium text-blue-800">Generar respuesta con IA</p>
-              </div>
-              <textarea
-                value={instruccionesIA}
-                onChange={e => setInstruccionesIA(e.target.value)}
-                placeholder="Instrucciones para la IA (ej: 'Contestar en sentido negativo ya que los datos maestros no son correctos', 'Autorizar la certificación presupuestal por el monto solicitado')..."
-                className="w-full border border-blue-200 rounded-lg px-3 py-2 text-xs h-16 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
-              />
-              <div className="flex gap-2">
-                <button onClick={() => handleBorrador(instruccionesIA)} disabled={generando || generandoEstructurado}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium border transition-colors"
-                  style={{ borderColor: GUINDA, color: GUINDA }}>
-                  {generando
-                    ? <><RotateCcw size={12} className="animate-spin" /> Generando...</>
-                    : <><Wand2 size={12} /> Borrador simple</>}
-                </button>
-                <button onClick={() => handleOficioEstructurado(instruccionesIA)} disabled={generandoEstructurado || generando}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium text-white transition-colors"
+            {/* ── Generación de respuesta con IA (solo Área + Director + Super) ── */}
+            {canGenerarRespuesta && (
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Wand2 size={14} className="text-blue-600" />
+                  <p className="text-xs font-medium text-blue-800">Generar oficio de respuesta con IA</p>
+                </div>
+                <textarea
+                  value={instruccionesIA}
+                  onChange={e => setInstruccionesIA(e.target.value)}
+                  placeholder="Instrucciones para la IA (ej: 'Contestar en sentido negativo ya que los datos maestros no son correctos', 'Autorizar la certificación presupuestal por el monto solicitado')..."
+                  className="w-full border border-blue-200 rounded-lg px-3 py-2 text-xs h-16 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
+                />
+                <button onClick={() => handleBorrador(instruccionesIA)} disabled={generando}
+                  className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs rounded-lg font-medium text-white transition-colors"
                   style={{ backgroundColor: GUINDA }}>
-                  {generandoEstructurado
-                    ? <><RotateCcw size={12} className="animate-spin" /> Generando...</>
-                    : <><Scale size={12} /> Oficio jurídico</>}
+                  {generando
+                    ? <><RotateCcw size={12} className="animate-spin" /> Generando oficio...</>
+                    : <><Wand2 size={12} /> Generar oficio de respuesta</>}
                 </button>
               </div>
-            </div>
+            )}
+
+            {/* Secretaría: solo puede ver el borrador, no generar */}
+            {isSecretaria && !doc.borrador_respuesta && (
+              <div className="text-center py-4 text-gray-400">
+                <p className="text-xs">El área responsable generará la respuesta al oficio.</p>
+              </div>
+            )}
+
+            {/* ── Borrador generado (visible para todos los roles) ── */}
+            {doc.borrador_respuesta && (
+              <>
+                {/* Datos del oficio de respuesta (editable solo por área/director/super) */}
+                {canGenerarRespuesta && (
+                  <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Datos del oficio de respuesta</p>
+                    <div>
+                      <label className="text-[10px] text-gray-500">Folio de respuesta</label>
+                      <div className="flex gap-1.5">
+                        <input type="text" placeholder="SFA/SF/DPP/SPFP/0001/2026"
+                          className="flex-1 border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none font-mono"
+                          style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
+                          value={folioLocal} onChange={e => setFolioLocal(e.target.value)}
+                          onBlur={() => folioLocal !== (doc.folio_respuesta ?? '') && guardarFolioRef('folio', folioLocal)} />
+                        {!folioLocal && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const { folio } = await documentosApi.siguienteFolio(doc.tipo?.toUpperCase() || 'OFICIO', doc.area_turno || undefined)
+                                setFolioLocal(folio)
+                                await documentosApi.update(doc.id, { folio_respuesta: folio })
+                                invalidate()
+                              } catch { /* */ }
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 text-[9px] font-medium rounded-md border transition-colors whitespace-nowrap"
+                            style={{ borderColor: GUINDA, color: GUINDA }}
+                            title="Generar folio consecutivo automático">
+                            <Hash size={10} /> Auto
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-gray-500">Elaboró</label>
+                        <input type="text" placeholder="ECJ"
+                          className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none"
+                          style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
+                          value={elaboroLocal} onChange={e => setElaboro(e.target.value)}
+                          onBlur={() => elaboroLocal !== (doc.referencia_elaboro ?? '') && guardarFolioRef('elaboro', elaboroLocal)} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-500">Revisó</label>
+                        <input type="text" placeholder="bhs"
+                          className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none"
+                          style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
+                          value={revisoLocal} onChange={e => setReviso(e.target.value)}
+                          onBlur={() => revisoLocal !== (doc.referencia_reviso ?? '') && guardarFolioRef('reviso', revisoLocal)} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Texto del borrador */}
+                {editBorrador && canGenerarRespuesta ? (
+                  <div className="space-y-2">
+                    <textarea rows={10} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs resize-none focus:ring-1"
+                      style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
+                      value={borradorText} onChange={e => setBorradorText(e.target.value)} />
+                    <div className="flex gap-2">
+                      <button onClick={() => setEditBorrador(false)}
+                        className="flex-1 py-1.5 text-xs border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50">Cancelar</button>
+                      <button onClick={() => guardarBorradorMutation.mutate()}
+                        disabled={guardarBorradorMutation.isPending}
+                        className="flex-1 py-1.5 text-xs rounded-lg text-white font-medium"
+                        style={{ backgroundColor: GUINDA }}>
+                        {guardarBorradorMutation.isPending ? 'Guardando...' : 'Guardar cambios'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                      <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{doc.borrador_respuesta}</p>
+                    </div>
+                    {canGenerarRespuesta && (
+                      <button onClick={() => { setEditBorrador(true); setBorradorText(doc.borrador_respuesta ?? '') }}
+                        className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50">
+                        <Edit3 size={11} /> Editar borrador
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Acciones según rol ── */}
+                <div className="space-y-2 pt-1">
+                  {/* Descargar DOCX (todos los roles) */}
+                  <button onClick={handleDescargarOficio} disabled={descargando}
+                    className="w-full flex items-center justify-center gap-2 py-2 text-xs rounded-lg font-medium text-white transition-colors bg-blue-600 hover:bg-blue-700 disabled:opacity-50">
+                    {descargando
+                      ? <><RotateCcw size={12} className="animate-spin" /> Generando DOCX...</>
+                      : <><Download size={12} /> Descargar oficio (.docx)</>}
+                  </button>
+
+                  {doc.firmado_digitalmente ? (
+                    <div className="flex items-center justify-center gap-2 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                      <CheckCircle2 size={14} className="text-emerald-600" />
+                      <span className="text-xs font-medium text-emerald-700">Documento firmado electrónicamente</span>
+                    </div>
+                  ) : doc.estado === 'respondido' && !canFirmar ? (
+                    <div className="flex items-center justify-center gap-2 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+                      <Clock size={14} className="text-amber-600" />
+                      <span className="text-xs font-medium text-amber-700">Enviado para firma del Director</span>
+                    </div>
+                  ) : canFirmar ? (
+                    <button onClick={() => setShowFirmaModal(true)}
+                      disabled={!['en_atencion', 'respondido'].includes(doc.estado)}
+                      className="w-full flex items-center justify-center gap-2 py-2 text-xs rounded-lg font-medium border transition-colors disabled:opacity-50"
+                      style={{ borderColor: GUINDA, color: GUINDA }}>
+                      <FileSignature size={12} /> Firmar documento
+                    </button>
+                  ) : canEnviarParaFirma ? (
+                    <button onClick={async () => {
+                      try {
+                        await documentosApi.cambiarEstado(doc.id, 'respondido' as never)
+                        invalidate()
+                      } catch { /* error */ }
+                    }}
+                      disabled={doc.estado === 'respondido'}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 text-xs rounded-lg font-medium text-white transition-colors disabled:opacity-50"
+                      style={{ backgroundColor: GUINDA }}>
+                      <Send size={12} /> Enviar para firma del Director
+                    </button>
+
+                  ) : null}
+                </div>
+              </>
+            )}
 
             {/* Datos extraídos (resumen compacto) */}
             {doc.ocr_procesado && datosIA && (
@@ -1237,18 +1663,6 @@ function PanelRecibido({
                     </div>
                   ))}
                 </div>
-                {datosIA['asunto'] && (
-                  <div className="bg-blue-50 rounded-lg px-3 py-2">
-                    <p className="text-[10px] text-blue-600 mb-0.5">Asunto detectado</p>
-                    <p className="text-xs text-blue-900 font-medium">{datosIA['asunto'] as string}</p>
-                  </div>
-                )}
-                {doc.sugerencia_area_nombre && (
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
-                    <p className="text-[10px] text-indigo-600 font-semibold mb-0.5">Clasificación automática</p>
-                    <p className="text-xs font-semibold text-indigo-900">{doc.sugerencia_area_nombre}</p>
-                  </div>
-                )}
               </div>
             )}
 
@@ -1261,203 +1675,16 @@ function PanelRecibido({
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-[10px]">
                   <div className="bg-white/60 rounded-lg px-3 py-2">
-                    <p className="text-emerald-700 font-medium">Fecha firma</p>
-                    <p className="text-gray-700 font-medium">{(doc.firma_metadata as Record<string,string>)['fecha_firma'] ? new Date((doc.firma_metadata as Record<string,string>)['fecha_firma']).toLocaleString('es-MX') : '—'}</p>
-                  </div>
-                  <div className="bg-white/60 rounded-lg px-3 py-2">
-                    <p className="text-emerald-700 font-medium">RFC</p>
-                    <p className="text-gray-700 font-medium">{(doc.firma_metadata as Record<string,string>)['rfc_firmante'] || '—'}</p>
-                  </div>
-                  <div className="bg-white/60 rounded-lg px-3 py-2">
                     <p className="text-emerald-700 font-medium">Firmante</p>
                     <p className="text-gray-700 font-medium">{(doc.firma_metadata as Record<string,string>)['nombre_firmante'] || '—'}</p>
                   </div>
                   <div className="bg-white/60 rounded-lg px-3 py-2">
-                    <p className="text-emerald-700 font-medium">No. Serie</p>
-                    <p className="text-gray-700 font-medium truncate">{((doc.firma_metadata as Record<string,string>)['serial_certificado'] || '—').slice(0, 20)}</p>
+                    <p className="text-emerald-700 font-medium">Fecha firma</p>
+                    <p className="text-gray-700 font-medium">{(doc.firma_metadata as Record<string,string>)['fecha_firma'] ? new Date((doc.firma_metadata as Record<string,string>)['fecha_firma']).toLocaleString('es-MX') : '—'}</p>
                   </div>
                 </div>
               </div>
             )}
-          </>
-        )}
-
-        {/* ── Tab: Borrador ─────────────────────────────────────────────────── */}
-        {tab === 'borrador' && (
-          <>
-            {/* Area 1: Datos del oficio de respuesta */}
-            <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-              <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Datos del oficio de respuesta</p>
-              <div>
-                <label className="text-[10px] text-gray-500">Folio de respuesta</label>
-                <div className="flex gap-1.5">
-                  <input type="text" placeholder="DPP/OFICIO/00001/2026"
-                    className="flex-1 border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none font-mono"
-                    style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                    value={folioLocal} onChange={e => setFolioLocal(e.target.value)}
-                    onBlur={() => folioLocal !== (doc.folio_respuesta ?? '') && guardarFolioRef('folio', folioLocal)} />
-                  {!folioLocal && (
-                    <button
-                      onClick={async () => {
-                        try {
-                          const { folio } = await documentosApi.siguienteFolio(doc.tipo?.toUpperCase() || 'OFICIO')
-                          setFolioLocal(folio)
-                          await documentosApi.update(doc.id, { folio_respuesta: folio })
-                          invalidate()
-                        } catch { /* */ }
-                      }}
-                      className="flex items-center gap-1 px-2 py-1 text-[9px] font-medium rounded-md border transition-colors whitespace-nowrap"
-                      style={{ borderColor: GUINDA, color: GUINDA }}
-                      title="Generar folio consecutivo automático">
-                      <Hash size={10} /> Auto
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] text-gray-500">Elaboró</label>
-                  <input type="text" placeholder="ECJ"
-                    className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none"
-                    style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                    value={elaboroLocal} onChange={e => setElaboro(e.target.value)}
-                    onBlur={() => elaboroLocal !== (doc.referencia_elaboro ?? '') && guardarFolioRef('elaboro', elaboroLocal)} />
-                </div>
-                <div>
-                  <label className="text-[10px] text-gray-500">Revisó</label>
-                  <input type="text" placeholder="bhs"
-                    className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none"
-                    style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                    value={revisoLocal} onChange={e => setReviso(e.target.value)}
-                    onBlur={() => revisoLocal !== (doc.referencia_reviso ?? '') && guardarFolioRef('reviso', revisoLocal)} />
-                </div>
-              </div>
-              {(folioLocal || elaboroLocal || revisoLocal) && (
-                <p className="text-[10px] text-gray-400 font-mono">
-                  Ref: MAFM/{elaboroLocal || '???'}/{revisoLocal || '???'}
-                </p>
-              )}
-            </div>
-
-            {/* Area 2: Botones de generación */}
-            <div className="flex gap-2">
-              <button onClick={handleBorrador} disabled={generando || generandoEstructurado}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium border transition-colors"
-                style={{ borderColor: GUINDA, color: GUINDA }}>
-                {generando
-                  ? <><RotateCcw size={12} className="animate-spin" /> Generando...</>
-                  : <><Wand2 size={12} /> Borrador simple</>}
-              </button>
-              <button onClick={handleOficioEstructurado} disabled={generandoEstructurado || generando}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium text-white transition-colors"
-                style={{ backgroundColor: GUINDA }}>
-                {generandoEstructurado
-                  ? <><RotateCcw size={12} className="animate-spin" /> Generando...</>
-                  : <><Scale size={12} /> Oficio jurídico</>}
-              </button>
-            </div>
-
-            {/* Area 3: Vista estructurada de 4 secciones */}
-            {(seccionesIA || doc.borrador_respuesta) ? (
-              <>
-                {seccionesIA ? (
-                  <div className="space-y-2">
-                    {[
-                      { key: 'fundamento', label: 'I. Fundamento competencial', icon: Shield, color: '#4f46e5', bg: '#eef2ff' },
-                      { key: 'referencia', label: 'II. Referencia del oficio', icon: BookOpen, color: '#2563eb', bg: '#eff6ff' },
-                      { key: 'objeto', label: 'III. Objeto del oficio', icon: FileText, color: '#92400e', bg: '#fffbeb' },
-                      { key: 'cierre', label: 'IV. Cierre institucional', icon: Stamp, color: '#047857', bg: '#ecfdf5' },
-                    ].map(sec => {
-                      const Icon = sec.icon
-                      const text = seccionesIA[sec.key as keyof typeof seccionesIA] || ''
-                      return (
-                        <div key={sec.key} className="rounded-lg border overflow-hidden" style={{ borderColor: `${sec.color}30` }}>
-                          <div className="flex items-center gap-1.5 px-2.5 py-1.5" style={{ backgroundColor: sec.bg }}>
-                            <Icon size={12} style={{ color: sec.color }} />
-                            <span className="text-[10px] font-semibold" style={{ color: sec.color }}>{sec.label}</span>
-                          </div>
-                          <div className="px-2.5 py-2">
-                            <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{text || '—'}</p>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                ) : editBorrador ? (
-                  <div className="space-y-2">
-                    <textarea rows={10} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs resize-none focus:ring-1"
-                      style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                      value={borradorText} onChange={e => setBorradorText(e.target.value)} />
-                    <div className="flex gap-2">
-                      <button onClick={() => setEditBorrador(false)}
-                        className="flex-1 py-1.5 text-xs border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50">Cancelar</button>
-                      <button onClick={() => guardarBorradorMutation.mutate()}
-                        disabled={guardarBorradorMutation.isPending}
-                        className="flex-1 py-1.5 text-xs rounded-lg text-white font-medium"
-                        style={{ backgroundColor: GUINDA }}>
-                        {guardarBorradorMutation.isPending ? 'Guardando...' : 'Guardar'}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                      <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{doc.borrador_respuesta}</p>
-                    </div>
-                    <button onClick={() => { setEditBorrador(true); setBorradorText(doc.borrador_respuesta ?? '') }}
-                      className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50">
-                      <Edit3 size={11} /> Editar borrador
-                    </button>
-                  </div>
-                )}
-
-                {/* Area 4: Acciones */}
-                <div className="space-y-2 pt-1">
-                  <button onClick={handleDescargarOficio} disabled={descargando || !doc.borrador_respuesta}
-                    className="w-full flex items-center justify-center gap-2 py-2 text-xs rounded-lg font-medium text-white transition-colors bg-blue-600 hover:bg-blue-700 disabled:opacity-50">
-                    {descargando
-                      ? <><RotateCcw size={12} className="animate-spin" /> Generando DOCX...</>
-                      : <><Download size={12} /> Descargar oficio (.docx)</>}
-                  </button>
-
-                  {doc.firmado_digitalmente ? (
-                    <div className="flex items-center justify-center gap-2 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
-                      <CheckCircle2 size={14} className="text-emerald-600" />
-                      <span className="text-xs font-medium text-emerald-700">Documento firmado</span>
-                    </div>
-                  ) : doc.estado === 'devuelto' ? (
-                    <div className="flex items-center justify-center gap-2 py-2 bg-red-50 border border-red-200 rounded-lg">
-                      <AlertTriangle size={14} className="text-red-500" />
-                      <span className="text-xs font-medium text-red-600">Requiere correcciones antes de firma</span>
-                    </div>
-                  ) : isDirector ? (
-                    <button onClick={() => setShowFirmaModal(true)} disabled={!doc.borrador_respuesta || doc.estado !== 'en_atencion'}
-                      className="w-full flex items-center justify-center gap-2 py-2 text-xs rounded-lg font-medium border transition-colors disabled:opacity-50"
-                      style={{ borderColor: GUINDA, color: GUINDA }}>
-                      <FileSignature size={12} /> Firmar documento
-                    </button>
-                  ) : (
-                    <button onClick={async () => {
-                      try {
-                        await documentosApi.cambiarEstado(doc.id, 'en_atencion' as never)
-                        invalidate()
-                      } catch { /* error */ }
-                    }} disabled={!doc.borrador_respuesta}
-                      className="w-full flex items-center justify-center gap-2 py-2 text-xs rounded-lg font-medium text-white transition-colors disabled:opacity-50"
-                      style={{ backgroundColor: GUINDA }}>
-                      <Send size={12} /> Enviar a firma del Director
-                    </button>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className="text-center py-6 text-gray-400">
-                <Scale size={24} className="mx-auto mb-2 opacity-40" />
-                <p className="text-xs">Genera el oficio con estructura jurídica de 4 secciones</p>
-                <p className="text-[10px] text-gray-300 mt-1">Fundamento · Referencia · Objeto · Cierre</p>
-              </div>
-            )}
-
           </>
         )}
 
@@ -1607,27 +1834,29 @@ function PanelRecibido({
               <AlertTriangle size={14} className="text-red-500" />
               <span className="text-xs font-medium text-red-600">Devuelto — requiere correcciones antes de firma</span>
             </div>
-          ) : doc.estado === 'en_atencion' && doc.borrador_respuesta ? (
-            <div className="flex gap-2">
+          ) : ['en_atencion', 'respondido'].includes(doc.estado) && doc.borrador_respuesta ? (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                {isDirector ? (
+                  <button onClick={() => setShowFirmaModal(true)}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 text-xs rounded-lg text-white font-semibold transition-colors hover:opacity-90"
+                    style={{ backgroundColor: GUINDA }}>
+                    <FileSignature size={13} /> Firmar documento
+                  </button>
+                ) : (
+                  <button onClick={async () => {
+                    try { await documentosApi.cambiarEstado(doc.id, 'respondido' as never); invalidate() } catch { /* */ }
+                  }}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 text-xs rounded-lg text-white font-semibold transition-colors hover:opacity-90"
+                    style={{ backgroundColor: GUINDA }}>
+                    <Send size={13} /> Enviar a firma del Director
+                  </button>
+                )}
+              </div>
               {isDirector && (
                 <button onClick={() => { setObservacionesDevolucion(''); setShowDevolucionModal(true) }}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 text-xs rounded-lg font-medium border border-red-300 text-red-700 hover:bg-red-50 transition-colors">
-                  <CornerUpLeft size={13} /> Devolver
-                </button>
-              )}
-              {isDirector ? (
-                <button onClick={() => setShowFirmaModal(true)}
-                  className="flex-[2] flex items-center justify-center gap-2 py-2.5 text-xs rounded-lg text-white font-semibold transition-colors hover:opacity-90"
-                  style={{ backgroundColor: GUINDA }}>
-                  <FileSignature size={13} /> Firmar documento
-                </button>
-              ) : (
-                <button onClick={async () => {
-                  try { await documentosApi.cambiarEstado(doc.id, 'en_atencion' as never); invalidate() } catch { /* */ }
-                }}
-                  className="flex-[2] flex items-center justify-center gap-2 py-2.5 text-xs rounded-lg text-white font-semibold transition-colors hover:opacity-90"
-                  style={{ backgroundColor: GUINDA }}>
-                  <Send size={13} /> Enviar a firma del Director
+                  className="w-full flex items-center justify-center gap-2 py-2 text-xs rounded-lg font-medium bg-red-50 border border-red-300 text-red-700 hover:bg-red-100 transition-colors">
+                  <AlertTriangle size={12} /> Devolver para correcciones
                 </button>
               )}
             </div>
@@ -1675,22 +1904,7 @@ function PanelRecibido({
             {/* Vista previa del oficio con formato institucional */}
             <div className="flex-1 overflow-y-auto px-5 py-4">
               <div className="bg-white border border-gray-300 rounded-lg shadow-sm mx-auto max-w-[580px]" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
-                {/* Barra guinda institucional */}
-                <div className="h-1.5 rounded-t-lg" style={{ backgroundColor: GUINDA }} />
-
                 <div className="px-8 py-6 space-y-4">
-                  {/* Header institucional */}
-                  <div className="text-center space-y-0.5 pb-3 border-b" style={{ borderColor: `${GUINDA}30` }}>
-                    <p className="text-[9px] uppercase tracking-[0.2em] font-semibold" style={{ color: GUINDA }}>
-                      Gobierno del Estado de Michoacán de Ocampo
-                    </p>
-                    <p className="text-[8px] uppercase tracking-wider text-gray-500">
-                      Secretaría de Finanzas y Administración
-                    </p>
-                    <p className="text-[8px] uppercase tracking-wider text-gray-500">
-                      Dirección de Programación y Presupuesto
-                    </p>
-                  </div>
 
                   {/* Folio y fecha */}
                   <div className="flex justify-between items-start text-[10px]">
@@ -1714,30 +1928,7 @@ function PanelRecibido({
 
                   {/* Cuerpo del oficio */}
                   <div className="text-[10px] text-gray-800 leading-relaxed space-y-3" style={{ textAlign: 'justify' }}>
-                    {seccionesIA ? (
-                      <>
-                        {[
-                          { key: 'fundamento', label: 'Fundamento', color: '#4f46e5' },
-                          { key: 'referencia', label: 'Referencia', color: '#2563eb' },
-                          { key: 'objeto', label: 'Objeto', color: '#92400e' },
-                          { key: 'cierre', label: 'Cierre', color: '#047857' },
-                        ].map(sec => {
-                          const text = seccionesIA[sec.key as keyof typeof seccionesIA] || ''
-                          if (!text) return null
-                          return (
-                            <div key={sec.key}>
-                              <div className="flex items-center gap-1 mb-0.5">
-                                <div className="w-1 h-1 rounded-full" style={{ backgroundColor: sec.color }} />
-                                <span className="text-[8px] font-semibold uppercase tracking-wide" style={{ color: sec.color }}>{sec.label}</span>
-                              </div>
-                              <p className="whitespace-pre-wrap">{text}</p>
-                            </div>
-                          )
-                        })}
-                      </>
-                    ) : (
-                      <p className="whitespace-pre-wrap">{doc.borrador_respuesta}</p>
-                    )}
+                    <p className="whitespace-pre-wrap">{doc.borrador_respuesta}</p>
                   </div>
 
                   {/* Firma */}
@@ -1759,9 +1950,9 @@ function PanelRecibido({
                 </div>
               </div>
 
-              {/* Nota: editar en tab borrador */}
+              {/* Nota: editar en tab IA */}
               <p className="text-[10px] text-gray-400 text-center mt-3">
-                Para editar el contenido, regresa a la pestaña <strong>Borrador</strong>. Esta es una vista previa del documento final.
+                Para editar el contenido, usa la pestaña <strong>IA / OCR</strong>. Esta es una vista previa del documento final.
               </p>
             </div>
 
@@ -1820,7 +2011,7 @@ function PanelRecibido({
                       />
                     </div>
                     <div className="flex gap-2 flex-shrink-0">
-                      {(user?.rol === 'admin_cliente' || user?.rol === 'superadmin') && (
+                      {isDirector && (
                         <button onClick={() => setShowDevolucionForm(true)}
                           className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg font-medium border border-red-300 text-red-700 hover:bg-red-50 transition-colors">
                           <CornerUpLeft size={12} /> Devolver
@@ -2022,6 +2213,8 @@ function PanelEmitido({
     folio_respuesta: doc.folio_respuesta || '',
   })
   const isDirector = user?.rol === 'admin_cliente' || user?.rol === 'superadmin'
+  const isSecretaria = user?.rol === 'secretaria'
+  const canFirmar = isDirector  // Solo Director firma
 
   // Auto-cargar original al montar
   useEffect(() => {
@@ -2422,35 +2615,49 @@ function PanelEmitido({
         ) : doc.estado === 'borrador' ? (
           <div className="space-y-2">
             <div className="flex gap-2">
-              {doc.borrador_respuesta && isDirector && (
+              {/* Director puede firmar directamente desde borrador si hay contenido */}
+              {(doc.borrador_respuesta || doc.url_storage) && isDirector && (
                 <button onClick={() => setShowFirmaModal(true)}
                   className="flex-[2] flex items-center justify-center gap-2 py-2.5 text-xs rounded-lg text-white font-semibold hover:opacity-90"
                   style={{ backgroundColor: GUINDA }}>
                   <FileSignature size={13} /> Firmar y publicar
                 </button>
               )}
-              {doc.borrador_respuesta && !isDirector && (
-                <button onClick={() => handleCambiarEstado('vigente')}
+              {/* Colaborador envía a revisión del Director */}
+              {(doc.borrador_respuesta || doc.url_storage) && !isDirector && (
+                <button onClick={() => handleCambiarEstado('en_revision')}
                   className="flex-[2] flex items-center justify-center gap-2 py-2.5 text-xs rounded-lg text-white font-semibold hover:opacity-90"
                   style={{ backgroundColor: GUINDA }}>
-                  <Send size={13} /> Enviar a firma del Director
+                  <Send size={13} /> Enviar a revisión
                 </button>
               )}
-              <button onClick={() => handleCambiarEstado('vigente')}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs rounded-lg font-medium border border-emerald-300 text-emerald-700 hover:bg-emerald-50">
-                <CheckCircle2 size={12} /> Publicar
-              </button>
             </div>
             <button onClick={onDelete}
               className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[10px] rounded-lg border border-red-200 text-red-500 hover:bg-red-50">
               <Trash2 size={10} /> Eliminar borrador
             </button>
           </div>
-        ) : doc.estado === 'vigente' ? (
-          <button onClick={() => handleCambiarEstado('archivado')}
-            className="w-full flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium border border-gray-300 text-gray-600 hover:bg-gray-50">
-            <Archive size={12} /> Archivar documento
-          </button>
+        ) : doc.estado === 'en_revision' ? (
+          <div className="space-y-2">
+            {/* Banner: En revisión del Director */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-200 rounded-lg">
+              <Clock size={13} className="text-purple-600" />
+              <span className="text-[11px] font-medium text-purple-700">Pendiente de revisión y firma del Director</span>
+            </div>
+            {isDirector && (
+              <>
+                <button onClick={() => setShowFirmaModal(true)}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 text-xs rounded-lg text-white font-semibold hover:opacity-90"
+                  style={{ backgroundColor: GUINDA }}>
+                  <FileSignature size={13} /> Firmar y publicar
+                </button>
+                <button onClick={() => handleCambiarEstado('borrador')}
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[10px] rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50">
+                  <CornerUpLeft size={10} /> Devolver a borrador
+                </button>
+              </>
+            )}
+          </div>
         ) : null}
       </div>
 
@@ -2521,6 +2728,9 @@ export default function GestionDocumental() {
   const [showFirmaLote, setShowFirmaLote] = useState(false)
   // Certificado e.firma
   const [showCertModal, setShowCertModal] = useState(false)
+  // Roles
+  const isDirector = user?.rol === 'admin_cliente' || user?.rol === 'superadmin'
+  const isSecretaria = user?.rol === 'secretaria'
 
   // Debounce de búsqueda (300ms)
   useEffect(() => {
@@ -2595,27 +2805,29 @@ export default function GestionDocumental() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {/* Indicador e.firma */}
-              <button
-                onClick={() => setShowCertModal(true)}
-                className={clsx(
-                  'flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] rounded-lg font-medium border transition-colors',
-                  tieneCert && certVigente && !certProximoVencer
-                    ? 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
+              {/* Indicador e.firma — solo Director */}
+              {isDirector && (
+                <button
+                  onClick={() => setShowCertModal(true)}
+                  className={clsx(
+                    'flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] rounded-lg font-medium border transition-colors',
+                    tieneCert && certVigente && !certProximoVencer
+                      ? 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
+                      : tieneCert && certProximoVencer
+                      ? 'border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
+                      : 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100',
+                  )}
+                  title={tieneCert ? 'Ver certificado e.firma' : 'Registrar certificado e.firma'}>
+                  <Shield size={11} />
+                  {tieneCert && certVigente && !certProximoVencer
+                    ? 'e.firma vigente'
                     : tieneCert && certProximoVencer
-                    ? 'border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
-                    : 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100',
-                )}
-                title={tieneCert ? 'Ver certificado e.firma' : 'Registrar certificado e.firma'}>
-                <Shield size={11} />
-                {tieneCert && certVigente && !certProximoVencer
-                  ? 'e.firma vigente'
-                  : tieneCert && certProximoVencer
-                  ? 'e.firma por vencer'
-                  : 'e.firma no configurada'}
-              </button>
+                    ? 'e.firma por vencer'
+                    : 'e.firma no configurada'}
+                </button>
+              )}
 
-              {tab === 'recibidos' && (user?.rol === 'admin_cliente' || user?.rol === 'superadmin') && (
+              {tab === 'recibidos' && isDirector && (
                 <button
                   onClick={() => {
                     if (multiSelectMode) {
@@ -2659,13 +2871,14 @@ export default function GestionDocumental() {
           </div>
         </div>
 
-        {/* Métricas rápidas (solo recibidos) */}
-        {tab === 'recibidos' && (
-          <div className="grid grid-cols-5 gap-2 px-4 py-2 bg-white border-b border-gray-100">
+        {/* Métricas rápidas */}
+        {tab === 'recibidos' ? (
+          <div className="grid grid-cols-6 gap-2 px-4 py-2 bg-white border-b border-gray-100">
             {[
               { label: 'Recibidos',   val: porEstado('recibido'),    color: '#3b82f6' },
               { label: 'Turnados',    val: porEstado('turnado'),     color: '#f59e0b' },
               { label: 'En atención', val: porEstado('en_atencion'), color: '#a855f7' },
+              { label: 'Firmados',    val: porEstado('firmado'),     color: '#10b981' },
               { label: 'Devueltos',   val: porEstado('devuelto'),    color: '#dc2626' },
               { label: 'Urgentes',    val: urgentes,                 color: '#ef4444' },
             ].map(({ label, val, color }) => (
@@ -2674,6 +2887,46 @@ export default function GestionDocumental() {
                 <p className="text-[9px] text-gray-500 leading-tight">{label}</p>
               </div>
             ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-2 px-4 py-2 bg-white border-b border-gray-100">
+            {[
+              { label: 'Borradores',  val: porEstado('borrador'),    color: '#d97706' },
+              { label: 'En revisión', val: porEstado('en_revision'), color: '#a855f7' },
+              { label: 'Vigentes',    val: porEstado('vigente'),     color: '#10b981' },
+            ].map(({ label, val, color }) => (
+              <div key={label} className="text-center">
+                <p className="text-lg font-bold" style={{ color }}>{val}</p>
+                <p className="text-[9px] text-gray-500 leading-tight">{label}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Alertas por rol */}
+        {tab === 'recibidos' && (
+          <div className="px-4 py-2 bg-white border-b border-gray-100">
+            {isSecretaria && porEstado('firmado') > 0 && (
+              <button onClick={() => setFiltroEstado('firmado')}
+                className="w-full flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-left hover:bg-emerald-100 transition-colors">
+                <CheckCircle2 size={14} className="text-emerald-600 flex-shrink-0" />
+                <span className="text-xs font-medium text-emerald-700">{porEstado('firmado')} documento{porEstado('firmado') !== 1 ? 's' : ''} firmado{porEstado('firmado') !== 1 ? 's' : ''} listo{porEstado('firmado') !== 1 ? 's' : ''} para despacho</span>
+              </button>
+            )}
+            {isDirector && porEstado('respondido') > 0 && (
+              <button onClick={() => setFiltroEstado('respondido')}
+                className="w-full flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-left hover:bg-amber-100 transition-colors">
+                <FileSignature size={14} className="text-amber-600 flex-shrink-0" />
+                <span className="text-xs font-medium text-amber-700">{porEstado('respondido')} documento{porEstado('respondido') !== 1 ? 's' : ''} pendiente{porEstado('respondido') !== 1 ? 's' : ''} de firma</span>
+              </button>
+            )}
+            {!isDirector && !isSecretaria && porEstado('en_atencion') > 0 && (
+              <button onClick={() => setFiltroEstado('en_atencion')}
+                className="w-full flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-200 rounded-lg text-left hover:bg-purple-100 transition-colors">
+                <Clock size={14} className="text-purple-600 flex-shrink-0" />
+                <span className="text-xs font-medium text-purple-700">{porEstado('en_atencion')} documento{porEstado('en_atencion') !== 1 ? 's' : ''} para atender</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -2697,10 +2950,10 @@ export default function GestionDocumental() {
               value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}>
               <option value="">Estado</option>
               {tab === 'recibidos'
-                ? ['recibido','turnado','en_atencion','devuelto','respondido','archivado'].map(e => (
+                ? ['recibido','turnado','en_atencion','devuelto','respondido','firmado'].map(e => (
                     <option key={e} value={e}>{ESTADO_RECIBIDO_CONFIG[e as keyof typeof ESTADO_RECIBIDO_CONFIG]?.label ?? e}</option>
                   ))
-                : ['borrador','vigente','archivado'].map(e => (
+                : ['borrador','en_revision','vigente'].map(e => (
                     <option key={e} value={e}>{ESTADO_EMITIDO_CONFIG[e as keyof typeof ESTADO_EMITIDO_CONFIG]?.label ?? e}</option>
                   ))
               }
@@ -2800,22 +3053,107 @@ export default function GestionDocumental() {
                   </div>
                 )
               })()}
-              {docs.map(doc => (
-                <TarjetaRecibido key={doc.id} doc={doc}
-                  selected={doc.id === selectedId}
-                  onClick={() => setSelectedId(doc.id === selectedId ? null : doc.id)}
-                  multiSelect={multiSelectMode}
-                  multiSelected={selectedIds.has(doc.id)}
-                  onToggleSelect={() => {
-                    setSelectedIds(prev => {
-                      const next = new Set(prev)
-                      if (next.has(doc.id)) next.delete(doc.id)
-                      else next.add(doc.id)
-                      return next
-                    })
-                  }}
-                />
-              ))}
+
+              {/* Tabla funcional de recibidos */}
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      {multiSelectMode && <th className="px-2 py-2 w-8" />}
+                      <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">No. Oficio</th>
+                      <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Asunto</th>
+                      <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Remitente</th>
+                      <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Area</th>
+                      <th className="px-3 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Estado</th>
+                      <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Plazo</th>
+                      <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Fecha</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {docs.map(doc => {
+                      const cfg = ESTADO_RECIBIDO_CONFIG[doc.estado as keyof typeof ESTADO_RECIBIDO_CONFIG]
+                      const canSelect = doc.estado === 'en_atencion' && doc.has_borrador === true && !doc.firmado_digitalmente
+                      const isToday = doc.fecha_recibido === new Date().toISOString().slice(0, 10) || doc.creado_en?.slice(0, 10) === new Date().toISOString().slice(0, 10)
+                      return (
+                        <tr key={doc.id}
+                          onClick={() => {
+                            if (multiSelectMode) {
+                              if (canSelect) {
+                                setSelectedIds(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(doc.id)) next.delete(doc.id)
+                                  else next.add(doc.id)
+                                  return next
+                                })
+                              }
+                            } else {
+                              setSelectedId(doc.id === selectedId ? null : doc.id)
+                            }
+                          }}
+                          className={clsx(
+                            'cursor-pointer transition-colors',
+                            doc.id === selectedId ? 'bg-[#FDF8F9]' : isToday ? 'bg-blue-50/30 hover:bg-blue-50/60' : 'hover:bg-gray-50',
+                            multiSelectMode && !canSelect && 'opacity-50',
+                            multiSelectMode && selectedIds.has(doc.id) && 'bg-[#FDF8F9] ring-1 ring-inset ring-[#911A3A]/20',
+                          )}>
+                          {multiSelectMode && (
+                            <td className="px-2 py-2">
+                              <div className={clsx(
+                                'w-4 h-4 rounded border-2 flex items-center justify-center',
+                                selectedIds.has(doc.id) ? 'border-[#911A3A] bg-[#911A3A]' : canSelect ? 'border-gray-300' : 'border-gray-200 bg-gray-100',
+                              )}>
+                                {selectedIds.has(doc.id) && <CheckCircle2 size={10} className="text-white" />}
+                              </div>
+                            </td>
+                          )}
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-1.5">
+                              <PrioridadBadge prioridad={doc.prioridad} />
+                              <span className="font-mono text-[10px] text-gray-600 truncate max-w-[120px]">
+                                {doc.numero_oficio_origen || '—'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <p className="text-xs font-medium text-gray-900 truncate max-w-[200px] leading-tight">{doc.asunto}</p>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <p className="text-[10px] text-gray-600 truncate max-w-[120px]">
+                              {doc.remitente_dependencia || doc.remitente_nombre || '—'}
+                            </p>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <p className="text-[10px] text-gray-500 truncate max-w-[100px]">
+                              {doc.area_turno_nombre ? doc.area_turno_nombre.replace(/^(Departamento|Subdirección|Dirección)\s+de\s+/i, '') : '—'}
+                            </p>
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            {cfg && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap"
+                                style={{ backgroundColor: cfg.bg, color: cfg.color }}>
+                                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cfg.dot }} />
+                                {cfg.label}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <PlazoChip fecha={doc.fecha_limite} />
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                              {doc.fecha_recibido ? formatDate(doc.fecha_recibido) : doc.creado_en ? formatDate(doc.creado_en) : '—'}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
+                  <p className="text-[10px] text-gray-500">{docs.length} documento{docs.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+
               {/* Floating action bar for multi-select */}
               {multiSelectMode && selectedIds.size > 0 && (
                 <div className="sticky bottom-0 bg-white border-t border-gray-200 shadow-lg rounded-t-xl px-4 py-3 flex items-center justify-between">

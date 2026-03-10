@@ -34,6 +34,9 @@ class CRUDUsuario(CRUDBase[Usuario]):
     ) -> Usuario:
         data = obj_in.model_dump(exclude={"password"})
         data["password_hash"] = get_password_hash(obj_in.password)
+        # SQLite no soporta UUID nativo; convertir a string
+        if data.get("cliente_id") is not None:
+            data["cliente_id"] = str(data["cliente_id"])
         return await self.create(db, obj_in=data)
 
     async def authenticate(

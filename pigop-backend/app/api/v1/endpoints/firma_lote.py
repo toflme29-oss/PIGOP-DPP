@@ -150,10 +150,13 @@ async def crear_lote_firma(
 ):
     """
     Crea un lote de firma con los documentos seleccionados.
-    Valida que todos estén en estado 'en_atencion' y tengan borrador.
+    Valida que todos estén en un estado válido para firma y tengan borrador.
     """
     if current_user.rol not in ("admin_cliente", "superadmin"):
         raise ForbiddenError("Solo admin o superadmin pueden crear lotes de firma.")
+
+    # Estados válidos: recibidos (en_atencion, respondido), emitidos (borrador, en_revision)
+    estados_firmables = ("en_atencion", "respondido", "borrador", "en_revision")
 
     # Validar todos los documentos
     documentos = []
@@ -163,9 +166,9 @@ async def crear_lote_firma(
         if not doc:
             errores.append(f"Documento {doc_id[:8]}... no encontrado.")
             continue
-        if doc.estado != "en_atencion":
+        if doc.estado not in estados_firmables:
             errores.append(
-                f"Documento '{doc.asunto[:30]}...' no está en 'en_atencion' (estado: {doc.estado})."
+                f"Documento '{doc.asunto[:30]}...' no está en estado válido para firma (estado: {doc.estado})."
             )
             continue
         if not doc.borrador_respuesta:
@@ -329,9 +332,10 @@ async def ejecutar_firma_lote(
                 total_errores += 1
                 continue
 
-            if doc.estado != "en_atencion":
+            estados_ok = ("en_atencion", "respondido", "borrador", "en_revision")
+            if doc.estado not in estados_ok:
                 item.estado = "error"
-                item.error_mensaje = f"Estado inválido: {doc.estado}. Se requiere 'en_atencion'."
+                item.error_mensaje = f"Estado inválido: {doc.estado}. Se requiere uno de: {', '.join(estados_ok)}."
                 total_errores += 1
                 continue
 
@@ -385,10 +389,12 @@ async def ejecutar_firma_lote(
             firma_result["qr_url"] = qr_url
             firma_result["qr_data"] = qr_json
 
+            # Recibidos → "firmado", emitidos → "vigente"
+            estado_final = "firmado" if doc.flujo == "recibido" else "vigente"
             update_data = DocumentoUpdate(
                 firmado_digitalmente=True,
                 firma_metadata=firma_result,
-                estado="respondido",
+                estado=estado_final,
             )
             await crud_documento.actualizar_documento(db, db_obj=doc, obj_in=update_data)
 
@@ -397,6 +403,8 @@ async def ejecutar_firma_lote(
                 db,
                 documento_id=doc.id,
                 usuario_id=usuario_id,
+                estado_anterior=doc.estado,
+                estado_nuevo=estado_final,
                 version=doc.version or 1,
                 observaciones=f"Firma electrónica por lote '{lote.nombre}'.",
             )

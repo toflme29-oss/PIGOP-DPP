@@ -43,6 +43,263 @@ AREAS_DPP = {
              "cargo":   "Jefe del Departamento de Formulación y Normatividad Presupuestal"},
 }
 
+# ── Prefijos de folio por área de origen ──────────────────────────────────────
+# Formato institucional: PREFIJO/XXXX/AÑO (4 dígitos consecutivos)
+# Ejemplo: SFA/SF/DPP/SPFP/0001/2026
+# Al iniciar operación se configurará el número consecutivo de arranque.
+PREFIJOS_FOLIO = {
+    "DIR":  "SFA/SF/DPP",
+    "SCG":  "SFA/SF/DPP",
+    "DREP": "SFA/SF/DPP",
+    "DCP":  "SFA/SF/DPP",
+    "SPF":  "SFA/SF/DPP/SPFP",
+    "DASP": "SFA/SF/DPP/SPFP",
+    "DFNP": "SFA/SF/DPP/SPFP",
+}
+
+# ── Copias institucionales estándar ───────────────────────────────────────────
+COPIAS_PRESUPUESTALES = [
+    "L.A.E. Luis Navarro García. – Secretario de Finanzas y Administración. – Para su conocimiento.",
+    "C.P. José Luis Tapia Zavala. – Subsecretario de Finanzas. – Para su conocimiento.",
+    "Expediente/Minutario",
+]
+COPIAS_ADMINISTRATIVAS = [
+    "Expediente",
+    "Minutario",
+]
+
+# ── Catálogo de plantillas de oficios ─────────────────────────────────────────
+# Cada plantilla define el tipo de oficio, área, fundamento legal y ejemplo
+# de redacción institucional para alimentar la IA.
+PLANTILLAS_OFICIO = [
+    # ── Dirección: Administrativos internos ────────────────────────────────────
+    {
+        "categoria": "PERM_CUIDADO_HIJOS",
+        "nombre": "Permiso cuidado de hijos menores",
+        "area_origen": "DIR",
+        "palabras_clave": ["cuidado de hijos", "hijos menores", "permiso hijo", "artículo 67"],
+        "fundamento_legal": "Artículo 67 de las Condiciones Generales de Trabajo",
+        "copias": "administrativas",
+        "ejemplo_redaccion": (
+            "Me refiero al artículo 67 de las Condiciones Generales de Trabajo, cuarto párrafo, "
+            "que dice: Las trabajadoras dispondrán de permiso con goce de sueldo para atender a "
+            "sus hijos menores de hasta doce años, en caso de enfermedad grave o accidente que "
+            "requiera atención médica u hospitalización."
+        ),
+    },
+    {
+        "categoria": "DIA_ECONOMICO",
+        "nombre": "Día económico",
+        "area_origen": "DIR",
+        "palabras_clave": ["día económico", "ausentarse de sus labores", "artículo 65", "fracción vii"],
+        "fundamento_legal": "Artículo 65, Fracción VII de las Condiciones Generales de Trabajo",
+        "copias": "administrativas",
+        "ejemplo_redaccion": (
+            "Hago de su conocimiento que a petición del empleado {NOMBRE_EMPLEADO}, se le autoriza "
+            "ausentarse de sus labores el día {FECHA_SOLICITADA}, de conformidad con el artículo 65, "
+            "Fracción VII de las Condiciones Generales de Trabajo."
+        ),
+    },
+    {
+        "categoria": "PERMISO_PERSONAL",
+        "nombre": "Permiso personal",
+        "area_origen": "DIR",
+        "palabras_clave": ["permiso personal", "ausentarse", "permiso con goce"],
+        "fundamento_legal": "Condiciones Generales de Trabajo",
+        "copias": "administrativas",
+        "ejemplo_redaccion": (
+            "Por medio del presente informo que, a petición de la/el C. {NOMBRE_EMPLEADO}, "
+            "adscrita a esta Dirección a mi cargo, se le autoriza ausentarse de sus labores "
+            "el {FECHA_SOLICITADA}."
+        ),
+    },
+    {
+        "categoria": "INCAPACIDAD",
+        "nombre": "Incapacidad temporal para el trabajo",
+        "area_origen": "DIR",
+        "palabras_clave": ["incapacidad", "certificado de incapacidad", "artículo 36", "incapacidad temporal"],
+        "fundamento_legal": "Artículo 36, Fracción I de las Condiciones Generales de Trabajo",
+        "copias": "administrativas",
+        "ejemplo_redaccion": (
+            "De conformidad con el artículo 36 Fracción I de las Condiciones Generales de Trabajo, "
+            "adjunto el siguiente Certificado de Incapacidad Temporal para el Trabajo a nombre de "
+            "{NOMBRE_EMPLEADO}."
+        ),
+    },
+    {
+        "categoria": "PERMISO_ECONOMICO",
+        "nombre": "Permiso económico con goce de sueldo",
+        "area_origen": "DIR",
+        "palabras_clave": ["permiso económico", "artículo 61", "permiso con goce de sueldo"],
+        "fundamento_legal": "Artículo 61 de las Condiciones Generales de Trabajo",
+        "copias": "administrativas",
+        "ejemplo_redaccion": (
+            "De conformidad con el artículo 61 de las Condiciones Generales de Trabajo, informo que "
+            "a petición del empleado C. {NOMBRE_EMPLEADO} se le concede permiso económico con goce "
+            "de sueldo el día {FECHA_SOLICITADA}."
+        ),
+    },
+    {
+        "categoria": "VACACIONES",
+        "nombre": "Periodo vacacional",
+        "area_origen": "DIR",
+        "palabras_clave": ["vacaciones", "periodo vacacional", "artículo 68", "disfrutar vacaciones"],
+        "fundamento_legal": "Artículo 68 de las Condiciones Generales de Trabajo",
+        "copias": "administrativas",
+        "ejemplo_redaccion": (
+            "De conformidad con el artículo 68 de las Condiciones Generales de Trabajo, informo a "
+            "usted que a petición del empleado C. {NOMBRE_EMPLEADO}, se le autoriza disfrutar el "
+            "{FECHA_SOLICITADA} su periodo vacacional correspondiente."
+        ),
+    },
+    # ── SCEG: Presupuestales ───────────────────────────────────────────────────
+    {
+        "categoria": "TRASPASO_SALDOS",
+        "nombre": "Traspaso de saldos / apertura de cuentas",
+        "area_origen": "SCG",
+        "palabras_clave": ["traspaso de saldos", "apertura de cuenta", "fuente de financiamiento", "remanente fam", "fafef", "empréstito"],
+        "fundamento_legal": "Artículos 18 y 27 del Reglamento Interior de la SFA",
+        "copias": "presupuestales",
+        "ejemplo_redaccion": (
+            "En ejercicio de las atribuciones conferidas en los artículos 18 y 27 del Reglamento "
+            "Interior, y con la finalidad de dar atención al oficio número {NUMERO_OFICIO} de la "
+            "{DEPENDENCIA}, mediante el cual se solicita el traspaso de saldos de las siguientes "
+            "fuentes de financiamiento:"
+        ),
+    },
+    {
+        "categoria": "AMPLIACION_PRESUPUESTAL",
+        "nombre": "Ampliación / modificación presupuestal",
+        "area_origen": "SCG",
+        "palabras_clave": ["ampliación presupuestal", "modificación presupuestal", "adecuación presupuestal", "ampliación líquida"],
+        "fundamento_legal": "Artículos 18 Fracción XVI y 27 Fracciones XVIII y XXIX del Reglamento Interior de la SFA",
+        "copias": "presupuestales",
+        "ejemplo_redaccion": (
+            "En ejercicio de las atribuciones conferidas por los artículos 18, fracción XVI, y 27, "
+            "fracciones XVIII y XXIX, del Reglamento Interior de la Secretaría de Finanzas y "
+            "Administración, y en atención a su oficio número {NUMERO_OFICIO}, mediante el cual "
+            "solicita se autorice la ampliación presupuestal."
+        ),
+    },
+    {
+        "categoria": "VALIDACION_OFICIOS",
+        "nombre": "Validación y firma de oficios de modificación",
+        "area_origen": "SCG",
+        "palabras_clave": ["validación de oficios", "firma de oficios", "oficios de modificación", "zfe_monitor"],
+        "fundamento_legal": "Artículos 18 Fracción XVI y 27 Fracciones XVIII y XXIX del Reglamento Interior de la SFA",
+        "copias": "presupuestales",
+        "ejemplo_redaccion": (
+            "En ejercicio de las atribuciones conferidas en los artículos 18 en su fracción XVI y "
+            "27 fracciones XVIII y XXIX del Reglamento Interior de la Secretaría de Finanzas y "
+            "Administración; y derivado de la revisión efectuada, solicito atentamente se lleve a "
+            "cabo el proceso de validación y firma de los oficios señalados."
+        ),
+    },
+    {
+        "categoria": "RECLASIFICACION",
+        "nombre": "Reclasificación presupuestal",
+        "area_origen": "SCG",
+        "palabras_clave": ["reclasificación", "reclasificación presupuestal", "junta de gobierno"],
+        "fundamento_legal": "Artículos 18 y 27 del Reglamento Interior de la SFA",
+        "copias": "presupuestales",
+        "ejemplo_redaccion": (
+            "En ejercicio de las atribuciones conferidas en el artículo 18 y 27 del Reglamento "
+            "Interior de la Secretaría de Finanzas y Administración, me permito dar atención a su "
+            "oficio en el que solicita la reclasificación presupuestal. Lo referente a Servicios "
+            "Personales es responsabilidad de la Dirección de Recursos Humanos."
+        ),
+    },
+    {
+        "categoria": "ECONOMIAS",
+        "nombre": "Economías presupuestales / recursos no ejercidos",
+        "area_origen": "SCG",
+        "palabras_clave": ["economías presupuestales", "recursos no ejercidos", "presupuesto no ejercido", "calendario de gasto"],
+        "fundamento_legal": "Artículos 18 Fracción XVI, 27 Fracciones XVIII, XXIV, XXVIII y XXIX del Reglamento Interior de la SFA; Arts. 33 y 34 del Decreto del Presupuesto de Egresos",
+        "copias": "presupuestales",
+        "ejemplo_redaccion": (
+            "Se informa a usted que los recursos no ejercidos en el periodo correspondiente se "
+            "consideran economías presupuestales. En ese sentido, se reitera la importancia de "
+            "ajustarse estrictamente a la distribución del Presupuesto de Egresos autorizado."
+        ),
+    },
+    {
+        "categoria": "SOLICITUD_DOCUMENTACION",
+        "nombre": "Solicitud de documentación complementaria",
+        "area_origen": "SCG",
+        "palabras_clave": ["documentación complementaria", "apertura de programa", "convenio", "programa nuevo"],
+        "fundamento_legal": "Artículos 18 Fracción XVI y 27 Fracciones XVIII y XXIX del Reglamento Interior de la SFA",
+        "copias": "presupuestales",
+        "ejemplo_redaccion": (
+            "En ejercicio de las atribuciones conferidas en los artículos 18 en su fracción XVI y "
+            "27 fracciones XVIII y XXIX del Reglamento Interior de la Secretaría de Finanzas y "
+            "Administración; y con el propósito de estar en condiciones de atender su solicitud, "
+            "se requiere la siguiente documentación:"
+        ),
+    },
+    # ── SPF: Programación ──────────────────────────────────────────────────────
+    {
+        "categoria": "VALIDACION_CENTROS",
+        "nombre": "Validación de centros gestores / centros de costos SAP",
+        "area_origen": "SPF",
+        "palabras_clave": ["centros gestores", "centros de costos", "validación sap", "centro gestor"],
+        "fundamento_legal": "Artículos 18 y 27 Fracciones I y XXX del Reglamento Interior de la SFA",
+        "copias": "presupuestales",
+        "ejemplo_redaccion": (
+            "Con fundamento en los artículos 18 y 27 fracciones I y XXX del Reglamento Interior "
+            "de la Secretaría de Finanzas y Administración, en atención a su oficio, mediante el "
+            "cual solicita la validación de los Centros Gestores, Centros de Costos y Posiciones "
+            "Presupuestales."
+        ),
+    },
+    {
+        "categoria": "USUARIO_SAP",
+        "nombre": "Creación / renovación de usuario SAP",
+        "area_origen": "SPF",
+        "palabras_clave": ["usuario sap", "contraseña sap", "acceso sap", "unidad programática"],
+        "fundamento_legal": "Artículos 18 y 27 Fracciones I y XXX del Reglamento Interior de la SFA",
+        "copias": "presupuestales",
+        "ejemplo_redaccion": (
+            "Con fundamento en los artículos 18 y 27 fracciones I y XXX del Reglamento Interior "
+            "de la Secretaría de Finanzas y Administración, y en atención a su oficio, informo que "
+            "fue creado un nuevo usuario y contraseña para su Unidad Programática Presupuestaria."
+        ),
+    },
+    {
+        "categoria": "PROGRAMACION_GRAL",
+        "nombre": "Respuesta sobre programación presupuestal",
+        "area_origen": "SPF",
+        "palabras_clave": ["programación presupuestal", "formulación presupuestal", "presupuesto de egresos", "inversión pública"],
+        "fundamento_legal": "Artículos 18 y 27 Fracciones I y XXX del Reglamento Interior de la SFA",
+        "copias": "presupuestales",
+        "ejemplo_redaccion": (
+            "Con fundamento en los artículos 18 y 27 fracciones I y XXX del Reglamento Interior "
+            "de la Secretaría de Finanzas y Administración, y en atención a su oficio, me permito "
+            "dar respuesta respecto a la programación presupuestal solicitada."
+        ),
+    },
+]
+
+
+def detectar_plantilla(asunto: str, instrucciones: str = "") -> dict | None:
+    """Detecta la plantilla más adecuada por palabras clave en asunto/instrucciones."""
+    texto = (asunto + " " + instrucciones).lower()
+    mejor = None
+    mejor_score = 0
+    for p in PLANTILLAS_OFICIO:
+        score = sum(1 for kw in p["palabras_clave"] if kw in texto)
+        if score > mejor_score:
+            mejor = p
+            mejor_score = score
+    return mejor if mejor_score > 0 else None
+
+
+def obtener_copias(tipo: str = "presupuestales") -> list[str]:
+    """Retorna las copias estándar según el tipo de oficio."""
+    if tipo == "administrativas":
+        return list(COPIAS_ADMINISTRATIVAS)
+    return list(COPIAS_PRESUPUESTALES)
+
+
 # ── Reglas de enrutamiento automático ─────────────────────────────────────────
 # Orden importa: las reglas más específicas van primero.
 # Cada entrada tiene:
@@ -236,93 +493,84 @@ Extrae ÚNICAMENTE los campos que puedas identificar claramente. Si un campo no 
 
 Responde ÚNICAMENTE con el JSON, sin texto adicional ni markdown."""
 
-# ── Prompt generación de borrador ──────────────────────────────────────────────
-_PROMPT_BORRADOR = """Eres un redactor experto en correspondencia oficial del Gobierno del Estado de Michoacán.
-Redactas en nombre de la Dirección de Programación y Presupuesto, Secretaría de Finanzas y Administración.
+# ── Prompt generación de borrador (unificado para documentos recibidos) ────────
+# Basado en los modelos institucionales reales de la DPP.
+# Tres tipos de respuesta: positiva, negativa, informativa.
+_PROMPT_BORRADOR = """Eres redactor de oficios de la Dirección de Programación y Presupuesto (DPP),
+Subsecretaría de Finanzas, Secretaría de Finanzas y Administración del Gobierno de Michoacán.
+El Director es el MTRO. MARCO ANTONIO FLORES MEJÍA.
 
-DATOS DEL OFICIO RECIBIDO:
-- Número de oficio: {numero_oficio_origen}
+OFICIO QUE SE CONTESTA:
+- No. de oficio: {numero_oficio_origen}
 - Fecha: {fecha_recibido}
 - Remitente: {remitente_nombre}, {remitente_cargo}
 - Dependencia: {remitente_dependencia}
 - Asunto: {asunto}
-- Resumen del contenido: {cuerpo_resumen}
+- Resumen: {cuerpo_resumen}
 
 ÁREA QUE ATIENDE: {area_nombre}
 FUNDAMENTO LEGAL: {fundamento_legal}
 
-INSTRUCCIONES DE REDACCIÓN:
-1. Usa el estilo formal institucional del Gobierno de Michoacán (trato de "Usted" y "C.")
-2. Abre con referencia al oficio que se contesta: "En respuesta a su oficio número {numero_oficio_origen}, de fecha {fecha_recibido}, mediante el cual..."
-3. Cita el fundamento legal en el cuerpo de la respuesta
-4. El contenido debe ser conciso, preciso y dar respuesta directa al asunto planteado
-5. Si el asunto es una solicitud de certificación presupuestal, indica que se atenderá en el plazo normativo de 3 días hábiles
-6. Si el asunto es un refrendo de remanentes, indica el procedimiento o resultado de la revisión
-7. Cierra con: "Sin otro particular, aprovecho la ocasión para enviarle un cordial saludo."
-8. NO incluyas número de oficio DPP, fecha, membrete, ni datos de firma — esos se agregan manualmente
+{ejemplo_modelo}
+
+=== TIPO DE RESPUESTA ===
+Determina el tipo según las instrucciones del Director y el contenido del oficio:
+
+1. RESPUESTA POSITIVA (la solicitud procede):
+   Estructura: fundamento legal → referencia al oficio → resolución favorable con datos específicos → cierre.
+   Ejemplo de apertura: "En ejercicio de las atribuciones conferidas en los artículos [X] del Reglamento Interior de la SFA, y con la finalidad de dar atención al oficio número [X]..."
+
+2. RESPUESTA NEGATIVA (la solicitud NO procede):
+   Estructura: fundamento legal → referencia al oficio → explicación técnica del motivo de improcedencia → cierre.
+   Motivos comunes: datos maestros incorrectos, insuficiencia presupuestal, falta de documentación, incumplimiento normativo.
+   Redactar con firmeza pero respeto. Indicar qué debe corregir o presentar el solicitante.
+
+3. RESPUESTA INFORMATIVA (comunicación administrativa breve):
+   Estructura: referencia o contexto → información que se comunica → cierre.
+   Para avisos, notificaciones, remisión de documentos o respuestas breves.
+
+=== REGLAS OBLIGATORIAS ===
+1. NO inventes artículos, fracciones ni normativa. Usa SOLO la normativa indicada en FUNDAMENTO LEGAL.
+2. Sé CONCISO: párrafos cortos, sin repetir información ni usar lenguaje excesivamente jurídico.
+3. Estilo formal del Gobierno de Michoacán: trato de "Usted", "C." para personas.
+4. Apertura: cita el fundamento legal y referencia al oficio que se contesta.
+5. Cierre OBLIGATORIO: "Sin otro particular, me despido de usted no sin antes asegurarle mi más alta consideración y respeto."
+6. NO incluyas encabezado, recuadro institucional, fecha, destinatario, firma, copias ni referencia — se generan automáticamente.
+7. Si hay un EJEMPLO DE MODELO proporcionado arriba, REPLICA su estructura y estilo adaptándolo al caso concreto.
+8. RESPETA ESTRICTAMENTE las instrucciones del Director proporcionadas abajo.
 
 Redacta ÚNICAMENTE el cuerpo del oficio de respuesta:"""
 
-# ── Prompt generación de oficio estructurado (4 secciones jurídicas) ──────────
-_PROMPT_OFICIO_ESTRUCTURADO = """Eres un redactor juridico-administrativo experto del Gobierno del Estado de Michoacan.
-Redactas oficios en nombre de la Direccion de Programacion y Presupuesto (DPP),
-adscrita a la Secretaria de Finanzas y Administracion.
 
-El Director de la DPP es el Mtro. Marco Antonio Flores Mejia.
+# ── Prompt para oficios emitidos (documentos originados en DPP) ───────────────
+_PROMPT_BORRADOR_EMITIDO = """Eres redactor de oficios de la Dirección de Programación y Presupuesto (DPP),
+Subsecretaría de Finanzas, Secretaría de Finanzas y Administración del Gobierno de Michoacán.
+El Director es el MTRO. MARCO ANTONIO FLORES MEJÍA.
 
-DATOS DEL OFICIO QUE SE CONTESTA:
-- Numero de oficio: {numero_oficio_origen}
-- Fecha del oficio: {fecha_recibido}
-- Remitente: {remitente_nombre}, {remitente_cargo}
-- Dependencia remitente: {remitente_dependencia}
+OFICIO A GENERAR:
+- Destinatario: {destinatario}
+- Dependencia destino: {dependencia_destino}
 - Asunto: {asunto}
-- Resumen del contenido: {cuerpo_resumen}
+- Área de origen: {area_origen}
+{plantilla_info}
 
-AREA QUE ATIENDE EL ASUNTO: {area_nombre}
-FUNDAMENTO LEGAL PRIMARIO: {fundamento_legal}
+=== REGLAS OBLIGATORIAS ===
+1. NO inventes artículos, fracciones ni normativa. Usa SOLO la normativa que aparece en la PLANTILLA DETECTADA.
+2. Sé CONCISO: párrafos cortos, lenguaje institucional directo sin ser excesivamente jurídico.
+3. Estilo formal del Gobierno de Michoacán: trato de "Usted", "C." para personas.
+4. Estructura del cuerpo:
+   a) Fundamento legal: "Con fundamento en lo dispuesto por los artículos [de la plantilla]..."
+   b) Desarrollo: contenido técnico del asunto, preciso y sustentado.
+   c) Cierre: "Sin otro particular, me despido de usted no sin antes asegurarle mi más alta consideración y respeto."
+5. Si hay EJEMPLO DE REDACCIÓN en la plantilla, REPLICA su estructura y estilo adaptándolo al caso.
+6. Oficio presupuestal → cita artículos del RISFA.
+   Oficio administrativo interno → cita artículos de las Condiciones Generales de Trabajo.
+7. NO incluyas encabezado, recuadro, fecha, destinatario, firma, copias ni referencia — se generan automáticamente.
+8. RESPETA ESTRICTAMENTE las instrucciones proporcionadas abajo.
 
-{contexto_normativo}
+{instrucciones_extra}
 
-=== ESTRUCTURA OBLIGATORIA DEL OFICIO ===
-
-Tu respuesta DEBE contener EXACTAMENTE las siguientes 4 secciones, separadas por las etiquetas indicadas.
-No omitas ninguna seccion. No agregues secciones adicionales.
-
-[SECCION_1_FUNDAMENTO_COMPETENCIAL]
-Cita textualmente el fundamento juridico que otorga competencia a la DPP para atender este asunto.
-Usa la estructura: "Con fundamento en lo dispuesto por los articulos [X] del [nombre del ordenamiento],
-que confiere a esta Direccion la atribucion de [atribucion especifica]..."
-IMPORTANTE: Cita UNICAMENTE articulos que existan en el marco normativo proporcionado arriba.
-No inventes articulos ni fracciones que no aparezcan en el contexto normativo.
-
-[SECCION_2_REFERENCIA_OFICIO]
-Haz referencia formal al oficio que se contesta: "En atencion a su oficio numero {numero_oficio_origen},
-de fecha {fecha_recibido}, suscrito por el C. {remitente_nombre}, {remitente_cargo} de {remitente_dependencia},
-mediante el cual [descripcion precisa de lo que solicita/comunica]..."
-
-[SECCION_3_OBJETO_RESPUESTA]
-Exposicion tecnico-juridica que responde al fondo del asunto:
-- Argumenta con fundamento normativo (cita articulos especificos del marco normativo proporcionado)
-- Si es una solicitud de certificacion presupuestal: indica que se atendera en el plazo normativo
-- Si es una consulta normativa: cita los ordenamientos aplicables y da la respuesta tecnica
-- Si es una transferencia: indica el procedimiento y requisitos
-- Prioriza la jerarquia normativa: RISFA > Ley Disciplina Financiera > LGCG > Decreto Presupuesto
-- Se preciso, conciso y sustentado. NO emitas opiniones sin respaldo normativo.
-
-[SECCION_4_CIERRE_INSTITUCIONAL]
-Cierre formal: "Sin otro particular, y reiterando la disposicion de esta Direccion para atender
-cualquier asunto relacionado con la materia presupuestal, aprovecho la ocasion para enviarle
-un cordial saludo."
-
-=== REGLAS DE REDACCION ===
-1. Estilo formal institucional del Gobierno de Michoacan (trato "Usted" y "C.")
-2. Tono respetuoso pero firme y tecnico
-3. Cita SOLO articulos que aparezcan en el MARCO NORMATIVO proporcionado
-4. Si no hay suficiente informacion para una respuesta tecnica completa, indicalo y sugiere que datos faltan
-5. NO incluyas encabezados, numero de oficio, fecha, destinatario, ni firma — esos se generan aparte
-6. CADA seccion debe tener contenido sustantivo (minimo 2-3 oraciones)
-
-Responde UNICAMENTE con las 4 secciones usando las etiquetas indicadas:"""
+Redacta ÚNICAMENTE el cuerpo del oficio:"""
 
 
 # ── Motor de clasificación ────────────────────────────────────────────────────
@@ -469,9 +717,21 @@ class CorrespondenciaService:
     ) -> str:
         """
         Genera un borrador de oficio de respuesta usando Gemini.
+        Usa modelos institucionales como referencia para estructura y estilo.
         Retorna el cuerpo del oficio (sin membrete ni firma).
         """
         from app.services.gemini_service import gemini_service
+
+        # Detectar plantilla por asunto/instrucciones para dar contexto al modelo
+        plantilla = detectar_plantilla(asunto or "", instrucciones)
+        ejemplo_modelo = ""
+        if plantilla:
+            ejemplo_modelo = (
+                f"\nEJEMPLO DE MODELO INSTITUCIONAL (usa como referencia de estructura y estilo):\n"
+                f"Tipo: {plantilla['nombre']}\n"
+                f"Fundamento: {plantilla['fundamento_legal']}\n"
+                f"Redacción modelo: \"{plantilla['ejemplo_redaccion']}\"\n"
+            )
 
         prompt = (
             _PROMPT_BORRADOR
@@ -484,19 +744,21 @@ class CorrespondenciaService:
             .replace("{cuerpo_resumen}", cuerpo_resumen or "—")
             .replace("{area_nombre}", area_nombre)
             .replace("{fundamento_legal}", fundamento_legal)
+            .replace("{ejemplo_modelo}", ejemplo_modelo)
         )
 
         if instrucciones:
-            prompt += f"\n\nINSTRUCCIONES ADICIONALES DEL DIRECTOR:\n{instrucciones}"
+            prompt += f"\n\nINSTRUCCIONES DEL DIRECTOR (RESPETAR ESTRICTAMENTE):\n{instrucciones}"
 
         if not gemini_service.available:
             return (
-                f"En respuesta a su oficio número {numero_oficio_origen}, "
-                f"de fecha {fecha_recibido}, mediante el cual solicita {asunto}, "
+                f"Con fundamento en lo dispuesto por {fundamento_legal}, "
+                f"y en atención a su oficio número {numero_oficio_origen}, "
+                f"de fecha {fecha_recibido}, mediante el cual {asunto}, "
                 f"me permito hacer de su conocimiento lo siguiente:\n\n"
                 f"[Contenido de respuesta — complete manualmente]\n\n"
-                f"Lo anterior con fundamento en {fundamento_legal}.\n\n"
-                f"Sin otro particular, aprovecho la ocasión para enviarle un cordial saludo."
+                f"Sin otro particular, me despido de usted no sin antes asegurarle "
+                f"mi más alta consideración y respeto."
             )
 
         try:
@@ -510,6 +772,77 @@ class CorrespondenciaService:
             return resp.text.strip()
         except Exception as e:
             logger.error(f"Error Gemini generar_borrador: {e}")
+            return f"[Error al generar borrador: {e}]\n\nComplete manualmente."
+
+    # ── Generación de borrador para documentos EMITIDOS ─────────────────────
+
+    async def generar_borrador_emitido(
+        self,
+        *,
+        asunto: str,
+        destinatario: str = "",
+        dependencia_destino: str = "",
+        area_codigo: str = "DIR",
+        instrucciones: str = "",
+    ) -> str:
+        """
+        Genera un borrador de oficio emitido por la DPP usando Gemini.
+        Detecta la plantilla apropiada y usa ejemplos reales de redacción.
+        Retorna el cuerpo del oficio (sin encabezado, firma ni copias).
+        """
+        from app.services.gemini_service import gemini_service
+
+        # Detectar plantilla apropiada
+        plantilla = detectar_plantilla(asunto, instrucciones)
+
+        # Construir info de plantilla para el prompt
+        plantilla_info = ""
+        if plantilla:
+            plantilla_info = (
+                f"\nPLANTILLA DETECTADA: {plantilla['nombre']}\n"
+                f"FUNDAMENTO LEGAL: {plantilla['fundamento_legal']}\n"
+                f"EJEMPLO DE REDACCIÓN INSTITUCIONAL (úsalo como referencia de estilo):\n"
+                f"\"{plantilla['ejemplo_redaccion']}\"\n"
+            )
+        else:
+            plantilla_info = "\nNo se detectó plantilla específica. Usa estilo formal genérico.\n"
+
+        # Obtener nombre del área
+        area_info = AREAS_DPP.get(area_codigo, AREAS_DPP["DIR"])
+        area_origen = area_info["nombre"]
+
+        prompt = (
+            _PROMPT_BORRADOR_EMITIDO
+            .replace("{destinatario}", destinatario or "---")
+            .replace("{dependencia_destino}", dependencia_destino or "---")
+            .replace("{asunto}", asunto or "---")
+            .replace("{area_origen}", area_origen)
+            .replace("{plantilla_info}", plantilla_info)
+            .replace("{instrucciones_extra}",
+                      f"INSTRUCCIONES ADICIONALES:\n{instrucciones}" if instrucciones else "")
+        )
+
+        if not gemini_service.available:
+            fundamento = plantilla["fundamento_legal"] if plantilla else "Arts. 18 y 19 del RISFA"
+            return (
+                f"Con fundamento en lo dispuesto por {fundamento}, "
+                f"me permito comunicar a usted lo siguiente:\n\n"
+                f"[Contenido del oficio — complete manualmente]\n\n"
+                f"Sin otro particular, me despido de usted no sin antes asegurarle "
+                f"mi más alta consideración y respeto."
+            )
+
+        try:
+            from app.core.config import settings
+            from google import genai
+            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            resp = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+            )
+            return resp.text.strip()
+        except Exception as e:
+            logger.error(f"Error Gemini generar_borrador_emitido: {e}")
             return f"[Error al generar borrador: {e}]\n\nComplete manualmente."
 
     # ── Generación de oficio estructurado (4 secciones) ─────────────────────

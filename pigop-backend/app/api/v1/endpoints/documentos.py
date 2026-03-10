@@ -32,8 +32,12 @@ from app.schemas.documento import (
 )
 from app.services.correspondencia_service import (
     AREAS_DPP,
+    PREFIJOS_FOLIO,
+    PLANTILLAS_OFICIO,
     correspondencia_service,
     clasificar_oficio,
+    detectar_plantilla,
+    obtener_copias,
 )
 
 router = APIRouter()
@@ -98,24 +102,76 @@ async def listar_documentos(
 
 @router.get("/siguiente-folio", summary="Obtener siguiente folio consecutivo")
 async def siguiente_folio(
-    tipo: str = Query("OFICIO", description="Tipo de documento: OFICIO, CIRCULAR, MEMO"),
+    tipo: str = Query("OFICIO", description="Tipo de documento (legacy)"),
+    area_codigo: Optional[str] = Query(
+        None,
+        description="Código del área de origen (DIR, SCG, SPF...). "
+                    "Si se proporciona, genera folio institucional SFA/SF/DPP[/AREA]/XXXX/AÑO.",
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
     """
-    Genera el siguiente folio consecutivo para oficios de respuesta.
-    Formato: DPP/{TIPO}/{NNNNN}/{AÑO}
-    Busca el máximo folio existente del mismo tipo/año y retorna el siguiente.
+    Genera el siguiente folio consecutivo para oficios.
+
+    Formato institucional: `SFA/SF/DPP[/AREA]/XXXX/AÑO`
+    Ejemplo: `SFA/SF/DPP/SPFP/0001/2026`
+
+    Donde:
+      - SFA = Secretaría de Finanzas y Administración
+      - SF  = Subsecretaría de Finanzas
+      - DPP = Dirección de Programación y Presupuesto
+      - AREA = área emisora interna (SPFP, etc.) — opcional según prefijo
+      - XXXX = número consecutivo (4 dígitos)
+      - AÑO  = año en curso
+
+    Sin area_codigo: formato legacy `DPP/{TIPO}/{NNNNN}/{AÑO}`.
     """
     from datetime import datetime
     from sqlalchemy import text
 
     anio = datetime.now().year
+
+    if area_codigo and area_codigo.upper() in PREFIJOS_FOLIO:
+        # ── Formato institucional por área ──────────────────────────────
+        area = area_codigo.upper()
+        prefijo = PREFIJOS_FOLIO[area]
+        # Pattern: SFA/SF/DPP/%/2026  ó  SFA/SF/DPP/SPFP/%/2026
+        pattern = f"{prefijo}/%/{anio}"
+
+        query = text(
+            "SELECT folio_respuesta FROM documentos_oficiales "
+            "WHERE folio_respuesta LIKE :pattern "
+            "ORDER BY folio_respuesta DESC LIMIT 1"
+        )
+        result = await db.execute(query, {"pattern": pattern})
+        row = result.first()
+
+        next_num = 1
+        if row and row[0]:
+            try:
+                parts = row[0].split("/")
+                # Número es el penúltimo segmento:
+                #   SFA/SF/DPP/0001/2026 → parts[-2] = "0001"
+                #   SFA/SF/DPP/SPFP/0001/2026 → parts[-2] = "0001"
+                next_num = int(parts[-2]) + 1
+            except (ValueError, IndexError):
+                pass
+
+        folio = f"{prefijo}/{str(next_num).zfill(4)}/{anio}"
+        return {
+            "folio": folio,
+            "numero": next_num,
+            "area_codigo": area,
+            "prefijo": prefijo,
+            "anio": anio,
+        }
+
+    # ── Formato legacy (sin área) ───────────────────────────────────────
     tipo_upper = tipo.upper()[:8]
     prefix = f"DPP/{tipo_upper}/"
     suffix = f"/{anio}"
 
-    # Buscar el maximo folio existente con este patron
     query = text(
         "SELECT folio_respuesta FROM documentos_oficiales "
         "WHERE folio_respuesta LIKE :pattern ORDER BY folio_respuesta DESC LIMIT 1"
@@ -125,7 +181,6 @@ async def siguiente_folio(
 
     next_num = 1
     if row and row[0]:
-        # Extraer numero del folio: DPP/OFICIO/00012/2026 -> 12
         try:
             parts = row[0].split("/")
             if len(parts) >= 3:
@@ -147,6 +202,27 @@ async def listar_areas(
         {"codigo": k, **v}
         for k, v in AREAS_DPP.items()
     ]
+
+
+# ---------- Catalogo de plantillas para emitidos ----------------------------
+
+@router.get("/plantillas", summary="Catalogo de plantillas de oficios emitidos")
+async def listar_plantillas(
+    area_codigo: Optional[str] = Query(None, description="Filtrar por area de origen"),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Retorna las plantillas de oficios disponibles, opcionalmente filtradas por área."""
+    result = []
+    for p in PLANTILLAS_OFICIO:
+        if area_codigo and p["area_origen"] != area_codigo.upper():
+            continue
+        result.append({
+            "categoria": p["categoria"],
+            "nombre": p["nombre"],
+            "area_origen": p["area_origen"],
+            "fundamento_legal": p["fundamento_legal"],
+        })
+    return result
 
 
 # ---------- Crear recibido ---------------------------------------------------
@@ -441,8 +517,8 @@ async def confirmar_turno(
     db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
-    """Solo analista, admin_cliente o superadmin pueden confirmar el turno."""
-    if current_user.rol == "consulta":
+    """Director, Secretaría o superadmin pueden confirmar el turno."""
+    if current_user.rol in ("consulta", "analista"):
         raise ForbiddenError("No tienes permisos para turnar correspondencia.")
 
     doc = await crud_documento.get(db, doc_id)
@@ -462,6 +538,7 @@ async def confirmar_turno(
         area_codigo=data.area_codigo,
         area_nombre=data.area_nombre or area_info["nombre"],
         turnado_por_id=str(current_user.id),
+        instrucciones=data.instrucciones,
     )
     return await crud_documento.get_with_relations(db, updated.id)
 
@@ -492,18 +569,12 @@ async def generar_borrador(
     fundamento   = doc.sugerencia_fundamento or "Arts. 18 y 19 del Reglamento Interior de la SFA"
 
     if doc.flujo == "emitido":
-        # For emitidos, generate based on asunto + instrucciones
-        instrucciones_full = instrucciones or doc.asunto or "Genera un oficio formal."
-        borrador = await correspondencia_service.generar_borrador_respuesta(
-            numero_oficio_origen=doc.numero_control or "---",
-            fecha_recibido=doc.fecha_documento or "---",
-            remitente_nombre=doc.dependencia_destino or "---",
-            remitente_cargo="",
-            remitente_dependencia=doc.dependencia_destino or "---",
+        # Para emitidos: usar prompt especializado con detección de plantilla
+        borrador = await correspondencia_service.generar_borrador_emitido(
             asunto=doc.asunto,
-            cuerpo_resumen=instrucciones_full,
-            area_nombre="Dirección de Programación y Presupuesto",
-            fundamento_legal="Arts. 18 y 19 del Reglamento Interior de la SFA",
+            destinatario=doc.dependencia_destino or "",
+            dependencia_destino=doc.dependencia_destino or "",
+            area_codigo=doc.area_turno or "DIR",
             instrucciones=instrucciones,
         )
     else:
@@ -712,12 +783,33 @@ async def descargar_oficio(
             "folio_firma": doc.folio_respuesta or "",
         }
 
+    # --- Determinar destinatario según flujo ---
+    if doc.flujo == "emitido":
+        dest_nombre = doc.dependencia_destino or "---"
+        dest_cargo = "---"
+        dest_dep = doc.dependencia_destino or "---"
+    else:
+        dest_nombre = doc.remitente_nombre or "---"
+        dest_cargo = doc.remitente_cargo or "---"
+        dest_dep = doc.remitente_dependencia or "---"
+
+    # --- Determinar copias estándar según área ---
+    area_codigo = doc.area_turno or "DIR"
+    plantilla = detectar_plantilla(doc.asunto or "", "")
+    if plantilla:
+        copias_doc = obtener_copias(plantilla.get("copias", "presupuestales"))
+    else:
+        # Áreas de subdirección → presupuestales; DIR → administrativas
+        copias_doc = obtener_copias(
+            "administrativas" if area_codigo == "DIR" else "presupuestales"
+        )
+
     docx_bytes = oficio_generator.generar_oficio_respuesta(
-        folio_respuesta=doc.folio_respuesta or "DPP/OFICIO/____/2026",
+        folio_respuesta=doc.folio_respuesta or "SFA/SF/DPP/____/2026",
         fecha_respuesta=fecha_str,
-        destinatario_nombre=doc.remitente_nombre or "---",
-        destinatario_cargo=doc.remitente_cargo or "---",
-        destinatario_dependencia=doc.remitente_dependencia or "---",
+        destinatario_nombre=dest_nombre,
+        destinatario_cargo=dest_cargo,
+        destinatario_dependencia=dest_dep,
         seccion_fundamento=secciones.get("fundamento", ""),
         seccion_referencia=secciones.get("referencia", ""),
         seccion_objeto=secciones.get("objeto", ""),
@@ -726,9 +818,10 @@ async def descargar_oficio(
         firmante_cargo="Director de Programación y Presupuesto",
         referencia_elaboro=doc.referencia_elaboro,
         referencia_reviso=doc.referencia_reviso,
-        copias=["Expediente.", "Minutario."],
+        copias=copias_doc,
         incluir_firma_visual=bool(doc.firmado_digitalmente),
         sello_digital_data=sello_data,
+        asunto=doc.asunto,
     )
 
     import io
@@ -766,9 +859,9 @@ async def devolver_documento(
         raise NotFoundError("Documento no encontrado.")
     _assert_acceso(current_user, str(doc.cliente_id))
 
-    if doc.estado != "en_atencion":
+    if doc.estado not in ("en_atencion", "respondido"):
         raise BusinessError(
-            f"Solo documentos 'en_atencion' pueden devolverse. Estado actual: {doc.estado}"
+            f"Solo documentos 'en_atencion' o 'respondido' pueden devolverse. Estado actual: {doc.estado}"
         )
     if not doc.borrador_respuesta:
         raise BusinessError("No hay borrador que devolver. El documento no tiene respuesta generada.")
@@ -918,9 +1011,11 @@ async def firmar_documento(
             "Este documento fue devuelto y requiere correcciones antes de firmarse. "
             "Corrija el borrador y reenvíe antes de intentar firmar."
         )
-    if doc.estado not in ("en_atencion",):
+    # Estados válidos para firma: recibidos (en_atencion, respondido), emitidos (borrador, en_revision)
+    estados_firmables = ("en_atencion", "respondido", "borrador", "en_revision")
+    if doc.estado not in estados_firmables:
         raise BusinessError(
-            f"El documento debe estar 'en_atencion' para firmarse. Estado actual: {doc.estado}"
+            f"El documento debe estar en un estado válido para firmarse. Estado actual: {doc.estado}"
         )
 
     from app.services.firma_electronica_service import firma_electronica_service
@@ -970,6 +1065,37 @@ async def firmar_documento(
             "Si no tiene certificado registrado, suba los archivos .cer y .key."
         )
 
+    # Auto-generar folio si no tiene
+    if not doc.folio_respuesta:
+        from datetime import datetime as dt_
+        from sqlalchemy import text as sql_text
+
+        anio_ = dt_.now().year
+        area_ = (doc.area_turno or "DIR").upper()
+        prefijo_ = PREFIJOS_FOLIO.get(area_, "SFA/SF/DPP")
+        pattern_ = f"{prefijo_}/%/{anio_}"
+
+        result_ = await db.execute(
+            sql_text(
+                "SELECT folio_respuesta FROM documentos_oficiales "
+                "WHERE folio_respuesta LIKE :pattern "
+                "ORDER BY folio_respuesta DESC LIMIT 1"
+            ),
+            {"pattern": pattern_},
+        )
+        row_ = result_.first()
+        next_num_ = 1
+        if row_ and row_[0]:
+            try:
+                parts_ = row_[0].split("/")
+                next_num_ = int(parts_[-2]) + 1
+            except (ValueError, IndexError):
+                pass
+
+        folio_auto = f"{prefijo_}/{str(next_num_).zfill(4)}/{anio_}"
+        doc.folio_respuesta = folio_auto
+        await db.flush()
+
     # Firmar con criptografía real
     firma_result = firma_electronica_service.firmar_documento(
         contenido_borrador=doc.borrador_respuesta,
@@ -999,11 +1125,12 @@ async def firmar_documento(
     firma_result["qr_url"] = qr_url
     firma_result["qr_data"] = qr_json
 
-    # Actualizar en BD
+    # Actualizar en BD — recibidos pasan a "firmado", emitidos a "vigente"
+    estado_final = "firmado" if doc.flujo == "recibido" else "vigente"
     update_data = DocumentoUpdate(
         firmado_digitalmente=True,
         firma_metadata=firma_result,
-        estado="respondido",
+        estado=estado_final,
     )
     await crud_documento.actualizar_documento(db, db_obj=doc, obj_in=update_data)
 
@@ -1013,6 +1140,8 @@ async def firmar_documento(
         documento_id=doc.id,
         usuario_id=usuario_id,
         version=doc.version or 1,
+        estado_anterior=doc.estado,
+        estado_nuevo=estado_final,
     )
 
     # Actualizar contador de firmas en bóveda
@@ -1162,12 +1291,32 @@ async def descargar_oficio_pdf(
             "folio_firma": doc.folio_respuesta or "",
         }
 
+    # --- Determinar destinatario según flujo ---
+    if doc.flujo == "emitido":
+        pdf_dest_nombre = doc.dependencia_destino or "---"
+        pdf_dest_cargo = "---"
+        pdf_dest_dep = doc.dependencia_destino or "---"
+    else:
+        pdf_dest_nombre = doc.remitente_nombre or "---"
+        pdf_dest_cargo = doc.remitente_cargo or "---"
+        pdf_dest_dep = doc.remitente_dependencia or "---"
+
+    # --- Determinar copias estándar según área ---
+    pdf_area = doc.area_turno or "DIR"
+    pdf_plantilla = detectar_plantilla(doc.asunto or "", "")
+    if pdf_plantilla:
+        pdf_copias = obtener_copias(pdf_plantilla.get("copias", "presupuestales"))
+    else:
+        pdf_copias = obtener_copias(
+            "administrativas" if pdf_area == "DIR" else "presupuestales"
+        )
+
     pdf_bytes = oficio_pdf_service.generar_oficio_pdf(
-        folio_respuesta=doc.folio_respuesta or "DPP/OFICIO/____/2026",
+        folio_respuesta=doc.folio_respuesta or "SFA/SF/DPP/____/2026",
         fecha_respuesta=fecha_str,
-        destinatario_nombre=doc.remitente_nombre or "---",
-        destinatario_cargo=doc.remitente_cargo or "---",
-        destinatario_dependencia=doc.remitente_dependencia or "---",
+        destinatario_nombre=pdf_dest_nombre,
+        destinatario_cargo=pdf_dest_cargo,
+        destinatario_dependencia=pdf_dest_dep,
         seccion_fundamento=secciones.get("fundamento", ""),
         seccion_referencia=secciones.get("referencia", ""),
         seccion_objeto=secciones.get("objeto", ""),
@@ -1176,9 +1325,10 @@ async def descargar_oficio_pdf(
         firmante_cargo="Director de Programación y Presupuesto",
         referencia_elaboro=doc.referencia_elaboro,
         referencia_reviso=doc.referencia_reviso,
-        copias=["Expediente.", "Minutario."],
+        copias=pdf_copias,
         incluir_firma_visual=bool(doc.firmado_digitalmente),
         sello_digital_data=sello_data,
+        asunto=doc.asunto,
     )
 
     import io

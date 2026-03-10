@@ -19,6 +19,7 @@ export interface UsuarioAdmin {
   rol: string
   activo: boolean
   cliente_id: string | null
+  modulos_acceso: string[]
   ultimo_acceso: string | null
   creado_en: string
 }
@@ -30,6 +31,7 @@ export interface UsuarioCreate {
   password: string
   cliente_id?: string | null
   activo?: boolean
+  modulos_acceso?: string[]
 }
 
 export interface UsuarioUpdate {
@@ -37,6 +39,7 @@ export interface UsuarioUpdate {
   rol?: string
   activo?: boolean
   cliente_id?: string | null
+  modulos_acceso?: string[]
 }
 
 export interface ClienteCreate {
@@ -104,7 +107,8 @@ export const clientesAdminApi = {
 
 export const ROL_LABELS: Record<string, string> = {
   superadmin:    'Superadministrador',
-  admin_cliente: 'Admin de Cliente',
+  admin_cliente: 'Director',
+  secretaria:    'Secretaría',
   analista:      'Analista',
   consulta:      'Solo consulta',
 }
@@ -112,9 +116,17 @@ export const ROL_LABELS: Record<string, string> = {
 export const ROL_COLORS: Record<string, { bg: string; text: string }> = {
   superadmin:    { bg: '#fdf2f8', text: '#9d174d' },
   admin_cliente: { bg: '#eff6ff', text: '#1d4ed8' },
+  secretaria:    { bg: '#fef3c7', text: '#92400e' },
   analista:      { bg: '#f0fdf4', text: '#15803d' },
   consulta:      { bg: '#f9fafb', text: '#6b7280' },
 }
+
+export const MODULOS_DISPONIBLES = [
+  { id: 'gestion_documental', label: 'Gestión Documental' },
+  { id: 'validacion_depp',    label: 'Validación DEPP' },
+  { id: 'certificaciones',    label: 'Certificaciones' },
+  { id: 'minutas',            label: 'Minutas' },
+]
 
 export const TIPO_CLIENTE_LABELS: Record<string, string> = {
   centralizada:  'Centralizada',

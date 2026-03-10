@@ -132,7 +132,7 @@ export default function Layout() {
     <div className="min-h-screen flex bg-gray-100">
       {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
       <aside
-        className="w-64 flex-shrink-0 flex flex-col shadow-xl"
+        className="w-64 flex-shrink-0 flex flex-col shadow-xl h-screen sticky top-0"
         style={{ backgroundColor: GUINDA_DARK }}
       >
         {/* Logo + identidad */}
@@ -157,7 +157,7 @@ export default function Layout() {
         </div>
 
         {/* Navegación */}
-        <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto">
+        <nav className="flex-1 min-h-0 px-3 py-4 space-y-5 overflow-y-auto">
           {MODULES.map(({ section, items }) => {
             // Filtrar items según el rol del usuario
             const visibleItems = items.filter(item => !item.adminOnly || isAdmin)
@@ -237,7 +237,7 @@ export default function Layout() {
         </nav>
 
         {/* Usuario */}
-        <div className="px-4 py-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.12)' }}>
+        <div className="flex-shrink-0 px-4 py-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.12)' }}>
           <div className="flex items-center gap-3 mb-3">
             <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
                  style={{ backgroundColor: GUINDA }}>
