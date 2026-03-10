@@ -373,10 +373,10 @@ with _sync2.connect() as c2:
         _exists = c2.execute(text("SELECT 1 FROM usuarios WHERE email=:e"), {"e": _em}).fetchone()
         if not _exists:
             c2.execute(text(
-                "INSERT INTO usuarios (id,email,password_hash,nombre_completo,rol,activo) "
-                "VALUES (:id,:email,:pwd,:nombre,:rol,1)"
+                "INSERT INTO usuarios (id,email,password_hash,nombre_completo,rol,activo,modulos_acceso) "
+                "VALUES (:id,:email,:pwd,:nombre,:rol,1,:modulos)"
             ), {"id": str(uuid.uuid4()), "email": _em, "pwd": get_password_hash(_pw),
-                "nombre": _nm, "rol": _rl})
+                "nombre": _nm, "rol": _rl, "modulos": '["todos"]'})
         else:
             # Actualizar hash por si se creó con columna incorrecta
             c2.execute(text(
