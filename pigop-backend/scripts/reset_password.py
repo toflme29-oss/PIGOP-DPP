@@ -1,11 +1,15 @@
 """
 Script para resetear la contrasena del superadmin en produccion.
+Corregido: agrega el directorio raiz del proyecto al path correctamente.
 """
 import sys, os, asyncio
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# El script vive en /app/scripts/ -> el root del proyecto es /app/
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(SCRIPT_DIR)
+sys.path.insert(0, ROOT_DIR)
 
-_env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+_env_file = os.path.join(ROOT_DIR, ".env")
 if os.path.exists(_env_file):
     with open(_env_file) as _f:
         for _line in _f:
