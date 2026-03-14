@@ -8,7 +8,7 @@ export type TipoDocumento =
 
 export type Flujo = 'recibido' | 'emitido'
 export type Prioridad = 'normal' | 'urgente' | 'muy_urgente'
-export type EstadoRecibido = 'recibido' | 'turnado' | 'en_atencion' | 'devuelto' | 'respondido' | 'firmado' | 'archivado'
+export type EstadoRecibido = 'recibido' | 'turnado' | 'en_atencion' | 'devuelto' | 'respondido' | 'firmado' | 'archivado' | 'de_conocimiento' | 'atendido'
 export type EstadoEmitido  = 'borrador' | 'en_revision' | 'vigente' | 'archivado'
 export type Estado = EstadoRecibido | EstadoEmitido
 
@@ -86,6 +86,12 @@ export interface Documento extends DocumentoListItem {
   devuelto_por_id:       string | null
   devuelto_en:           string | null
   motivo_devolucion:     string | null
+  atendido_por_id:       string | null
+  atendido_en:           string | null
+  atendido_area:         string | null
+  referencia_archivo_nombre: string | null
+  referencia_archivo_url:    string | null
+  contenido_referencia:      string | null
   actualizado_en:        string | null
   creado_por:            UsuarioInfo | null
   turnado_por:           UsuarioInfo | null
@@ -261,6 +267,13 @@ export interface PreviewOCRResult {
     mime_type:      string
   }
   message:         string
+  prioridad_sugerida?: string  // normal | urgente | muy_urgente
+  duplicado?: {
+    id: string
+    numero_oficio: string
+    asunto: string
+    fecha: string
+  } | null
 }
 
 // ── Labels y config visual ─────────────────────────────────────────────────────
@@ -300,7 +313,9 @@ export const ESTADO_RECIBIDO_CONFIG: Record<EstadoRecibido, { label: string; col
   devuelto:    { label: 'Devuelto',    color: '#991b1b', bg: '#fee2e2', dot: '#dc2626', step: 3 },
   respondido:  { label: 'Respondido',  color: '#0369a1', bg: '#e0f2fe', dot: '#0ea5e9', step: 4 },
   firmado:     { label: 'Firmado',     color: '#065f46', bg: '#d1fae5', dot: '#10b981', step: 5 },
-  archivado:   { label: 'Archivado',   color: '#374151', bg: '#f3f4f6', dot: '#6b7280', step: 6 },
+  archivado:       { label: 'Archivado',       color: '#374151', bg: '#f3f4f6', dot: '#6b7280', step: 6 },
+  de_conocimiento: { label: 'De conocimiento', color: '#0e7490', bg: '#e0f7fa', dot: '#06b6d4', step: 6 },
+  atendido:        { label: 'Atendido',        color: '#065f46', bg: '#d1fae5', dot: '#10b981', step: 7 },
 }
 
 export const ESTADO_EMITIDO_CONFIG: Record<EstadoEmitido, { label: string; color: string; bg: string; dot: string }> = {
@@ -412,6 +427,25 @@ export const documentosApi = {
     return res.data
   },
 
+  acusarConocimiento: async (id: string): Promise<Documento> => {
+    const res = await apiClient.post(`/documentos/${id}/acusar-conocimiento`)
+    return res.data
+  },
+
+  cargarReferencia: async (id: string, file: File): Promise<Documento> => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await apiClient.post(`/documentos/${id}/cargar-referencia`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  },
+
+  eliminarReferencia: async (id: string): Promise<Documento> => {
+    const res = await apiClient.delete(`/documentos/${id}/referencia`)
+    return res.data
+  },
+
   procesarOCR: async (id: string, file: File): Promise<OCRResult> => {
     const form = new FormData()
     form.append('file', file)
@@ -428,6 +462,13 @@ export const documentosApi = {
 
   confirmarTurno: async (id: string, area_codigo: string, area_nombre?: string, instrucciones?: string): Promise<Documento> => {
     const res = await apiClient.post(`/documentos/${id}/confirmar-turno`, {
+      area_codigo, area_nombre, instrucciones: instrucciones || undefined,
+    })
+    return res.data
+  },
+
+  cambiarTurno: async (id: string, area_codigo: string, area_nombre?: string, instrucciones?: string): Promise<Documento> => {
+    const res = await apiClient.post(`/documentos/${id}/cambiar-turno`, {
       area_codigo, area_nombre, instrucciones: instrucciones || undefined,
     })
     return res.data

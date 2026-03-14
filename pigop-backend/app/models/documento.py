@@ -132,6 +132,16 @@ class DocumentoOficial(Base):
     # firma_metadata stores: {rfc, nombre_firmante, numero_certificado,
     #   valido_desde, valido_hasta, algoritmo, cadena_original, sello_digital, fecha_firma}
 
+    # ── Documento de referencia para IA ─────────────────────────────────────
+    referencia_archivo_nombre = Column(String(300), nullable=True)
+    referencia_archivo_url    = Column(String(500), nullable=True)
+    contenido_referencia      = Column(Text, nullable=True)  # texto extraído del doc de referencia
+
+    # ── Acuse de conocimiento ───────────────────────────────────────────────
+    atendido_por_id = Column(String(36), ForeignKey("usuarios.id"), nullable=True)
+    atendido_en     = Column(DateTime(timezone=True), nullable=True)
+    atendido_area   = Column(String(200), nullable=True)
+
     # ── Vinculación con otros módulos ─────────────────────────────────────────
     certificacion_id = Column(String(36), nullable=True)   # FK futuro a Certificaciones
 
@@ -152,6 +162,7 @@ class DocumentoOficial(Base):
     creado_por   = relationship("Usuario",  foreign_keys=[creado_por_id])
     turnado_por  = relationship("Usuario",  foreign_keys=[turnado_por_id])
     devuelto_por = relationship("Usuario",  foreign_keys=[devuelto_por_id])
+    atendido_por = relationship("Usuario",  foreign_keys=[atendido_por_id])
     historial    = relationship(
         "HistorialDocumento",
         back_populates="documento",

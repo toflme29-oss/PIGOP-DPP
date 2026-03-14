@@ -533,7 +533,7 @@ export default function SAPImport() {
                 Importar otro archivo
               </button>
               <button
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/depps')}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
                 style={{ backgroundColor: GUINDA }}
               >

@@ -6,7 +6,7 @@ import {
   Wand2, Send, AlertTriangle, Eye, Edit3, RotateCcw,
   ArrowRight, InboxIcon, SendIcon, Building2,
   Download, Shield, BookOpen, FileSignature,
-  History, CornerUpLeft, RefreshCw, Lock, Hash,
+  History, CornerUpLeft, RefreshCw, Lock, Hash, Mail, ChevronLeft,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
@@ -31,6 +31,7 @@ import { PageSpinner } from '../components/ui/Spinner'
 import { formatDate, formatDateTime } from '../utils'
 import FirmaLoteWizard from './FirmaLoteWizard'
 import RegistroCertificado from './RegistroCertificado'
+import ControlOficios from './ControlOficios'
 
 const GUINDA = '#911A3A'
 const TIPOS: TipoDocumento[] = [
@@ -74,6 +75,43 @@ function PrioridadBadge({ prioridad }: { prioridad: Prioridad }) {
           style={{ backgroundColor: cfg.bg, color: cfg.color }}>
       {prioridad === 'muy_urgente' && '🚨'} {cfg.label}
     </span>
+  )
+}
+
+// ── Visor flotante de documentos (Punto 7) ────────────────────────────────────
+function VisorFlotante({ url, titulo, onClose, onDownload, firmado }: {
+  url: string; titulo: string; onClose: () => void; onDownload?: () => void; firmado?: boolean
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl mx-4 max-h-[95vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-3 border-b flex-shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <FileText size={16} style={{ color: '#911A3A' }} />
+            <h2 className="text-sm font-bold text-gray-900 truncate">{titulo}</h2>
+            {firmado && (
+              <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-medium rounded-full border border-emerald-200">
+                <Shield size={9} /> Firmado
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {onDownload && (
+              <button onClick={onDownload}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium border border-gray-300 text-gray-700 hover:bg-gray-50">
+                <Download size={12} /> Descargar
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 bg-gray-100 overflow-hidden" style={{ minHeight: 500 }}>
+          <iframe src={url} title={titulo} className="w-full h-full" style={{ border: 'none', height: 'calc(95vh - 60px)' }} />
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -123,11 +161,14 @@ function ModalRegistrarRecibido({
   const clienteId = user?.rol === 'superadmin' ? (clientes?.[0]?.id ?? '') : (user?.cliente_id ?? '')
 
   // Wizard state
-  const [step, setStep] = useState<'upload' | 'processing' | 'review' | 'manual'>('upload')
+  const [step, setStep] = useState<'upload' | 'crop' | 'processing' | 'review' | 'manual'>('upload')
   const [ocrResult, setOcrResult] = useState<PreviewOCRResult | null>(null)
   const [fileName, setFileName] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [cropImage, setCropImage] = useState<HTMLImageElement | null>(null)
+  const [cropFile, setCropFile] = useState<File | null>(null)
 
   const [form, setForm] = useState<DocumentoRecibidoCreate>({
     cliente_id: clienteId,
@@ -144,6 +185,23 @@ function ModalRegistrarRecibido({
   })
   const [err, setErr] = useState('')
   const set = (k: keyof DocumentoRecibidoCreate, v: unknown) => setForm(p => ({ ...p, [k]: v }))
+
+  // Handle file selection → check if image → crop or OCR directly
+  const handleFileSelectOrCrop = useCallback((file: File) => {
+    setFileName(file.name)
+    setErr('')
+    const isImage = /^image\/(jpeg|jpg|png|tiff|webp)$/.test(file.type)
+    if (isImage) {
+      // Show crop option for images
+      setCropFile(file)
+      const img = new Image()
+      img.onload = () => { setCropImage(img); setStep('crop') }
+      img.src = URL.createObjectURL(file)
+    } else {
+      // PDF/Word → process directly
+      handleFileSelect(file)
+    }
+  }, [])
 
   // Handle file selection → OCR processing
   const handleFileSelect = useCallback(async (file: File) => {
@@ -180,6 +238,8 @@ function ModalRegistrarRecibido({
         regla_turno_codigo: (result.clasificacion.regla_codigo as string) || undefined,
         genera_tramite: (result.clasificacion.genera_tramite as string) || undefined,
         fecha_limite: result.fecha_limite || undefined,
+        // Auto-prioridad urgente si la IA detecta plazos o remitente crítico
+        prioridad: (result.prioridad_sugerida as 'normal' | 'urgente' | 'muy_urgente') || prev.prioridad,
       }))
       setStep('review')
     } catch (e: unknown) {
@@ -259,7 +319,7 @@ function ModalRegistrarRecibido({
               <input ref={fileRef} type="file"
                 accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp,.doc,.docx"
                 className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f) }}
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelectOrCrop(f) }}
               />
 
               {/* Drop zone */}
@@ -269,7 +329,7 @@ function ModalRegistrarRecibido({
                 onDrop={e => {
                   e.preventDefault(); setDragOver(false)
                   const f = e.dataTransfer.files[0]
-                  if (f) handleFileSelect(f)
+                  if (f) handleFileSelectOrCrop(f)
                 }}
                 onClick={() => fileRef.current?.click()}
                 className={clsx(
@@ -321,6 +381,75 @@ function ModalRegistrarRecibido({
                   No tengo el documento escaneado &rarr; captura manual
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* ── STEP: CROP (recorte de imagen) ─────────────────── */}
+          {step === 'crop' && cropImage && cropFile && (
+            <div className="space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+                <AlertTriangle size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-medium text-amber-800">Recorte de imagen (opcional)</p>
+                  <p className="text-[10px] text-amber-600 mt-0.5">
+                    Si la foto contiene elementos fuera del oficio (fondo, sombras, objetos), puede recortar la imagen para mejorar la extracción de datos.
+                  </p>
+                </div>
+              </div>
+              <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center" style={{ maxHeight: 350 }}>
+                <img
+                  src={cropImage.src}
+                  alt="Vista previa"
+                  className="max-w-full max-h-[340px] object-contain"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    // Skip crop, use original
+                    if (cropFile) handleFileSelect(cropFile)
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs rounded-lg font-medium text-white"
+                  style={{ backgroundColor: GUINDA }}
+                >
+                  <CheckCircle2 size={13} /> Usar imagen completa
+                </button>
+                <button
+                  onClick={() => {
+                    // Crop using canvas
+                    if (!cropImage || !cropFile) return
+                    const canvas = document.createElement('canvas')
+                    const ctx = canvas.getContext('2d')
+                    if (!ctx) { handleFileSelect(cropFile); return }
+                    // Auto-crop: trim 5% margins to remove common photo artifacts
+                    const margin = 0.05
+                    const sx = Math.floor(cropImage.width * margin)
+                    const sy = Math.floor(cropImage.height * margin)
+                    const sw = Math.floor(cropImage.width * (1 - 2 * margin))
+                    const sh = Math.floor(cropImage.height * (1 - 2 * margin))
+                    canvas.width = sw
+                    canvas.height = sh
+                    ctx.drawImage(cropImage, sx, sy, sw, sh, 0, 0, sw, sh)
+                    canvas.toBlob(blob => {
+                      if (blob) {
+                        const cropped = new File([blob], cropFile.name, { type: cropFile.type })
+                        handleFileSelect(cropped)
+                      } else {
+                        handleFileSelect(cropFile)
+                      }
+                    }, cropFile.type)
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs rounded-lg font-medium border border-gray-300 text-gray-700 hover:bg-gray-50"
+                >
+                  ✂️ Recortar márgenes
+                </button>
+              </div>
+              <button
+                onClick={() => { setStep('upload'); setCropImage(null); setCropFile(null) }}
+                className="w-full text-center text-[10px] text-gray-500 hover:text-gray-700 underline"
+              >
+                ← Seleccionar otro archivo
+              </button>
             </div>
           )}
 
@@ -386,6 +515,38 @@ function ModalRegistrarRecibido({
                       Plazo: {clasificacion.plazo_dias as number} dias habiles &rarr; {ocrResult.fecha_limite}
                     </p>
                   )}
+                </div>
+              )}
+
+              {/* Alerta de duplicado */}
+              {ocrResult?.duplicado && (
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-3">
+                  <p className="text-xs font-semibold text-amber-800 flex items-center gap-1">
+                    <AlertTriangle size={12} /> ⚠️ Posible duplicado detectado
+                  </p>
+                  <p className="text-[11px] text-amber-700 mt-1">
+                    Ya existe un oficio <span className="font-mono font-bold">{ocrResult.duplicado.numero_oficio}</span> registrado
+                    {ocrResult.duplicado.fecha && <> con fecha {ocrResult.duplicado.fecha}</>}.
+                  </p>
+                  <p className="text-[10px] text-amber-600 mt-0.5">
+                    Asunto: {ocrResult.duplicado.asunto}
+                  </p>
+                  <p className="text-[10px] text-amber-500 mt-1 italic">
+                    Verifique antes de registrar. Si es un documento diferente, puede continuar.
+                  </p>
+                </div>
+              )}
+
+              {/* Alerta de prioridad urgente auto-detectada */}
+              {ocrResult?.prioridad_sugerida === 'urgente' && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                  <p className="text-xs font-semibold text-red-700 flex items-center gap-1">
+                    🚨 Prioridad URGENTE detectada por IA
+                  </p>
+                  <p className="text-[10px] text-red-600 mt-0.5">
+                    Se detectó plazo de respuesta o remitente que requiere atención prioritaria.
+                    La prioridad se estableció como "Urgente" automáticamente.
+                  </p>
                 </div>
               )}
 
@@ -478,9 +639,9 @@ function ModalRegistrarRecibido({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Notas adicionales</label>
-                <textarea rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none"
-                  placeholder="Observaciones, contexto..."
+                <label className="block text-xs font-medium text-gray-700 mb-1">📝 Notas adicionales</label>
+                <textarea rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-y min-h-[80px]"
+                  placeholder="Observaciones, contexto, instrucciones especiales..."
                   value={form.descripcion ?? ''} onChange={e => set('descripcion', e.target.value)} />
               </div>
 
@@ -591,9 +752,9 @@ function ModalRegistrarRecibido({
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Notas adicionales</label>
-                <textarea rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none"
-                  placeholder="Observaciones, contexto..."
+                <label className="block text-xs font-medium text-gray-700 mb-1">📝 Notas adicionales</label>
+                <textarea rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-y min-h-[80px]"
+                  placeholder="Observaciones, contexto, instrucciones especiales..."
                   value={form.descripcion ?? ''} onChange={e => set('descripcion', e.target.value)} />
               </div>
 
@@ -979,6 +1140,7 @@ function PanelRecibido({
   const [loadingPdf, setLoadingPdf] = useState(false)
   const [originalUrl, setOriginalUrl] = useState<string | null>(null)
   const [loadingOriginal, setLoadingOriginal] = useState(false)
+  const [visorFlotante, setVisorFlotante] = useState<'original' | 'pdf' | null>(null)
   const [showDevolucionForm, setShowDevolucionForm] = useState(false)
   const [showDevolucionModal, setShowDevolucionModal] = useState(false)
   const [observacionesDevolucion, setObservacionesDevolucion] = useState('')
@@ -988,6 +1150,8 @@ function PanelRecibido({
   const [elaboroLocal, setElaboro] = useState(doc.referencia_elaboro ?? '')
   const [revisoLocal, setReviso] = useState(doc.referencia_reviso ?? '')
   const [instruccionesIA, setInstruccionesIA] = useState('')
+  const [cargandoReferencia, setCargandoReferencia] = useState(false)
+  const refFileRef = useRef<HTMLInputElement>(null)
   // ── Roles reales de la DPP ──
   // Director = admin_cliente (firma, revisa, devuelve)
   // Área responsable = analista (genera respuesta, edita, envía para firma)
@@ -999,7 +1163,7 @@ function PanelRecibido({
   const isArea = user?.rol === 'analista'
   const canTurnar = isDirector || isSecretaria || isSuperadmin
   const canGenerarRespuesta = isArea || isDirector || isSuperadmin  // Área + Director + Super
-  const canFirmar = isDirector  // SOLO Director firma (no superadmin, no área, no secretaría)
+  const canFirmar = isDirector || isSuperadmin  // Director y Administrador pueden firmar
   const canEnviarParaFirma = isArea || isSuperadmin  // Área envía para firma
 
   // Auto-cargar original al montar
@@ -1020,14 +1184,26 @@ function PanelRecibido({
   }
 
   const [instruccionesTurno, setInstruccionesTurno] = useState('')
+  const [cambiarTurnoOpen, setCambiarTurnoOpen] = useState(false)
+  const [instruccionesCambioTurno, setInstruccionesCambioTurno] = useState('')
   const turnarMutation = useMutation({
     mutationFn: ({ cod, nom }: { cod: string; nom: string }) =>
       documentosApi.confirmarTurno(doc.id, cod, nom, instruccionesTurno || undefined),
     onSuccess: invalidate,
   })
+  const cambiarTurnoMutation = useMutation({
+    mutationFn: ({ cod, nom }: { cod: string; nom: string }) =>
+      documentosApi.cambiarTurno(doc.id, cod, nom, instruccionesCambioTurno || undefined),
+    onSuccess: () => { invalidate(); setCambiarTurnoOpen(false); setInstruccionesCambioTurno('') },
+  })
 
   const estadoMutation = useMutation({
     mutationFn: (estado: string) => documentosApi.cambiarEstado(doc.id, estado as never),
+    onSuccess: invalidate,
+  })
+
+  const acusarConocimientoMut = useMutation({
+    mutationFn: () => documentosApi.acusarConocimiento(doc.id),
     onSuccess: invalidate,
   })
 
@@ -1048,6 +1224,18 @@ function PanelRecibido({
     try { await documentosApi.generarBorrador(doc.id, instrucciones || instruccionesIA || undefined); invalidate() }
     catch { /* error */ }
     finally { setGenerando(false) }
+  }
+
+  const handleCargarReferencia = async (file: File) => {
+    setCargandoReferencia(true)
+    try { await documentosApi.cargarReferencia(doc.id, file); invalidate() }
+    catch { /* error */ }
+    finally { setCargandoReferencia(false) }
+  }
+
+  const handleEliminarReferencia = async () => {
+    try { await documentosApi.eliminarReferencia(doc.id); invalidate() }
+    catch { /* error */ }
   }
 
   // handleOficioEstructurado eliminado — unificado en handleBorrador
@@ -1138,12 +1326,20 @@ function PanelRecibido({
   return (
     <div className="flex flex-col h-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
       {/* Header */}
-      <div className="flex items-start justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
-        <div className="flex items-start gap-2 min-w-0">
-          <span className="text-xl mt-0.5 flex-shrink-0">{TIPO_ICONS[doc.tipo]}</span>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 font-medium px-2 py-1 rounded-lg hover:bg-gray-200 transition-colors flex-shrink-0"
+          >
+            <ChevronLeft size={14} />
+            <span className="hidden sm:inline">Volver</span>
+          </button>
+          <div className="h-5 w-px bg-gray-300 flex-shrink-0" />
+          <span className="text-xl flex-shrink-0">{TIPO_ICONS[doc.tipo]}</span>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <p className="text-xs font-semibold text-gray-900 leading-tight truncate max-w-[180px]">{doc.asunto}</p>
+              <p className="text-sm font-semibold text-gray-900 leading-tight truncate">{doc.asunto}</p>
               {doc.firmado_digitalmente && (
                 <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full font-semibold bg-emerald-100 text-emerald-700 whitespace-nowrap">
                   <Shield size={8} /> Firmado
@@ -1167,8 +1363,39 @@ function PanelRecibido({
         </div>
       )}
 
-      {/* Badge "Para conocimiento" */}
-      {!doc.requiere_respuesta && (
+      {/* Badge "Para conocimiento" + Acuse */}
+      {!doc.requiere_respuesta && doc.estado === 'de_conocimiento' && (
+        <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+          <BookOpen size={12} className="text-blue-600 flex-shrink-0" />
+          <span className="text-[10px] font-medium text-blue-700 flex-1">Documento para conocimiento — no requiere respuesta</span>
+          <button
+            onClick={() => acusarConocimientoMut.mutate()}
+            disabled={acusarConocimientoMut.isPending}
+            className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-white rounded-md transition-colors"
+            style={{ backgroundColor: '#065f46' }}
+          >
+            {acusarConocimientoMut.isPending
+              ? <><RotateCcw size={10} className="animate-spin" /> Registrando…</>
+              : <><CheckCircle2 size={10} /> Tomar conocimiento</>}
+          </button>
+        </div>
+      )}
+      {!doc.requiere_respuesta && doc.estado === 'atendido' && (
+        <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+          <CheckCircle2 size={12} className="text-emerald-600 flex-shrink-0" />
+          <div className="flex-1">
+            <span className="text-[10px] font-semibold text-emerald-700">Documento atendido</span>
+            {(doc.atendido_area || doc.atendido_en) && (
+              <p className="text-[9px] text-emerald-600">
+                {doc.atendido_area && <>Área: {doc.atendido_area}</>}
+                {doc.atendido_area && doc.atendido_en && <> · </>}
+                {doc.atendido_en && <>{formatDateTime(doc.atendido_en)}</>}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+      {!doc.requiere_respuesta && doc.estado !== 'de_conocimiento' && doc.estado !== 'atendido' && (
         <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
           <BookOpen size={12} className="text-blue-600 flex-shrink-0" />
           <span className="text-[10px] font-medium text-blue-700">Documento para conocimiento — no requiere respuesta</span>
@@ -1261,7 +1488,7 @@ function PanelRecibido({
                     <span className="text-xs">Cargando…</span>
                   </div>
                 ) : originalUrl ? (
-                  <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-100" style={{ height: 260 }}>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-100" style={{ height: 450 }}>
                     <iframe src={originalUrl} title="Oficio original" className="w-full h-full" style={{ border: 'none' }} />
                   </div>
                 ) : (
@@ -1344,14 +1571,59 @@ function PanelRecibido({
               {/* Turno confirmado */}
               {doc.area_turno_confirmada && doc.area_turno_nombre && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-2.5 mb-2">
-                  <p className="text-[10px] font-medium text-green-700 flex items-center gap-1">
-                    <CheckCircle2 size={10} /> Turno confirmado
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-medium text-green-700 flex items-center gap-1">
+                      <CheckCircle2 size={10} /> Turno confirmado
+                    </p>
+                    {canTurnar && (
+                      <button
+                        onClick={() => setCambiarTurnoOpen(prev => !prev)}
+                        className="text-[10px] text-amber-600 hover:text-amber-800 font-medium flex items-center gap-0.5"
+                      >
+                        <RefreshCw size={9} /> Cambiar
+                      </button>
+                    )}
+                  </div>
                   <p className="text-xs font-semibold text-green-900">{doc.area_turno_nombre}</p>
                   {doc.instrucciones_turno && (
                     <div className="mt-1.5 bg-white/60 rounded px-2 py-1.5">
                       <p className="text-[10px] font-medium text-green-700 mb-0.5">Instrucciones:</p>
                       <p className="text-[11px] text-green-900 leading-snug">{doc.instrucciones_turno}</p>
+                    </div>
+                  )}
+                  {/* Formulario cambio de turno */}
+                  {cambiarTurnoOpen && canTurnar && (
+                    <div className="mt-2 pt-2 border-t border-green-200 space-y-2">
+                      <p className="text-[10px] font-medium text-amber-700">Reasignar a otra área:</p>
+                      <select
+                        className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs"
+                        id="cambio-area-select"
+                        defaultValue=""
+                      >
+                        <option value="">— Seleccionar nueva área —</option>
+                        {areas.map(a => (
+                          <option key={a.codigo} value={a.codigo}>{a.nombre}</option>
+                        ))}
+                      </select>
+                      <textarea
+                        className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs resize-none focus:ring-1 focus:ring-[#911A3A]/40 focus:border-[#911A3A] focus:outline-none"
+                        rows={2}
+                        placeholder="Motivo del cambio de turno (opcional)…"
+                        value={instruccionesCambioTurno}
+                        onChange={e => setInstruccionesCambioTurno(e.target.value)}
+                      />
+                      <button
+                        onClick={() => {
+                          const sel = document.getElementById('cambio-area-select') as HTMLSelectElement
+                          const cod = sel?.value
+                          const area = areas.find(a => a.codigo === cod)
+                          if (cod && area) cambiarTurnoMutation.mutate({ cod, nom: area.nombre })
+                        }}
+                        disabled={cambiarTurnoMutation.isPending}
+                        className="w-full py-1.5 text-xs rounded-lg font-medium text-white transition-colors bg-amber-600 hover:bg-amber-700"
+                      >
+                        {cambiarTurnoMutation.isPending ? 'Cambiando...' : '↻ Confirmar cambio de turno'}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1426,16 +1698,25 @@ function PanelRecibido({
             {/* ── Visor del oficio original (turnado) ── */}
             {doc.url_storage && (
               <div className="space-y-2">
-                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
-                  <Eye size={10} /> Oficio original (turnado)
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
+                    <Eye size={10} /> Oficio original (turnado)
+                  </p>
+                  {originalUrl && (
+                    <button onClick={() => setVisorFlotante('original')}
+                      className="flex items-center gap-1 px-2 py-0.5 text-[10px] rounded font-medium border border-gray-200 text-gray-500 hover:bg-gray-50"
+                      title="Abrir en ventana flotante">
+                      <FolderOpen size={9} /> Ampliar
+                    </button>
+                  )}
+                </div>
                 {loadingOriginal ? (
                   <div className="flex items-center justify-center py-8 text-gray-400">
                     <RotateCcw size={16} className="animate-spin mr-2" />
                     <span className="text-xs">Cargando documento original...</span>
                   </div>
                 ) : originalUrl ? (
-                  <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-100" style={{ height: 280 }}>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-100" style={{ height: 450 }}>
                     <iframe src={originalUrl} title="Oficio original" className="w-full h-full" style={{ border: 'none' }} />
                   </div>
                 ) : (
@@ -1496,7 +1777,7 @@ function PanelRecibido({
                 <textarea
                   value={instruccionesIA}
                   onChange={e => setInstruccionesIA(e.target.value)}
-                  placeholder="Instrucciones para la IA (ej: 'Contestar en sentido negativo ya que los datos maestros no son correctos', 'Autorizar la certificación presupuestal por el monto solicitado')..."
+                  placeholder="Instrucciones para la IA (ej: 'Contestar en sentido negativo', 'Incluir la tabla del documento adjunto en la respuesta', 'Usa el oficio adjunto como base, solo mejora redacción')..."
                   className="w-full border border-blue-200 rounded-lg px-3 py-2 text-xs h-16 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
                 />
                 <button onClick={() => handleBorrador(instruccionesIA)} disabled={generando}
@@ -1506,6 +1787,73 @@ function PanelRecibido({
                     ? <><RotateCcw size={12} className="animate-spin" /> Generando oficio...</>
                     : <><Wand2 size={12} /> Generar oficio de respuesta</>}
                 </button>
+              </div>
+            )}
+
+            {/* ── Cargar documento de referencia para IA ── */}
+            {canGenerarRespuesta && (
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Upload size={14} className="text-blue-600" />
+                  <p className="text-xs font-medium text-gray-700">Documento de referencia para IA</p>
+                </div>
+                <p className="text-[10px] text-gray-500 leading-relaxed">
+                  Adjunta tablas, respuestas previas, Excel o documentos Word. La IA los analiza directamente (incluyendo tablas y formato) al generar la respuesta. Usa las instrucciones para indicar: "incluye la tabla adjunta", "mejora la redacción del oficio adjunto", etc.
+                </p>
+
+                {doc.referencia_archivo_nombre ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                      <FileText size={14} className="text-blue-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] font-medium text-blue-800 truncate">{doc.referencia_archivo_nombre}</p>
+                        <p className="text-[9px] text-blue-600">
+                          {doc.contenido_referencia
+                            ? `${Math.min(doc.contenido_referencia.length, 99999).toLocaleString()} caracteres extraídos`
+                            : 'Procesando…'}
+                        </p>
+                      </div>
+                      <button onClick={handleEliminarReferencia}
+                        className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
+                        title="Eliminar referencia">
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <input ref={refFileRef} type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp,.doc,.docx,.xlsx,.xls,.csv,.txt"
+                        className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) { handleEliminarReferencia().then(() => handleCargarReferencia(f)) }; if (e.target) e.target.value = '' }}
+                      />
+                      <button onClick={() => refFileRef.current?.click()}
+                        disabled={cargandoReferencia}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-[10px] rounded-lg font-medium transition-colors border border-blue-300 text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+                        {cargandoReferencia
+                          ? <><RotateCcw size={10} className="animate-spin" /> Procesando…</>
+                          : <><Upload size={10} /> Cambiar archivo</>}
+                      </button>
+                      <button onClick={handleEliminarReferencia}
+                        className="flex items-center justify-center gap-1 py-1.5 px-3 text-[10px] rounded-lg font-medium transition-colors border border-red-300 text-red-600 hover:bg-red-50">
+                        <X size={10} /> Eliminar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <input ref={refFileRef} type="file"
+                      accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp,.doc,.docx,.xlsx,.xls,.csv,.txt"
+                      className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleCargarReferencia(f) }}
+                    />
+                    <button onClick={() => refFileRef.current?.click()}
+                      disabled={cargandoReferencia}
+                      className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs rounded-lg font-medium text-white transition-colors bg-blue-600 hover:bg-blue-700 disabled:opacity-50">
+                      {cargandoReferencia
+                        ? <><RotateCcw size={12} className="animate-spin" /> Procesando documento…</>
+                        : <><Upload size={12} /> Cargar documento de referencia</>}
+                    </button>
+                  </>
+                )}
               </div>
             )}
 
@@ -1705,7 +2053,14 @@ function PanelRecibido({
                     <span className="text-[10px] font-medium text-emerald-700">Documento firmado electrónicamente con e.firma</span>
                   </div>
                 )}
-                <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-100" style={{ height: 'calc(100vh - 240px)', minHeight: 500 }}>
+                <div className="flex justify-end">
+                  <button onClick={() => setVisorFlotante('pdf')}
+                    className="flex items-center gap-1 px-2.5 py-1 text-[10px] rounded-md font-medium border border-gray-200 text-gray-600 hover:bg-gray-50"
+                    title="Abrir en ventana flotante">
+                    <FolderOpen size={10} /> Ampliar visor
+                  </button>
+                </div>
+                <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-100" style={{ height: 'calc(100vh - 280px)', minHeight: 500 }}>
                   <iframe
                     src={pdfUrl}
                     title="Vista previa del oficio"
@@ -2097,6 +2452,24 @@ function PanelRecibido({
           </div>
         </div>
       )}
+
+      {/* Visor flotante modal */}
+      {visorFlotante === 'pdf' && pdfUrl && (
+        <VisorFlotante
+          url={pdfUrl}
+          titulo={`${doc.folio_respuesta || doc.numero_oficio_origen || doc.asunto}`}
+          firmado={doc.firmado_digitalmente}
+          onClose={() => setVisorFlotante(null)}
+          onDownload={() => documentosApi.descargarOficioPdf(doc.id)}
+        />
+      )}
+      {visorFlotante === 'original' && originalUrl && (
+        <VisorFlotante
+          url={originalUrl}
+          titulo={`Oficio original — ${doc.numero_oficio_origen || doc.asunto}`}
+          onClose={() => setVisorFlotante(null)}
+        />
+      )}
     </div>
   )
 }
@@ -2109,7 +2482,7 @@ export function TarjetaRecibido({
   multiSelect?: boolean; multiSelected?: boolean; onToggleSelect?: () => void;
 }) {
   const cfg = ESTADO_RECIBIDO_CONFIG[doc.estado as keyof typeof ESTADO_RECIBIDO_CONFIG]
-  const canSelect = doc.estado === 'en_atencion' && doc.has_borrador === true && !doc.firmado_digitalmente
+  const canSelect = (doc.estado === 'en_atencion' || doc.estado === 'respondido') && doc.has_borrador === true && !doc.firmado_digitalmente
   return (
     <div onClick={multiSelect ? (canSelect ? onToggleSelect : undefined) : onClick}
       title={multiSelect && !canSelect
@@ -2199,6 +2572,7 @@ function PanelEmitido({
   const [loadingPdf, setLoadingPdf] = useState(false)
   const [originalUrl, setOriginalUrl] = useState<string | null>(null)
   const [loadingOriginal, setLoadingOriginal] = useState(false)
+  const [visorFlotanteEmitido, setVisorFlotanteEmitido] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [aiPrompt, setAiPrompt] = useState('')
   const [editing, setEditing] = useState(false)
@@ -2302,7 +2676,15 @@ function PanelEmitido({
       {/* Header */}
       <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
         <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <button
+              onClick={onClose}
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 font-medium px-2 py-1 rounded-lg hover:bg-gray-200 transition-colors flex-shrink-0"
+            >
+              <ChevronLeft size={14} />
+              <span className="hidden sm:inline">Volver</span>
+            </button>
+            <div className="h-5 w-px bg-gray-300 flex-shrink-0" />
             <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#FDF2F4' }}>
               <span className="text-base">{TIPO_ICONS[doc.tipo]}</span>
             </div>
@@ -2553,6 +2935,13 @@ function PanelEmitido({
                     <span className="text-[10px] font-medium text-emerald-700">Documento firmado electrónicamente</span>
                   </div>
                 )}
+                <div className="flex justify-end">
+                  <button onClick={() => setVisorFlotanteEmitido(true)}
+                    className="flex items-center gap-1 px-2.5 py-1 text-[10px] rounded-md font-medium border border-gray-200 text-gray-600 hover:bg-gray-50"
+                    title="Abrir en ventana flotante">
+                    <FolderOpen size={10} /> Ampliar visor
+                  </button>
+                </div>
                 <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-100" style={{ height: 'calc(100vh - 300px)', minHeight: 400 }}>
                   <iframe src={pdfUrl} title="Vista previa" className="w-full h-full" style={{ border: 'none' }} />
                 </div>
@@ -2702,6 +3091,16 @@ function PanelEmitido({
           </div>
         </div>
       )}
+      {/* Visor flotante modal — emitido */}
+      {visorFlotanteEmitido && pdfUrl && (
+        <VisorFlotante
+          url={pdfUrl}
+          titulo={`${doc.folio_respuesta || doc.numero_control || doc.asunto}`}
+          firmado={doc.firmado_digitalmente}
+          onClose={() => setVisorFlotanteEmitido(false)}
+          onDownload={() => documentosApi.descargarOficioPdf(doc.id)}
+        />
+      )}
     </div>
   )
 }
@@ -2711,7 +3110,7 @@ function PanelEmitido({
 export default function GestionDocumental() {
   const { user } = useAuth()
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'recibidos' | 'emitidos'>('recibidos')
+  const [tab, setTab] = useState<'recibidos' | 'emitidos' | 'oficios'>('recibidos')
   const [busqueda, setBusqueda] = useState('')
   const [busquedaDebounced, setBusquedaDebounced] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
@@ -2789,8 +3188,8 @@ export default function GestionDocumental() {
 
   return (
     <div className="flex h-full bg-gray-50">
-      {/* ── Panel izquierdo (lista) ─────────────────────────────────────────── */}
-      <div className={clsx('flex flex-col', selectedId ? 'w-[420px] flex-shrink-0' : 'flex-1')}>
+      {/* ── Panel izquierdo (lista) — oculto cuando hay detalle seleccionado */}
+      <div className={clsx('flex flex-col', selectedId ? 'hidden' : 'flex-1')}>
 
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-4 pt-4 pb-0">
@@ -2827,7 +3226,7 @@ export default function GestionDocumental() {
                 </button>
               )}
 
-              {tab === 'recibidos' && isDirector && (
+              {tab === 'recibidos' && isDirector && tab !== 'oficios' && (
                 <button
                   onClick={() => {
                     if (multiSelectMode) {
@@ -2849,16 +3248,18 @@ export default function GestionDocumental() {
                   {multiSelectMode ? 'Cancelar selección' : 'Firma por lote'}
                 </button>
               )}
-              <Button size="sm" onClick={() => tab === 'recibidos' ? setShowModalRecibido(true) : setShowModalEmitido(true)}>
-                <Plus size={13} />
-                {tab === 'recibidos' ? 'Registrar recibido' : 'Nuevo emitido'}
-              </Button>
+              {tab !== 'oficios' && (
+                <Button size="sm" onClick={() => tab === 'recibidos' ? setShowModalRecibido(true) : setShowModalEmitido(true)}>
+                  <Plus size={13} />
+                  {tab === 'recibidos' ? 'Registrar recibido' : 'Nuevo emitido'}
+                </Button>
+              )}
             </div>
           </div>
 
           {/* Tabs */}
           <div className="flex gap-0">
-            {([['recibidos', 'Correspondencia recibida', InboxIcon], ['emitidos', 'Documentos emitidos', SendIcon]] as const).map(([key, label, Icon]) => (
+            {([['recibidos', 'Correspondencia recibida', InboxIcon], ['emitidos', 'Documentos emitidos', SendIcon], ['oficios', 'Control de Oficios', Mail]] as const).map(([key, label, Icon]) => (
               <button key={key}
                 onClick={() => { setTab(key); setSelectedId(null); setFiltroEstado(''); setFiltroArea('') }}
                 className={clsx(
@@ -2870,6 +3271,13 @@ export default function GestionDocumental() {
             ))}
           </div>
         </div>
+
+        {tab === 'oficios' ? (
+          /* ── Tab: Control de Oficios (registro y exportación) ── */
+          <div className="flex-1 overflow-y-auto p-4">
+            <ControlOficios />
+          </div>
+        ) : (<>
 
         {/* Métricas rápidas */}
         {tab === 'recibidos' ? (
@@ -2950,7 +3358,7 @@ export default function GestionDocumental() {
               value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}>
               <option value="">Estado</option>
               {tab === 'recibidos'
-                ? ['recibido','turnado','en_atencion','devuelto','respondido','firmado'].map(e => (
+                ? ['recibido','turnado','en_atencion','devuelto','respondido','firmado','de_conocimiento','atendido'].map(e => (
                     <option key={e} value={e}>{ESTADO_RECIBIDO_CONFIG[e as keyof typeof ESTADO_RECIBIDO_CONFIG]?.label ?? e}</option>
                   ))
                 : ['borrador','en_revision','vigente'].map(e => (
@@ -3023,7 +3431,7 @@ export default function GestionDocumental() {
             <>
               {/* Barra seleccionar/deseleccionar todos (multi-select) */}
               {multiSelectMode && docs && (() => {
-                const eligible = docs.filter(d => d.estado === 'en_atencion' && d.has_borrador && !d.firmado_digitalmente)
+                const eligible = docs.filter(d => (d.estado === 'en_atencion' || d.estado === 'respondido') && d.has_borrador && !d.firmado_digitalmente)
                 const allSelected = eligible.length > 0 && eligible.every(d => selectedIds.has(d.id))
                 return (
                   <div className="px-3 py-2 bg-[#FDF8F9] border border-[#911A3A]/10 rounded-lg mb-1 space-y-1.5">
@@ -3072,7 +3480,7 @@ export default function GestionDocumental() {
                   <tbody className="divide-y divide-gray-50">
                     {docs.map(doc => {
                       const cfg = ESTADO_RECIBIDO_CONFIG[doc.estado as keyof typeof ESTADO_RECIBIDO_CONFIG]
-                      const canSelect = doc.estado === 'en_atencion' && doc.has_borrador === true && !doc.firmado_digitalmente
+                      const canSelect = (doc.estado === 'en_atencion' || doc.estado === 'respondido') && doc.has_borrador === true && !doc.firmado_digitalmente
                       const isToday = doc.fecha_recibido === new Date().toISOString().slice(0, 10) || doc.creado_en?.slice(0, 10) === new Date().toISOString().slice(0, 10)
                       return (
                         <tr key={doc.id}
@@ -3210,11 +3618,12 @@ export default function GestionDocumental() {
             </div>
           )}
         </div>
+        </>)}
       </div>
 
-      {/* ── Panel derecho (detalle) ──────────────────────────────────────────── */}
+      {/* ── Panel detalle (full-width cuando hay selección) ────────────────── */}
       {selectedId && selectedDoc && (
-        <div className="flex-1 p-4 min-w-0">
+        <div className="flex-1 flex flex-col min-w-0">
           {selectedDoc.flujo === 'recibido' ? (
             <PanelRecibido
               doc={selectedDoc}

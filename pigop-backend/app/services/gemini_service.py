@@ -354,6 +354,29 @@ class GeminiService:
             logger.error(f"Error Gemini Vision: {e}")
             return {"error": str(e)}
 
+    async def extract_text_from_image(self, image_bytes: bytes, mime_type: str) -> str:
+        """Extrae texto plano de una imagen usando Gemini Vision (para documentos de referencia)."""
+        if not self.available:
+            return "[OCR no disponible]"
+        try:
+            from google.genai import types
+            prompt_text = (
+                "Extrae TODO el texto visible en esta imagen, manteniendo el formato original "
+                "lo más fielmente posible. Si hay tablas, reproduce la estructura con separadores. "
+                "Solo devuelve el texto extraído, sin comentarios adicionales."
+            )
+            resp = _gemini_client.models.generate_content(
+                model=self.model_vision,
+                contents=[
+                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                    prompt_text,
+                ],
+            )
+            return resp.text.strip()
+        except Exception as e:
+            logger.error(f"Error Gemini Vision extract_text: {e}")
+            return f"[Error al extraer texto: {e}]"
+
     # ── Validación de consistencia ─────────────────────────────────────────────
 
     async def validar_consistencia_expediente(

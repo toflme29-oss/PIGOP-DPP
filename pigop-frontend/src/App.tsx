@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
 import Login from './pages/Login'
+import Home from './pages/Home'
 import Dashboard from './pages/Dashboard'
 import DEPPDetail from './pages/DEPPDetail'
 import GestionDocumental from './pages/GestionDocumental'
@@ -63,8 +64,11 @@ export default function App() {
             </PrivateRoute>
           }
         >
+          {/* Home: Centro de mando personalizado */}
+          <Route index element={<Home />} />
+
           {/* Módulo 1: Validación del Gasto Público (DEPPs) */}
-          <Route index element={<Dashboard />} />
+          <Route path="depps" element={<Dashboard />} />
           <Route path="depps/:id" element={<DEPPDetail />} />
 
           {/* Módulo 1b: Importación SAP */}

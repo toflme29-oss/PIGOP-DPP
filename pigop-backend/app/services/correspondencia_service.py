@@ -49,12 +49,12 @@ AREAS_DPP = {
 # Al iniciar operación se configurará el número consecutivo de arranque.
 PREFIJOS_FOLIO = {
     "DIR":  "SFA/SF/DPP",
-    "SCG":  "SFA/SF/DPP",
-    "DREP": "SFA/SF/DPP",
-    "DCP":  "SFA/SF/DPP",
-    "SPF":  "SFA/SF/DPP/SPFP",
-    "DASP": "SFA/SF/DPP/SPFP",
-    "DFNP": "SFA/SF/DPP/SPFP",
+    "SCG":  "SFA/SF/DPP-SCEG",
+    "DREP": "SFA/SF/DPP-SCEG",
+    "DCP":  "SFA/SF/DPP-SCEG",
+    "SPF":  "SFA/SF/DPP-SPFP",
+    "DASP": "SFA/SF/DPP-SPFP",
+    "DFNP": "SFA/SF/DPP-SPFP",
 }
 
 # ── Copias institucionales estándar ───────────────────────────────────────────
@@ -488,8 +488,17 @@ Extrae ÚNICAMENTE los campos que puedas identificar claramente. Si un campo no 
   "tipo_solicitud": "solicitud|consulta|informacion|instruccion|notificacion|otro",
   "tiene_firma_electronica": true,
   "copias_para": ["lista de personas o cargos que reciben copia"],
-  "sello_recibido": "texto del sello de recibido si aparece (fecha, área)"
+  "sello_recibido": "texto del sello de recibido si aparece (fecha, área)",
+  "plazo_respuesta_detectado": "plazo textual detectado en el documento si existe, ej: '3 días hábiles', '5 días naturales', '48 horas', null si no hay",
+  "plazo_dias_numero": null,
+  "origen_requiere_urgencia": false,
+  "tipo_origen": "dependencia_externa|juridico|transparencia|organo_control|auditoria|otro"
 }
+
+REGLAS ADICIONALES PARA PLAZOS:
+- Si el documento contiene un plazo explícito de respuesta (ej: "deberá responder en un plazo de 3 días hábiles"), EXTRAE el plazo en "plazo_respuesta_detectado" y el número en "plazo_dias_numero".
+- Si el remitente es un órgano jurisdiccional, jurídico, de transparencia, órgano de control interno (OCI), auditoría, o ente fiscalizador, marca "origen_requiere_urgencia": true y en "tipo_origen" indica la categoría.
+- Busca frases como: "se le requiere", "apercibimiento", "término de ley", "plazo perentorio", "días hábiles para contestar", "vencimiento".
 
 Responde ÚNICAMENTE con el JSON, sin texto adicional ni markdown."""
 
@@ -696,10 +705,37 @@ class CorrespondenciaService:
         hoy = date.today()
         fecha_limite = calcular_fecha_limite(hoy, clasificacion["plazo_dias"])
 
+        # ── Detección de prioridad urgente (Punto 6) ──
+        prioridad_sugerida = "normal"
+        plazo_detectado = datos.get("plazo_respuesta_detectado")
+        origen_urgente = datos.get("origen_requiere_urgencia", False)
+        tipo_origen = datos.get("tipo_origen", "otro")
+
+        # Auto-urgente si: IA detectó plazo explícito, o es de jurídico/transparencia/OCI
+        if origen_urgente or tipo_origen in ("juridico", "transparencia", "organo_control", "auditoria"):
+            prioridad_sugerida = "urgente"
+        elif plazo_detectado and datos.get("plazo_dias_numero"):
+            try:
+                dias = int(datos["plazo_dias_numero"])
+                if dias <= 5:
+                    prioridad_sugerida = "urgente"
+            except (ValueError, TypeError):
+                pass
+
+        # Si la IA detectó un plazo numérico, usar ese para fecha_limite
+        if datos.get("plazo_dias_numero"):
+            try:
+                plazo_ia = int(datos["plazo_dias_numero"])
+                if 1 <= plazo_ia <= 60:
+                    fecha_limite = calcular_fecha_limite(hoy, plazo_ia)
+            except (ValueError, TypeError):
+                pass
+
         return {
             "datos_extraidos": datos,
             "clasificacion":   clasificacion,
             "fecha_limite":    fecha_limite.isoformat(),
+            "prioridad_sugerida": prioridad_sugerida,
         }
 
     async def generar_borrador_respuesta(
@@ -714,6 +750,9 @@ class CorrespondenciaService:
         area_nombre: str,
         fundamento_legal: str,
         instrucciones: str = "",
+        contenido_referencia: str = "",
+        referencia_archivo_bytes: bytes | None = None,
+        referencia_mime_type: str = "",
     ) -> str:
         """
         Genera un borrador de oficio de respuesta usando Gemini.
@@ -750,6 +789,26 @@ class CorrespondenciaService:
         if instrucciones:
             prompt += f"\n\nINSTRUCCIONES DEL DIRECTOR (RESPETAR ESTRICTAMENTE):\n{instrucciones}"
 
+        # ── Referencia: texto extraído (fallback) o indicación de archivo adjunto
+        if contenido_referencia and not referencia_archivo_bytes:
+            prompt += (
+                f"\n\nDOCUMENTO DE REFERENCIA ADJUNTADO POR EL USUARIO "
+                f"(REPRODUCIR FIELMENTE tablas, datos y estructura del documento):\n"
+                f"---INICIO REFERENCIA---\n{contenido_referencia[:30000]}\n---FIN REFERENCIA---"
+            )
+        elif referencia_archivo_bytes:
+            prompt += (
+                "\n\nIMPORTANTE: Se adjunta un DOCUMENTO DE REFERENCIA como archivo. "
+                "Analiza el archivo adjunto y REPRODUCE FIELMENTE en tu respuesta:\n"
+                "- Tablas: replica la estructura exacta con todos los datos, columnas y filas\n"
+                "- Cifras y montos: copia tal cual, sin redondear ni alterar\n"
+                "- Formato: respeta encabezados, listas y estructura del documento\n"
+                "- Si las instrucciones del Director indican 'usa el oficio adjunto' o similar, "
+                "basa tu respuesta en el contenido del archivo adjunto\n"
+                "- Si las instrucciones piden 'no generes cambios' o 'solo mejora redacción', "
+                "mantén el contenido íntegro y solo mejora la redacción formal\n"
+            )
+
         if not gemini_service.available:
             return (
                 f"Con fundamento en lo dispuesto por {fundamento_legal}, "
@@ -764,10 +823,24 @@ class CorrespondenciaService:
         try:
             from app.core.config import settings
             from google import genai
+            from google.genai import types
+
             client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
+            # ── Contenido multimodal: prompt + archivo de referencia si existe
+            contents: list = []
+
+            if referencia_archivo_bytes and referencia_mime_type:
+                # Enviar el archivo real a Gemini (multimodal) — Gemini ve tablas, formato, etc.
+                contents.append(
+                    types.Part.from_bytes(data=referencia_archivo_bytes, mime_type=referencia_mime_type)
+                )
+
+            contents.append(prompt)
+
             resp = client.models.generate_content(
                 model="gemini-2.5-flash",
-                contents=prompt,
+                contents=contents,
             )
             return resp.text.strip()
         except Exception as e:
@@ -784,6 +857,9 @@ class CorrespondenciaService:
         dependencia_destino: str = "",
         area_codigo: str = "DIR",
         instrucciones: str = "",
+        contenido_referencia: str = "",
+        referencia_archivo_bytes: bytes | None = None,
+        referencia_mime_type: str = "",
     ) -> str:
         """
         Genera un borrador de oficio emitido por la DPP usando Gemini.
@@ -822,6 +898,18 @@ class CorrespondenciaService:
                       f"INSTRUCCIONES ADICIONALES:\n{instrucciones}" if instrucciones else "")
         )
 
+        if contenido_referencia and not referencia_archivo_bytes:
+            prompt += (
+                f"\n\nDOCUMENTO DE REFERENCIA ADJUNTADO POR EL USUARIO "
+                f"(REPRODUCIR FIELMENTE tablas, datos y estructura):\n"
+                f"---INICIO REFERENCIA---\n{contenido_referencia[:30000]}\n---FIN REFERENCIA---"
+            )
+        elif referencia_archivo_bytes:
+            prompt += (
+                "\n\nIMPORTANTE: Se adjunta un DOCUMENTO DE REFERENCIA como archivo. "
+                "REPRODUCE FIELMENTE tablas, cifras, estructura y datos del archivo adjunto."
+            )
+
         if not gemini_service.available:
             fundamento = plantilla["fundamento_legal"] if plantilla else "Arts. 18 y 19 del RISFA"
             return (
@@ -835,10 +923,20 @@ class CorrespondenciaService:
         try:
             from app.core.config import settings
             from google import genai
+            from google.genai import types
+
             client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
+            contents: list = []
+            if referencia_archivo_bytes and referencia_mime_type:
+                contents.append(
+                    types.Part.from_bytes(data=referencia_archivo_bytes, mime_type=referencia_mime_type)
+                )
+            contents.append(prompt)
+
             resp = client.models.generate_content(
                 model="gemini-2.5-flash",
-                contents=prompt,
+                contents=contents,
             )
             return resp.text.strip()
         except Exception as e:

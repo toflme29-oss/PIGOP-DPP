@@ -7,7 +7,7 @@ TIPOS_VALIDOS = [
     "oficio", "circular", "memorandum", "acuerdo",
     "convenio", "resolucion", "informe", "otro",
 ]
-ESTADOS_RECIBIDO = ["recibido", "turnado", "en_atencion", "devuelto", "respondido", "firmado", "archivado"]
+ESTADOS_RECIBIDO = ["recibido", "turnado", "en_atencion", "devuelto", "respondido", "firmado", "archivado", "de_conocimiento", "atendido"]
 ESTADOS_EMITIDO  = ["borrador", "en_revision", "vigente", "archivado"]
 PRIORIDADES      = ["normal", "urgente", "muy_urgente"]
 FLUJOS           = ["recibido", "emitido"]
@@ -157,6 +157,12 @@ class DocumentoResponse(DocumentoListResponse):
     mime_type:            Optional[str]
     devuelto_por_id:      Optional[str] = None
     devuelto_en:          Optional[datetime] = None
+    atendido_por_id:      Optional[str] = None
+    atendido_en:          Optional[datetime] = None
+    atendido_area:        Optional[str] = None
+    referencia_archivo_nombre: Optional[str] = None
+    referencia_archivo_url:    Optional[str] = None
+    contenido_referencia:      Optional[str] = None
     firmado_digitalmente: Optional[bool] = None
     firma_metadata:       Optional[dict] = None
     actualizado_en:       Optional[datetime]
@@ -180,6 +186,8 @@ class PreviewOCRResponse(BaseModel):
     fecha_limite:     str
     archivo:          dict   # {nombre_archivo, url_storage, mime_type}
     message:          str
+    prioridad_sugerida: Optional[str] = "normal"  # normal | urgente | muy_urgente
+    duplicado:        Optional[dict] = None        # {id, numero_oficio, asunto, fecha} si existe
 
 
 class OficioEstructuradoResponse(BaseModel):

@@ -11,6 +11,7 @@ from app.models.documento import DocumentoOficial, HistorialDocumento
 from app.models.lote_firma import LoteFirma, LoteFirmaItem
 from app.models.certificado_firma import CertificadoFirma
 from app.models.bitacora_firma import BitacoraFirma
+from app.models.oficio import OficioRecibido
 
 __all__ = [
     "Cliente", "Usuario",
@@ -24,4 +25,5 @@ __all__ = [
     "DocumentoOficial", "HistorialDocumento",
     "LoteFirma", "LoteFirmaItem",
     "CertificadoFirma", "BitacoraFirma",
+    "OficioRecibido",
 ]

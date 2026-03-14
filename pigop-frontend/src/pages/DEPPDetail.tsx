@@ -495,7 +495,7 @@ export default function DEPPDetail() {
       {/* ── Barra de acciones (sticky) ──────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between gap-4 sticky top-0 z-10 shadow-sm print:hidden">
         <div className="flex items-center gap-3 min-w-0">
-          <button onClick={() => navigate('/')}
+          <button onClick={() => navigate('/depps')}
             className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors flex-shrink-0">
             <ArrowLeft size={15} />
             <span className="hidden sm:inline text-xs">Volver</span>

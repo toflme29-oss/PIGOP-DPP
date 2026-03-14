@@ -1,6 +1,9 @@
+import logging
 import os
 import uuid
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,6 +55,10 @@ MIME_PERMITIDOS = {
     "image/jpeg", "image/jpg", "image/png", "image/tiff", "image/webp",
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "text/csv",
+    "text/plain",
 }
 MAX_SIZE_MB = 20
 
@@ -225,6 +232,147 @@ async def listar_plantillas(
     return result
 
 
+# ---------- Export Excel oficios recibidos ------------------------------------
+
+@router.get("/export-recibidos", summary="Exportar oficios recibidos a Excel")
+async def exportar_recibidos(
+    fecha_desde: Optional[str] = Query(None),
+    fecha_hasta: Optional[str] = Query(None),
+    dependencia: Optional[str] = Query(None),
+    busqueda: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Genera y descarga un archivo Excel con los oficios recibidos filtrados."""
+    import io
+    import openpyxl
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+    # Filtrar documentos recibidos
+    cliente_id = None if current_user.rol == "superadmin" else str(current_user.cliente_id)
+    # Búsqueda por dependencia: se inyecta en busqueda general ya que el CRUD
+    # busca en remitente_dependencia entre otros campos
+    busqueda_final = busqueda
+    if dependencia and busqueda:
+        busqueda_final = f"{busqueda} {dependencia}"
+    elif dependencia:
+        busqueda_final = dependencia
+
+    docs = await crud_documento.list_documentos(
+        db,
+        cliente_id=cliente_id,
+        flujo="recibido",
+        busqueda=busqueda_final,
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+        skip=0,
+        limit=10000,
+    )
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Oficios Recibidos"
+
+    # Estilos
+    guinda_fill = PatternFill("solid", fgColor="911A3A")
+    header_font = Font(bold=True, color="FFFFFF", size=10)
+    center = Alignment(horizontal="center", vertical="center")
+    wrap = Alignment(vertical="top", wrap_text=True)
+    thin = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin"),
+    )
+    alt_fill = PatternFill("solid", fgColor="FDF2F4")
+
+    # Título
+    ws.merge_cells("A1:I1")
+    title_cell = ws["A1"]
+    title_cell.value = "Control de Oficios Recibidos — PIGOP"
+    title_cell.font = Font(bold=True, size=14, color="911A3A")
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 30
+
+    # Subtítulo con rango de fechas
+    ws.merge_cells("A2:I2")
+    rango = "Todos los registros"
+    if fecha_desde and fecha_hasta:
+        rango = f"Del {fecha_desde} al {fecha_hasta}"
+    elif fecha_desde:
+        rango = f"Desde {fecha_desde}"
+    elif fecha_hasta:
+        rango = f"Hasta {fecha_hasta}"
+    ws["A2"].value = rango
+    ws["A2"].font = Font(italic=True, size=9, color="666666")
+    ws["A2"].alignment = Alignment(horizontal="center")
+
+    # Encabezados
+    columns = [
+        ("Folio", 8),
+        ("No. Oficio", 28),
+        ("Asunto", 40),
+        ("Remitente", 25),
+        ("Dependencia", 30),
+        ("Estado", 14),
+        ("Prioridad", 12),
+        ("Fecha Oficio", 14),
+        ("Fecha Recibido", 14),
+    ]
+
+    header_row = 4
+    for col_idx, (col_name, width) in enumerate(columns, start=1):
+        cell = ws.cell(row=header_row, column=col_idx, value=col_name)
+        cell.fill = guinda_fill
+        cell.font = header_font
+        cell.alignment = center
+        cell.border = thin
+        ws.column_dimensions[cell.column_letter].width = width
+
+    # Datos
+    for row_idx, doc in enumerate(docs, start=header_row + 1):
+        folio = row_idx - header_row
+        values = [
+            folio,
+            doc.numero_oficio_origen or "",
+            doc.asunto or "",
+            doc.remitente_nombre or "",
+            doc.remitente_dependencia or doc.dependencia_origen or "",
+            doc.estado or "",
+            doc.prioridad or "normal",
+            doc.fecha_documento or "",
+            doc.fecha_recibido or "",
+        ]
+        for col_idx, val in enumerate(values, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            cell.border = thin
+            cell.alignment = wrap
+            if (row_idx - header_row) % 2 == 0:
+                cell.fill = alt_fill
+
+    # Footer
+    footer_row = header_row + len(docs) + 2
+    ws.merge_cells(f"A{footer_row}:I{footer_row}")
+    ws[f"A{footer_row}"].value = f"Total de oficios: {len(docs)}"
+    ws[f"A{footer_row}"].font = Font(bold=True, size=10, color="911A3A")
+
+    # Serializar
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    filename = "PIGOP_Control_Oficios"
+    if fecha_desde:
+        filename += f"_{fecha_desde}"
+    if fecha_hasta:
+        filename += f"_{fecha_hasta}"
+    filename += ".xlsx"
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 # ---------- Crear recibido ---------------------------------------------------
 
 @router.post(
@@ -278,6 +426,7 @@ async def crear_emitido(
 )
 async def preview_ocr(
     file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
     """
@@ -310,6 +459,33 @@ async def preview_ocr(
         mime_type=file.content_type or "image/jpeg",
     )
 
+    # ── Detección de duplicados (Punto 10) ──
+    numero_oficio_detectado = (resultado["datos_extraidos"] or {}).get("numero_oficio")
+    duplicado_encontrado = None
+    if numero_oficio_detectado:
+        from sqlalchemy import select, func
+        from app.models.documento import DocumentoOficial
+        cid = str(current_user.cliente_id) if current_user.cliente_id else None
+        stmt = select(DocumentoOficial.id, DocumentoOficial.numero_oficio_origen, DocumentoOficial.asunto, DocumentoOficial.fecha_documento).where(
+            func.lower(DocumentoOficial.numero_oficio_origen) == numero_oficio_detectado.lower()
+        )
+        if cid:
+            stmt = stmt.where(DocumentoOficial.cliente_id == cid)
+        from app.core.database import get_db as _gdb
+        dup_result = await db.execute(stmt)
+        dup_row = dup_result.first()
+        if dup_row:
+            duplicado_encontrado = {
+                "id": dup_row[0],
+                "numero_oficio": dup_row[1],
+                "asunto": dup_row[2],
+                "fecha": dup_row[3],
+            }
+
+    msg = "Datos extraídos correctamente. Revise y confirme."
+    if duplicado_encontrado:
+        msg = f"⚠️ POSIBLE DUPLICADO: Ya existe un oficio con número '{numero_oficio_detectado}' registrado en el sistema."
+
     return PreviewOCRResponse(
         datos_extraidos=resultado["datos_extraidos"],
         clasificacion=resultado["clasificacion"],
@@ -319,7 +495,9 @@ async def preview_ocr(
             "url_storage": filepath,
             "mime_type": file.content_type or "application/octet-stream",
         },
-        message="Datos extraidos correctamente. Revise y confirme.",
+        message=msg,
+        prioridad_sugerida=resultado.get("prioridad_sugerida", "normal"),
+        duplicado=duplicado_encontrado,
     )
 
 
@@ -394,6 +572,31 @@ async def cambiar_estado(
     _assert_acceso(current_user, str(doc.cliente_id))
     updated = await crud_documento.update(db, db_obj=doc, obj_in={"estado": nuevo_estado})
     return await crud_documento.get_with_relations(db, updated.id)
+
+
+# ---------- Acuse de conocimiento --------------------------------------------
+
+@router.post(
+    "/{doc_id}/acusar-conocimiento",
+    response_model=DocumentoResponse,
+    summary="Marcar documento de conocimiento como atendido",
+)
+async def acusar_conocimiento(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    doc = await crud_documento.get(db, doc_id)
+    if not doc:
+        raise NotFoundError("Documento no encontrado.")
+    _assert_acceso(current_user, str(doc.cliente_id))
+    if doc.estado != "de_conocimiento":
+        raise BusinessError("Solo documentos con estado 'de_conocimiento' pueden acusarse como atendidos.")
+    area_nombre = doc.area_turno_nombre or "Sin área asignada"
+    await crud_documento.acusar_conocimiento(
+        db, db_obj=doc, usuario_id=str(current_user.id), area_nombre=area_nombre,
+    )
+    return await crud_documento.get_with_relations(db, doc.id)
 
 
 # ---------- Procesar OCR -----------------------------------------------------
@@ -543,6 +746,60 @@ async def confirmar_turno(
     return await crud_documento.get_with_relations(db, updated.id)
 
 
+# ---------- Cambiar turno (re-turnar) -----------------------------------------
+
+@router.post(
+    "/{doc_id}/cambiar-turno",
+    response_model=DocumentoResponse,
+    summary="Cambiar área de turno de un documento ya turnado",
+)
+async def cambiar_turno(
+    doc_id: str,
+    data: ConfirmarTurnoInput,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Secretaría, Director o superadmin pueden re-turnar un documento ya asignado."""
+    if current_user.rol in ("consulta", "analista"):
+        raise ForbiddenError("No tienes permisos para cambiar el turno.")
+
+    doc = await crud_documento.get(db, doc_id)
+    if not doc:
+        raise NotFoundError("Documento no encontrado.")
+    _assert_acceso(current_user, str(doc.cliente_id))
+
+    if data.area_codigo not in AREAS_DPP:
+        raise BusinessError(
+            f"Área inválida '{data.area_codigo}'. Válidas: {', '.join(AREAS_DPP.keys())}"
+        )
+
+    # Registrar en historial el cambio de turno
+    from app.models.documento import HistorialDocumento
+    import uuid as _uuid
+    historial = HistorialDocumento(
+        id=str(_uuid.uuid4()),
+        documento_id=doc.id,
+        usuario_id=str(current_user.id),
+        tipo_accion="cambio_turno",
+        estado_anterior=doc.estado,
+        estado_nuevo="turnado",
+        observaciones=f"Cambio de turno: {doc.area_turno_nombre or '(sin área)'} → {AREAS_DPP[data.area_codigo]['nombre']}. {data.instrucciones or ''}",
+        version=doc.version or 1,
+    )
+    db.add(historial)
+
+    area_info = AREAS_DPP[data.area_codigo]
+    updated = await crud_documento.confirmar_turno(
+        db,
+        db_obj=doc,
+        area_codigo=data.area_codigo,
+        area_nombre=data.area_nombre or area_info["nombre"],
+        turnado_por_id=str(current_user.id),
+        instrucciones=data.instrucciones,
+    )
+    return await crud_documento.get_with_relations(db, updated.id)
+
+
 # ---------- Generar borrador de respuesta ------------------------------------
 
 @router.post(
@@ -568,17 +825,54 @@ async def generar_borrador(
     area_nombre  = doc.area_turno_nombre or doc.sugerencia_area_nombre or "Direccion de Programacion y Presupuesto"
     fundamento   = doc.sugerencia_fundamento or "Arts. 18 y 19 del Reglamento Interior de la SFA"
 
+    # Contenido de referencia cargado por el usuario (tabla, borrador previo, etc.)
+    contenido_ref = doc.contenido_referencia or ""
+
+    # Leer archivo de referencia como bytes para envío multimodal a Gemini
+    # NOTA: Solo enviar bytes para tipos que Gemini soporta como multimodal
+    # (imágenes y PDF). Para .docx/.xlsx/.csv/.txt usamos el texto extraído
+    # que ya está en contenido_referencia.
+    ref_bytes: bytes | None = None
+    ref_mime: str = ""
+    # MIME types que Gemini acepta como entrada multimodal
+    GEMINI_MULTIMODAL_MIMES = {
+        ".pdf": "application/pdf",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".tiff": "image/tiff",
+        ".tif": "image/tiff",
+        ".webp": "image/webp",
+    }
+    if doc.referencia_archivo_url and os.path.exists(doc.referencia_archivo_url):
+        nombre = (doc.referencia_archivo_nombre or "").lower()
+        # Buscar extensión soportada por Gemini multimodal
+        ext = os.path.splitext(nombre)[1]
+        if ext in GEMINI_MULTIMODAL_MIMES:
+            try:
+                with open(doc.referencia_archivo_url, "rb") as rf:
+                    ref_bytes = rf.read()
+                ref_mime = GEMINI_MULTIMODAL_MIMES[ext]
+            except Exception as e:
+                logger.warning(f"No se pudo leer archivo de referencia: {e}")
+                ref_bytes = None
+        else:
+            # Para .docx, .xlsx, .csv, .txt etc. → usar solo texto extraído
+            # (ya está en contenido_ref desde el proceso de carga)
+            logger.info(f"Archivo referencia '{nombre}' no es multimodal Gemini, usando texto extraído.")
+
     if doc.flujo == "emitido":
-        # Para emitidos: usar prompt especializado con detección de plantilla
         borrador = await correspondencia_service.generar_borrador_emitido(
             asunto=doc.asunto,
             destinatario=doc.dependencia_destino or "",
             dependencia_destino=doc.dependencia_destino or "",
             area_codigo=doc.area_turno or "DIR",
             instrucciones=instrucciones,
+            contenido_referencia=contenido_ref,
+            referencia_archivo_bytes=ref_bytes,
+            referencia_mime_type=ref_mime,
         )
     else:
-        # Existing recibido flow
         resumen_ocr = (doc.datos_extraidos_ia or {}).get("cuerpo_resumen", "")
         borrador = await correspondencia_service.generar_borrador_respuesta(
             numero_oficio_origen=doc.numero_oficio_origen or "---",
@@ -591,6 +885,9 @@ async def generar_borrador(
             area_nombre=area_nombre,
             fundamento_legal=fundamento,
             instrucciones=instrucciones,
+            contenido_referencia=contenido_ref,
+            referencia_archivo_bytes=ref_bytes,
+            referencia_mime_type=ref_mime,
         )
 
     updated = await crud_documento.guardar_borrador(db, db_obj=doc, borrador=borrador)
@@ -631,6 +928,164 @@ async def subir_archivo(
         url_storage=filepath,
         mime_type=file.content_type or "application/octet-stream",
     )
+    return await crud_documento.get_with_relations(db, updated.id)
+
+
+# ---------- Cargar documento de referencia para IA --------------------------
+
+@router.post(
+    "/{doc_id}/cargar-referencia",
+    response_model=DocumentoResponse,
+    summary="Subir documento de referencia (tabla, respuesta borrador, info adicional) para enriquecer la generación IA",
+)
+async def cargar_referencia(
+    doc_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    doc = await crud_documento.get(db, doc_id)
+    if not doc:
+        raise NotFoundError("Documento no encontrado.")
+    _assert_acceso(current_user, str(doc.cliente_id))
+
+    if file.content_type not in MIME_PERMITIDOS:
+        raise BusinessError(f"Tipo de archivo no permitido: {file.content_type}")
+
+    content = await file.read()
+    if len(content) > MAX_SIZE_MB * 1024 * 1024:
+        raise BusinessError(f"El archivo supera el limite de {MAX_SIZE_MB} MB.")
+
+    # Guardar archivo
+    ext = os.path.splitext(file.filename or "ref.pdf")[1]
+    filename = f"ref_{uuid.uuid4()}{ext}"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    with open(filepath, "wb") as f:
+        f.write(content)
+
+    # Extraer texto del documento de referencia
+    texto_extraido = ""
+    mime = file.content_type or ""
+
+    if mime.startswith("image/") or mime == "image/tiff":
+        # Usar Gemini Vision para extraer texto de imagen
+        try:
+            from app.services.gemini_service import gemini_service
+            if gemini_service.available:
+                texto_extraido = await gemini_service.extract_text_from_image(content, mime)
+            else:
+                texto_extraido = "[OCR no disponible — Gemini no configurado]"
+        except Exception as e:
+            logger.warning(f"Error OCR referencia: {e}")
+            texto_extraido = f"[Error al extraer texto de imagen: {e}]"
+
+    elif mime == "application/pdf":
+        # Extraer texto de PDF
+        try:
+            import io
+            try:
+                import PyPDF2
+                reader = PyPDF2.PdfReader(io.BytesIO(content))
+                texto_extraido = "\n".join(page.extract_text() or "" for page in reader.pages)
+            except ImportError:
+                try:
+                    import fitz  # PyMuPDF
+                    pdf_doc = fitz.open(stream=content, filetype="pdf")
+                    texto_extraido = "\n".join(page.get_text() for page in pdf_doc)
+                except ImportError:
+                    texto_extraido = "[Instalar PyPDF2 o PyMuPDF para extraer texto de PDF]"
+        except Exception as e:
+            texto_extraido = f"[Error al leer PDF: {e}]"
+
+    elif mime in ("application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                  "application/msword"):
+        # Extraer texto de Word — incluyendo tablas
+        try:
+            import io
+            import docx
+            doc_word = docx.Document(io.BytesIO(content))
+            parts = []
+            # Iterar sobre el body en orden (párrafos y tablas intercalados)
+            for element in doc_word.element.body:
+                if element.tag.endswith('}p'):
+                    # Es un párrafo
+                    from docx.oxml.ns import qn
+                    texts = [node.text or "" for node in element.iter(qn('w:t'))]
+                    line = "".join(texts).strip()
+                    if line:
+                        parts.append(line)
+                elif element.tag.endswith('}tbl'):
+                    # Es una tabla — extraer preservando estructura
+                    from docx.table import Table as DocxTable
+                    table = DocxTable(element, doc_word)
+                    parts.append("\n[TABLA]")
+                    for row in table.rows:
+                        cells = [cell.text.strip() for cell in row.cells]
+                        parts.append(" | ".join(cells))
+                    parts.append("[/TABLA]\n")
+            texto_extraido = "\n".join(parts)
+        except ImportError:
+            texto_extraido = "[Instalar python-docx para extraer texto de Word]"
+        except Exception as e:
+            texto_extraido = f"[Error al leer DOCX: {e}]"
+
+    elif mime in ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                  "application/vnd.ms-excel"):
+        # Extraer texto de Excel
+        try:
+            import io
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True)
+            rows = []
+            for ws in wb.worksheets:
+                rows.append(f"=== Hoja: {ws.title} ===")
+                for row in ws.iter_rows(values_only=True):
+                    vals = [str(c) if c is not None else "" for c in row]
+                    if any(v.strip() for v in vals):
+                        rows.append(" | ".join(vals))
+            texto_extraido = "\n".join(rows)
+        except ImportError:
+            texto_extraido = "[Instalar openpyxl para extraer texto de Excel]"
+        except Exception as e:
+            texto_extraido = f"[Error al leer Excel: {e}]"
+
+    else:
+        # Texto plano o formato desconocido — intentar decodificar
+        try:
+            texto_extraido = content.decode("utf-8", errors="replace")[:50000]
+        except Exception:
+            texto_extraido = "[Formato no soportado para extracción de texto]"
+
+    # Guardar en el documento
+    updated = await crud_documento.update(db, db_obj=doc, obj_in={
+        "referencia_archivo_nombre": file.filename or filename,
+        "referencia_archivo_url": filepath,
+        "contenido_referencia": texto_extraido[:100000],  # limitar a 100k chars
+    })
+    return await crud_documento.get_with_relations(db, updated.id)
+
+
+# ---------- Eliminar referencia cargada ------------------------------------
+
+@router.delete(
+    "/{doc_id}/referencia",
+    response_model=DocumentoResponse,
+    summary="Eliminar documento de referencia",
+)
+async def eliminar_referencia(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    doc = await crud_documento.get(db, doc_id)
+    if not doc:
+        raise NotFoundError("Documento no encontrado.")
+    _assert_acceso(current_user, str(doc.cliente_id))
+    updated = await crud_documento.update(db, db_obj=doc, obj_in={
+        "referencia_archivo_nombre": None,
+        "referencia_archivo_url": None,
+        "contenido_referencia": None,
+    })
     return await crud_documento.get_with_relations(db, updated.id)
 
 
@@ -785,9 +1240,15 @@ async def descargar_oficio(
 
     # --- Determinar destinatario según flujo ---
     if doc.flujo == "emitido":
-        dest_nombre = doc.dependencia_destino or "---"
-        dest_cargo = "---"
-        dest_dep = doc.dependencia_destino or "---"
+        # Evitar duplicación: si solo hay dependencia_destino, usarla como dependencia
+        # y dejar nombre/cargo vacíos en lugar de repetir el mismo valor
+        datos_ia = doc.datos_extraidos_ia or {}
+        dest_nombre = datos_ia.get("destinatario_nombre") or doc.dependencia_destino or "---"
+        dest_cargo = datos_ia.get("destinatario_cargo") or ""
+        dest_dep = doc.dependencia_destino or ""
+        # Si nombre es igual a dependencia, limpiar para no duplicar
+        if dest_nombre == dest_dep:
+            dest_dep = ""
     else:
         dest_nombre = doc.remitente_nombre or "---"
         dest_cargo = doc.remitente_cargo or "---"
@@ -1383,9 +1844,15 @@ async def obtener_archivo_original(
 @router.delete("/{doc_id}", response_model=MessageResponse, summary="Eliminar documento")
 async def eliminar_documento(
     doc_id: str,
+    confirmar: str = Query("no", description="Debe enviar 'si' para confirmar eliminación"),
     db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
+    # Solo secretaría y admin pueden eliminar
+    if current_user.rol not in ("secretaria", "admin_cliente", "superadmin"):
+        raise ForbiddenError("Solo Secretaría y Administrador pueden eliminar documentos.")
+    if confirmar != "si":
+        raise BusinessError("Debe confirmar la eliminación enviando confirmar='si'.")
     doc = await crud_documento.get(db, doc_id)
     if not doc:
         raise NotFoundError("Documento no encontrado.")

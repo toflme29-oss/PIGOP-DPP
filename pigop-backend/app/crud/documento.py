@@ -97,7 +97,11 @@ class CRUDDocumento(CRUDBase[DocumentoOficial]):
         from datetime import date
         data = obj_in.model_dump()
         data["flujo"]         = "recibido"
-        data["estado"]        = "recibido"
+        # Auto-asignar "de_conocimiento" si no requiere respuesta
+        if data.get("requiere_respuesta") is False:
+            data["estado"] = "de_conocimiento"
+        else:
+            data["estado"] = "recibido"
         data["creado_por_id"] = creado_por_id
         if not data.get("fecha_recibido"):
             data["fecha_recibido"] = date.today().isoformat()
@@ -350,6 +354,40 @@ class CRUDDocumento(CRUDBase[DocumentoOficial]):
         stmt = stmt.order_by(DocumentoOficial.devuelto_en.desc())
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+
+    async def acusar_conocimiento(
+        self,
+        db: AsyncSession,
+        *,
+        db_obj: DocumentoOficial,
+        usuario_id: str,
+        area_nombre: str,
+    ) -> DocumentoOficial:
+        """Marca un documento de_conocimiento como atendido y registra en historial."""
+        from datetime import datetime, timezone
+
+        estado_anterior = db_obj.estado
+        updates = {
+            "estado": "atendido",
+            "atendido_por_id": usuario_id,
+            "atendido_en": datetime.now(timezone.utc),
+            "atendido_area": area_nombre,
+        }
+        updated = await self.update(db, db_obj=db_obj, obj_in=updates)
+
+        historial = HistorialDocumento(
+            documento_id=str(db_obj.id),
+            usuario_id=usuario_id,
+            tipo_accion="acuse_conocimiento",
+            estado_anterior=estado_anterior,
+            estado_nuevo="atendido",
+            observaciones=f"Acuse de conocimiento registrado por área: {area_nombre}",
+            version=db_obj.version or 1,
+        )
+        db.add(historial)
+        await db.flush()
+        return updated
 
 
 crud_documento = CRUDDocumento(DocumentoOficial)
