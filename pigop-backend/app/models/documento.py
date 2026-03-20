@@ -110,6 +110,7 @@ class DocumentoOficial(Base):
     # ── Borrador de respuesta ─────────────────────────────────────────────────
     borrador_respuesta = Column(Text, nullable=True)           # texto del borrador
     folio_respuesta    = Column(String(100), nullable=True)    # DPP/OFICIO/00001/2026
+    fecha_respuesta    = Column(String(50), nullable=True)     # "16 de marzo de 2026" (editable)
     # Referencia interna: MAFM/iniciales_elaboro/iniciales_reviso
     referencia_elaboro  = Column(String(50), nullable=True)    # "maca"
     referencia_reviso   = Column(String(50), nullable=True)    # "beos"
@@ -125,6 +126,11 @@ class DocumentoOficial(Base):
     devuelto_por_id    = Column(String(36), ForeignKey("usuarios.id"), nullable=True)
     devuelto_en        = Column(DateTime(timezone=True), nullable=True)
     motivo_devolucion  = Column(Text, nullable=True)   # razón más reciente
+
+    # Tabla para insertar en el oficio DOCX (imagen o datos Excel)
+    tabla_imagen_url     = Column(String(500), nullable=True)
+    tabla_imagen_nombre  = Column(String(200), nullable=True)
+    tabla_datos_json     = Column(JSON, nullable=True)  # datos extraídos de Excel [{col1:val,...},...]
 
     # Firma electrónica avanzada (e.firma / FIEL)
     firmado_digitalmente = Column(Boolean, default=False)
@@ -144,6 +150,10 @@ class DocumentoOficial(Base):
 
     # ── Vinculación con otros módulos ─────────────────────────────────────────
     certificacion_id = Column(String(36), nullable=True)   # FK futuro a Certificaciones
+    # Estado sincronizado desde módulo externo (certificaciones, minutas, etc.)
+    # Cuando otro módulo resuelve el trámite, envía señal aquí para actualizar estado
+    modulo_externo_estado = Column(String(50), nullable=True)  # "atendido_certificacion" | "firmado_externo"
+    modulo_externo_ref    = Column(String(200), nullable=True) # referencia del módulo externo
 
     # ── Auditoría ────────────────────────────────────────────────────────────
     creado_por_id  = Column(String(36), ForeignKey("usuarios.id"), nullable=True)

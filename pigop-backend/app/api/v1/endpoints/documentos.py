@@ -570,6 +570,15 @@ async def cambiar_estado(
     if not doc:
         raise NotFoundError("Documento no encontrado.")
     _assert_acceso(current_user, str(doc.cliente_id))
+
+    # Regla operativa: si requiere_respuesta=True, no se puede pasar a de_conocimiento
+    if nuevo_estado == "de_conocimiento" and doc.requiere_respuesta:
+        raise BusinessError(
+            "Este oficio requiere respuesta obligatoria. "
+            "No puede marcarse como 'De conocimiento'. "
+            "Debe atenderse: En atención → Respondido → Firmado."
+        )
+
     updated = await crud_documento.update(db, db_obj=doc, obj_in={"estado": nuevo_estado})
     return await crud_documento.get_with_relations(db, updated.id)
 
@@ -1089,6 +1098,114 @@ async def eliminar_referencia(
     return await crud_documento.get_with_relations(db, updated.id)
 
 
+# ---------- Cargar tabla para insertar en DOCX (imagen o Excel) ------------
+
+def _extract_excel_table(content: bytes) -> list[list[str]]:
+    """Extrae datos de un archivo Excel como lista de filas (listas de strings)."""
+    import openpyxl
+    from io import BytesIO
+    wb = openpyxl.load_workbook(BytesIO(content), read_only=True, data_only=True)
+    ws = wb.active
+    if ws is None:
+        return []
+    rows: list[list[str]] = []
+    for row in ws.iter_rows(values_only=True):
+        # Ignorar filas completamente vacías
+        if all(c is None for c in row):
+            continue
+        rows.append([str(c) if c is not None else "" for c in row])
+    wb.close()
+    return rows
+
+
+ALLOWED_IMAGE_MIMES = ("image/png", "image/jpeg", "image/jpg", "image/webp")
+ALLOWED_EXCEL_MIMES = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+)
+
+
+@router.post(
+    "/{doc_id}/tabla-imagen",
+    response_model=DocumentoResponse,
+    summary="Subir tabla para insertar en el oficio DOCX (imagen PNG/JPG/WEBP o Excel .xlsx)",
+)
+async def cargar_tabla_imagen(
+    doc_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    doc = await crud_documento.get(db, doc_id)
+    if not doc:
+        raise NotFoundError("Documento no encontrado.")
+    _assert_acceso(current_user, str(doc.cliente_id))
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise BusinessError("El archivo no puede pesar más de 10 MB.")
+
+    fname = file.filename or "archivo"
+    ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
+    is_excel = file.content_type in ALLOWED_EXCEL_MIMES or ext in ("xlsx", "xls")
+    is_image = file.content_type in ALLOWED_IMAGE_MIMES or ext in ("png", "jpg", "jpeg", "webp")
+
+    if not is_excel and not is_image:
+        raise BusinessError(
+            f"Formato no soportado ({file.content_type}). "
+            "Usa imágenes (PNG, JPG, WEBP) o archivos Excel (.xlsx)."
+        )
+
+    update_data: dict = {}
+
+    if is_excel:
+        # Extraer datos del Excel como tabla estructurada
+        try:
+            table_data = _extract_excel_table(content)
+        except Exception as exc:
+            raise BusinessError(f"No se pudo leer el archivo Excel: {exc}")
+        if not table_data:
+            raise BusinessError("El archivo Excel está vacío o no tiene datos.")
+        update_data["tabla_datos_json"] = table_data
+        update_data["tabla_imagen_url"] = None  # limpiar imagen si había
+        update_data["tabla_imagen_nombre"] = fname
+    else:
+        # Guardar imagen
+        os.makedirs("uploads/tablas", exist_ok=True)
+        img_filename = f"tabla_{doc_id}.{ext or 'png'}"
+        filepath = f"uploads/tablas/{img_filename}"
+        with open(filepath, "wb") as f:
+            f.write(content)
+        update_data["tabla_imagen_url"] = filepath
+        update_data["tabla_imagen_nombre"] = fname
+        update_data["tabla_datos_json"] = None  # limpiar datos Excel si había
+
+    updated = await crud_documento.update(db, db_obj=doc, obj_in=update_data)
+    return await crud_documento.get_with_relations(db, updated.id)
+
+
+@router.delete(
+    "/{doc_id}/tabla-imagen",
+    response_model=DocumentoResponse,
+    summary="Eliminar tabla (imagen o datos Excel)",
+)
+async def eliminar_tabla_imagen(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    doc = await crud_documento.get(db, doc_id)
+    if not doc:
+        raise NotFoundError("Documento no encontrado.")
+    _assert_acceso(current_user, str(doc.cliente_id))
+    updated = await crud_documento.update(db, db_obj=doc, obj_in={
+        "tabla_imagen_url": None,
+        "tabla_imagen_nombre": None,
+        "tabla_datos_json": None,
+    })
+    return await crud_documento.get_with_relations(db, updated.id)
+
+
 # ---------- Generar oficio estructurado (4 secciones) ----------------------
 
 @router.post(
@@ -1197,10 +1314,13 @@ async def descargar_oficio(
     # Parsear secciones del borrador
     secciones = CorrespondenciaService._parse_secciones(doc.borrador_respuesta)
 
-    # Formatear fecha
-    hoy = date.today()
+    # Formatear fecha — usar fecha guardada si existe, si no usar hoy
     from app.services.oficio_generator_service import MESES_ES
-    fecha_str = f"{hoy.day} de {MESES_ES[hoy.month - 1]} de {hoy.year}"
+    if doc.fecha_respuesta:
+        fecha_str = doc.fecha_respuesta
+    else:
+        hoy = date.today()
+        fecha_str = f"{hoy.day} de {MESES_ES[hoy.month - 1]} de {hoy.year}"
 
     # --- Preparar datos de sello digital si está firmado ---
     sello_data = None
@@ -1265,6 +1385,10 @@ async def descargar_oficio(
             "administrativas" if area_codigo == "DIR" else "presupuestales"
         )
 
+    # Tabla: imagen o datos Excel extraídos
+    tabla_img = doc.tabla_imagen_url if hasattr(doc, 'tabla_imagen_url') and doc.tabla_imagen_url and os.path.exists(doc.tabla_imagen_url) else None
+    tabla_datos = doc.tabla_datos_json if hasattr(doc, 'tabla_datos_json') else None
+
     docx_bytes = oficio_generator.generar_oficio_respuesta(
         folio_respuesta=doc.folio_respuesta or "SFA/SF/DPP/____/2026",
         fecha_respuesta=fecha_str,
@@ -1283,6 +1407,8 @@ async def descargar_oficio(
         incluir_firma_visual=bool(doc.firmado_digitalmente),
         sello_digital_data=sello_data,
         asunto=doc.asunto,
+        tabla_imagen_path=tabla_img,
+        tabla_datos_json=tabla_datos,
     )
 
     import io
@@ -1292,6 +1418,42 @@ async def descargar_oficio(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="oficio_{folio_safe}.docx"'},
     )
+
+
+# ---------- Señal de módulo externo (certificaciones, etc.) -------------------
+
+@router.post(
+    "/{doc_id}/modulo-externo",
+    response_model=DocumentoResponse,
+    summary="Recibir señal de módulo externo (certificaciones) para actualizar estado",
+)
+async def señal_modulo_externo(
+    doc_id: str,
+    estado: str = Query(..., description="Estado a establecer (ej: 'firmado')"),
+    referencia: str = Query("", description="Referencia del módulo externo (ej: folio certificación)"),
+    modulo: str = Query("certificaciones", description="Nombre del módulo origen"),
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """
+    Permite que otro módulo (certificaciones presupuestales, minutas)
+    actualice el estado de un documento en gestión documental.
+    Ejemplo: certificación atendida → documento pasa a 'firmado'.
+    """
+    if current_user.rol not in ("admin_cliente", "superadmin"):
+        raise ForbiddenError("Solo admin o superadmin pueden enviar señales entre módulos.")
+
+    doc = await crud_documento.get(db, doc_id)
+    if not doc:
+        raise NotFoundError("Documento no encontrado.")
+    _assert_acceso(current_user, str(doc.cliente_id))
+
+    updated = await crud_documento.update(db, db_obj=doc, obj_in={
+        "estado": estado,
+        "modulo_externo_estado": f"atendido_{modulo}",
+        "modulo_externo_ref": referencia,
+    })
+    return await crud_documento.get_with_relations(db, updated.id)
 
 
 # ---------- Devolver documento -----------------------------------------------
@@ -1472,8 +1634,8 @@ async def firmar_documento(
             "Este documento fue devuelto y requiere correcciones antes de firmarse. "
             "Corrija el borrador y reenvíe antes de intentar firmar."
         )
-    # Estados válidos para firma: recibidos (en_atencion, respondido), emitidos (borrador, en_revision)
-    estados_firmables = ("en_atencion", "respondido", "borrador", "en_revision")
+    # Estados válidos para firma: cualquier estado con borrador listo
+    estados_firmables = ("en_atencion", "respondido", "borrador", "en_revision", "turnado")
     if doc.estado not in estados_firmables:
         raise BusinessError(
             f"El documento debe estar en un estado válido para firmarse. Estado actual: {doc.estado}"
@@ -1715,9 +1877,12 @@ async def descargar_oficio_pdf(
     # Parsear secciones
     secciones = CorrespondenciaService._parse_secciones(doc.borrador_respuesta)
 
-    # Fecha
-    hoy = date.today()
-    fecha_str = f"{hoy.day} de {MESES_ES[hoy.month - 1]} de {hoy.year}"
+    # Fecha — usar fecha guardada si existe, si no usar hoy
+    if doc.fecha_respuesta:
+        fecha_str = doc.fecha_respuesta
+    else:
+        hoy = date.today()
+        fecha_str = f"{hoy.day} de {MESES_ES[hoy.month - 1]} de {hoy.year}"
 
     # Datos de sello digital si está firmado
     sello_data = None

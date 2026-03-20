@@ -7,6 +7,7 @@ import {
   ArrowRight, InboxIcon, SendIcon, Building2,
   Download, Shield, BookOpen, FileSignature,
   History, CornerUpLeft, RefreshCw, Lock, Hash, Mail, ChevronLeft,
+  ImageIcon,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
@@ -46,13 +47,29 @@ function diasHasta(fechaStr: string | null): number | null {
   return Math.ceil(diff / 86400000)
 }
 
-function PlazoChip({ fecha }: { fecha: string | null }) {
-  if (!fecha) return null
+function SemaforoAtencion({ fecha, estado }: { fecha: string | null; estado: string }) {
+  // Solo mostrar semáforo para estados activos (turnado, en_atencion)
+  const estadosActivos = ['turnado', 'en_atencion', 'devuelto']
+  if (!estadosActivos.includes(estado)) return null
+  if (!fecha) return <span className="text-[9px] text-gray-400">Sin plazo</span>
   const dias = diasHasta(fecha)
   if (dias === null) return null
-  const color = dias < 0 ? 'bg-red-100 text-red-700' : dias <= 1 ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'
-  const label = dias < 0 ? `Vencido hace ${Math.abs(dias)}d` : dias === 0 ? 'Vence hoy' : `${dias} días hábiles`
-  return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${color}`}>{label}</span>
+  // 🟢 Verde: en tiempo (>2 días)  🟡 Amarillo: próximo a vencer (≤2 días)  🔴 Rojo: vencido
+  if (dias < 0) return (
+    <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700">
+      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />Vencido ({Math.abs(dias)}d)
+    </span>
+  )
+  if (dias <= 2) return (
+    <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium bg-yellow-100 text-yellow-700">
+      <span className="w-2 h-2 rounded-full bg-yellow-500" />{dias === 0 ? 'Vence hoy' : `${dias}d restante${dias > 1 ? 's' : ''}`}
+    </span>
+  )
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">
+      <span className="w-2 h-2 rounded-full bg-green-500" />{dias}d hábiles
+    </span>
+  )
 }
 
 export function EstadoRecibidoBadge({ estado }: { estado: string }) {
@@ -1147,6 +1164,7 @@ function PanelRecibido({
   const [devolviendo, setDevolviendo] = useState(false)
   const [reenviando, setReenviando] = useState(false)
   const [folioLocal, setFolioLocal] = useState(doc.folio_respuesta ?? '')
+  const [fechaRespLocal, setFechaRespLocal] = useState(doc.fecha_respuesta ?? '')
   const [elaboroLocal, setElaboro] = useState(doc.referencia_elaboro ?? '')
   const [revisoLocal, setReviso] = useState(doc.referencia_reviso ?? '')
   const [instruccionesIA, setInstruccionesIA] = useState('')
@@ -1313,6 +1331,7 @@ function PanelRecibido({
   const guardarFolioRef = async (field: string, value: string) => {
     const data: DocumentoUpdate = {}
     if (field === 'folio') data.folio_respuesta = value
+    if (field === 'fecha') data.fecha_respuesta = value
     if (field === 'elaboro') data.referencia_elaboro = value
     if (field === 'reviso') data.referencia_reviso = value
     try { await documentosApi.update(doc.id, data); invalidate() } catch { /* */ }
@@ -1380,11 +1399,11 @@ function PanelRecibido({
           </button>
         </div>
       )}
-      {!doc.requiere_respuesta && doc.estado === 'atendido' && (
+      {!doc.requiere_respuesta && doc.estado === 'de_conocimiento' && doc.atendido_en && (
         <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
           <CheckCircle2 size={12} className="text-emerald-600 flex-shrink-0" />
           <div className="flex-1">
-            <span className="text-[10px] font-semibold text-emerald-700">Documento atendido</span>
+            <span className="text-[10px] font-semibold text-emerald-700">Acuse de conocimiento registrado</span>
             {(doc.atendido_area || doc.atendido_en) && (
               <p className="text-[9px] text-emerald-600">
                 {doc.atendido_area && <>Área: {doc.atendido_area}</>}
@@ -1395,7 +1414,7 @@ function PanelRecibido({
           </div>
         </div>
       )}
-      {!doc.requiere_respuesta && doc.estado !== 'de_conocimiento' && doc.estado !== 'atendido' && (
+      {!doc.requiere_respuesta && doc.estado !== 'de_conocimiento' && (
         <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
           <BookOpen size={12} className="text-blue-600 flex-shrink-0" />
           <span className="text-[10px] font-medium text-blue-700">Documento para conocimiento — no requiere respuesta</span>
@@ -1540,7 +1559,7 @@ function PanelRecibido({
                   <p className="text-[10px] text-amber-700">Fecha límite de atención</p>
                   <div className="flex items-center gap-2">
                     <p className="text-xs font-semibold text-amber-800">{formatDate(doc.fecha_limite)}</p>
-                    <PlazoChip fecha={doc.fecha_limite} />
+                    <SemaforoAtencion fecha={doc.fecha_limite} estado={doc.estado} />
                   </div>
                 </div>
               </div>
@@ -1897,6 +1916,15 @@ function PanelRecibido({
                         )}
                       </div>
                     </div>
+                    <div>
+                      <label className="text-[10px] text-gray-500">Fecha del oficio de respuesta</label>
+                      <input type="text" placeholder="16 de marzo de 2026 (dejar vacío = fecha actual)"
+                        className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none"
+                        style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
+                        value={fechaRespLocal} onChange={e => setFechaRespLocal(e.target.value)}
+                        onBlur={() => fechaRespLocal !== (doc.fecha_respuesta ?? '') && guardarFolioRef('fecha', fechaRespLocal)} />
+                      <p className="text-[9px] text-gray-400 mt-0.5">Si se deja vacío, se usa la fecha del día de descarga</p>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="text-[10px] text-gray-500">Elaboró</label>
@@ -1915,6 +1943,89 @@ function PanelRecibido({
                           onBlur={() => revisoLocal !== (doc.referencia_reviso ?? '') && guardarFolioRef('reviso', revisoLocal)} />
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* Tabla/cuadro para el DOCX: imagen, Excel o pegado desde clipboard */}
+                {canGenerarRespuesta && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                    <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">Tabla/Cuadro para el oficio (opcional)</p>
+                    <p className="text-[9px] text-amber-600">
+                      Sube una imagen (PNG/JPG), un archivo Excel (.xlsx), o pega directamente desde el portapapeles (Ctrl+V).
+                      Se insertará como tabla real en el DOCX.
+                    </p>
+                    {(doc.tabla_imagen_nombre || doc.tabla_datos_json) ? (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2 bg-amber-100 border border-amber-300 rounded-lg px-3 py-2">
+                          <ImageIcon size={14} className="text-amber-700 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-medium text-amber-800 truncate">{doc.tabla_imagen_nombre || 'Tabla cargada'}</p>
+                            {doc.tabla_datos_json && (
+                              <p className="text-[9px] text-amber-600">{doc.tabla_datos_json.length} filas × {doc.tabla_datos_json[0]?.length || 0} columnas (Excel)</p>
+                            )}
+                          </div>
+                          <button onClick={async () => { try { await documentosApi.eliminarTablaImagen(doc.id); invalidate() } catch {} }}
+                            className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600">
+                            <X size={12} />
+                          </button>
+                        </div>
+                        {/* Preview de tabla Excel */}
+                        {doc.tabla_datos_json && doc.tabla_datos_json.length > 0 && (
+                          <div className="max-h-32 overflow-auto border border-amber-200 rounded">
+                            <table className="w-full text-[9px]">
+                              <thead><tr className="bg-amber-200">
+                                {doc.tabla_datos_json[0].map((h: string, ci: number) => <th key={ci} className="px-1 py-0.5 text-left font-semibold text-amber-900 border-r border-amber-300 last:border-r-0">{h}</th>)}
+                              </tr></thead>
+                              <tbody>
+                                {doc.tabla_datos_json.slice(1, 6).map((row: string[], ri: number) => (
+                                  <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-amber-50'}>
+                                    {row.map((c: string, ci: number) => <td key={ci} className="px-1 py-0.5 border-r border-amber-100 last:border-r-0">{c}</td>)}
+                                  </tr>
+                                ))}
+                                {doc.tabla_datos_json.length > 6 && (
+                                  <tr><td colSpan={doc.tabla_datos_json[0].length} className="px-1 py-0.5 text-center text-amber-500 italic">...{doc.tabla_datos_json.length - 6} filas más</td></tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <input id={`tabla-img-${doc.id}`} type="file" accept="image/png,image/jpeg,image/webp,.xlsx,.xls" className="hidden"
+                          onChange={async e => { const f = e.target.files?.[0]; if (f) { try { await documentosApi.cargarTablaImagen(doc.id, f); invalidate() } catch {} }; if (e.target) e.target.value = '' }} />
+                        <div className="flex gap-2">
+                          <button onClick={() => document.getElementById(`tabla-img-${doc.id}`)?.click()}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium transition-colors border border-amber-400 text-amber-700 hover:bg-amber-100">
+                            <Upload size={10} /> Subir imagen o Excel
+                          </button>
+                        </div>
+                        {/* Zona de pegado desde clipboard */}
+                        <div
+                          className="border-2 border-dashed border-amber-300 rounded-lg p-3 text-center cursor-pointer hover:bg-amber-100 transition-colors"
+                          tabIndex={0}
+                          onPaste={async (e) => {
+                            const items = e.clipboardData?.items;
+                            if (!items) return;
+                            for (const item of Array.from(items)) {
+                              if (item.type.startsWith('image/')) {
+                                e.preventDefault();
+                                const blob = item.getAsFile();
+                                if (blob) {
+                                  const file = new File([blob], `tabla_pegada.${blob.type.split('/')[1] || 'png'}`, { type: blob.type });
+                                  try { await documentosApi.cargarTablaImagen(doc.id, file); invalidate() } catch {}
+                                }
+                                return;
+                              }
+                            }
+                          }}
+                          onClick={() => document.getElementById(`tabla-img-${doc.id}`)?.click()}
+                        >
+                          <p className="text-[9px] text-amber-600 font-medium">Ctrl+V para pegar imagen del portapapeles</p>
+                          <p className="text-[8px] text-amber-400 mt-0.5">Copia la tabla en Excel → haz click aquí → Ctrl+V</p>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -1971,7 +2082,7 @@ function PanelRecibido({
                     </div>
                   ) : canFirmar ? (
                     <button onClick={() => setShowFirmaModal(true)}
-                      disabled={!['en_atencion', 'respondido'].includes(doc.estado)}
+                      disabled={!['en_atencion', 'respondido', 'borrador', 'en_revision', 'turnado'].includes(doc.estado)}
                       className="w-full flex items-center justify-center gap-2 py-2 text-xs rounded-lg font-medium border transition-colors disabled:opacity-50"
                       style={{ borderColor: GUINDA, color: GUINDA }}>
                       <FileSignature size={12} /> Firmar documento
@@ -2256,8 +2367,31 @@ function PanelRecibido({
               </div>
             </div>
 
-            {/* Vista previa del oficio con formato institucional */}
+            {/* Folio prominente antes de la vista previa */}
             <div className="flex-1 overflow-y-auto px-5 py-4">
+              <div className="mb-3 p-3 rounded-lg border-2" style={{ borderColor: doc.folio_respuesta ? GUINDA : '#F59E0B', backgroundColor: doc.folio_respuesta ? '#FDF2F8' : '#FFFBEB' }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: doc.folio_respuesta ? GUINDA : '#B45309' }}>
+                      No. de oficio que se firmará:
+                    </p>
+                    <p className="text-sm font-bold font-mono mt-0.5" style={{ color: doc.folio_respuesta ? GUINDA : '#B45309' }}>
+                      {doc.folio_respuesta || 'SIN FOLIO — Se generará automáticamente'}
+                    </p>
+                  </div>
+                  {doc.fecha_respuesta && (
+                    <div className="text-right">
+                      <p className="text-[9px] text-gray-500">Fecha del oficio:</p>
+                      <p className="text-xs font-medium text-gray-700">{doc.fecha_respuesta}</p>
+                    </div>
+                  )}
+                </div>
+                {!doc.folio_respuesta && (
+                  <p className="text-[9px] text-amber-600 mt-1">Si necesitas un folio específico, cierra este modal y asígnalo en "Datos del oficio de respuesta".</p>
+                )}
+              </div>
+
+              {/* Vista previa del oficio con formato institucional */}
               <div className="bg-white border border-gray-300 rounded-lg shadow-sm mx-auto max-w-[580px]" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
                 <div className="px-8 py-6 space-y-4">
 
@@ -2268,7 +2402,7 @@ function PanelRecibido({
                     </div>
                     <div className="text-right text-gray-600">
                       <p>Morelia, Michoacán</p>
-                      <p>{new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                      <p>{doc.fecha_respuesta || new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
                     </div>
                   </div>
 
@@ -2536,7 +2670,7 @@ export function TarjetaRecibido({
       </p>
       <div className="flex items-center justify-between">
         <PipelineRecibido estado={doc.estado} />
-        {doc.fecha_limite && <PlazoChip fecha={doc.fecha_limite} />}
+        {doc.fecha_limite && <SemaforoAtencion fecha={doc.fecha_limite} estado={doc.estado} />}
       </div>
       {doc.area_turno_nombre && (
         <p className="text-[10px] text-gray-400 mt-1.5 truncate">
@@ -3358,7 +3492,7 @@ export default function GestionDocumental() {
               value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}>
               <option value="">Estado</option>
               {tab === 'recibidos'
-                ? ['recibido','turnado','en_atencion','devuelto','respondido','firmado','de_conocimiento','atendido'].map(e => (
+                ? ['recibido','turnado','en_atencion','devuelto','respondido','firmado','de_conocimiento'].map(e => (
                     <option key={e} value={e}>{ESTADO_RECIBIDO_CONFIG[e as keyof typeof ESTADO_RECIBIDO_CONFIG]?.label ?? e}</option>
                   ))
                 : ['borrador','en_revision','vigente'].map(e => (
@@ -3473,7 +3607,7 @@ export default function GestionDocumental() {
                       <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Remitente</th>
                       <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Area</th>
                       <th className="px-3 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Estado</th>
-                      <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Plazo</th>
+                      <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Atención</th>
                       <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Fecha</th>
                     </tr>
                   </thead>
@@ -3545,7 +3679,7 @@ export default function GestionDocumental() {
                             )}
                           </td>
                           <td className="px-3 py-2.5">
-                            <PlazoChip fecha={doc.fecha_limite} />
+                            <SemaforoAtencion fecha={doc.fecha_limite} estado={doc.estado} />
                           </td>
                           <td className="px-3 py-2.5">
                             <span className="text-[10px] text-gray-400 whitespace-nowrap">

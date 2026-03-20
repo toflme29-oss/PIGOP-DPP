@@ -8,7 +8,7 @@ export type TipoDocumento =
 
 export type Flujo = 'recibido' | 'emitido'
 export type Prioridad = 'normal' | 'urgente' | 'muy_urgente'
-export type EstadoRecibido = 'recibido' | 'turnado' | 'en_atencion' | 'devuelto' | 'respondido' | 'firmado' | 'archivado' | 'de_conocimiento' | 'atendido'
+export type EstadoRecibido = 'recibido' | 'turnado' | 'en_atencion' | 'devuelto' | 'respondido' | 'firmado' | 'archivado' | 'de_conocimiento'
 export type EstadoEmitido  = 'borrador' | 'en_revision' | 'vigente' | 'archivado'
 export type Estado = EstadoRecibido | EstadoEmitido
 
@@ -76,8 +76,12 @@ export interface Documento extends DocumentoListItem {
   regla_turno_codigo:    string | null
   borrador_respuesta:    string | null
   folio_respuesta:       string | null
+  fecha_respuesta:       string | null
   referencia_elaboro:    string | null
   referencia_reviso:     string | null
+  tabla_imagen_url:      string | null
+  tabla_imagen_nombre:   string | null
+  tabla_datos_json:      string[][] | null
   url_storage:           string | null
   mime_type:             string | null
   firmado_digitalmente:  boolean | null
@@ -163,6 +167,7 @@ export interface DocumentoUpdate {
   descripcion?:        string
   borrador_respuesta?: string
   folio_respuesta?:    string
+  fecha_respuesta?:    string
   referencia_elaboro?: string
   referencia_reviso?:  string
   firmado_digitalmente?: boolean
@@ -315,7 +320,6 @@ export const ESTADO_RECIBIDO_CONFIG: Record<EstadoRecibido, { label: string; col
   firmado:     { label: 'Firmado',     color: '#065f46', bg: '#d1fae5', dot: '#10b981', step: 5 },
   archivado:       { label: 'Archivado',       color: '#374151', bg: '#f3f4f6', dot: '#6b7280', step: 6 },
   de_conocimiento: { label: 'De conocimiento', color: '#0e7490', bg: '#e0f7fa', dot: '#06b6d4', step: 6 },
-  atendido:        { label: 'Atendido',        color: '#065f46', bg: '#d1fae5', dot: '#10b981', step: 7 },
 }
 
 export const ESTADO_EMITIDO_CONFIG: Record<EstadoEmitido, { label: string; color: string; bg: string; dot: string }> = {
@@ -443,6 +447,20 @@ export const documentosApi = {
 
   eliminarReferencia: async (id: string): Promise<Documento> => {
     const res = await apiClient.delete(`/documentos/${id}/referencia`)
+    return res.data
+  },
+
+  cargarTablaImagen: async (id: string, file: File): Promise<Documento> => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await apiClient.post(`/documentos/${id}/tabla-imagen`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  },
+
+  eliminarTablaImagen: async (id: string): Promise<Documento> => {
+    const res = await apiClient.delete(`/documentos/${id}/tabla-imagen`)
     return res.data
   },
 

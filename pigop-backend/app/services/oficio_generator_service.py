@@ -50,6 +50,8 @@ class OficioGeneratorService:
         incluir_firma_visual: bool = False,
         sello_digital_data: Optional[dict] = None,
         asunto: Optional[str] = None,
+        tabla_imagen_path: Optional[str] = None,
+        tabla_datos_json: Optional[list] = None,
     ) -> bytes:
         """
         Genera un oficio de respuesta completo en formato DOCX.
@@ -71,7 +73,9 @@ class OficioGeneratorService:
             folio=folio_respuesta,
             asunto_corto=self._truncar_asunto(asunto or "El que se indica"),
         )
-        # Fecha debajo del recuadro
+        # Lema del año
+        self._add_lema(doc)
+        # Fecha
         self._add_fecha(doc, lugar, fecha_respuesta)
         self._add_empty_lines(doc, 1)
         self._add_destinatario(doc, destinatario_nombre, destinatario_cargo, destinatario_dependencia)
@@ -83,7 +87,7 @@ class OficioGeneratorService:
             if s and s.strip()
         )
         if body_text:
-            self._add_body_text(doc, body_text)
+            self._add_body_text(doc, body_text, tabla_imagen_path=tabla_imagen_path, tabla_datos_json=tabla_datos_json)
 
         self._add_empty_lines(doc, 1)
         self._add_atentamente(doc)
@@ -157,12 +161,10 @@ class OficioGeneratorService:
     def _add_identidad_institucional(self, doc: Document) -> None:
         """
         Agrega la identidad institucional del Gobierno del Estado.
-        Formato oficial: Escudo del Estado + "Gobierno del Estado de Michoacán de Ocampo"
-        alineado a la izquierda, tal como aparece en los oficios modelo.
-        NO incluye SFA/Subsecretaría/DPP como encabezado — esos datos
-        van en el recuadro institucional.
+        Formato oficial: Escudo nacional + "Gobierno del Estado de Michoacán de Ocampo"
+        alineado a la izquierda, sin líneas decorativas ni colores.
         """
-        # Escudo del Estado de Michoacán (si existe)
+        # Escudo nacional (si existe)
         escudo_path = LOGOS_DIR / "escudo_mich.png"
         if escudo_path.exists():
             pe = doc.add_paragraph()
@@ -174,15 +176,11 @@ class OficioGeneratorService:
 
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        p.paragraph_format.space_after = Pt(0)
+        p.paragraph_format.space_after = Pt(6)
         p.paragraph_format.space_before = Pt(2)
-        run = p.add_run("Gobierno del Estado de Michoacán de Ocampo")
-        run.bold = True
-        run.font.size = Pt(9)
-        run.font.color.rgb = GUINDA
-
-        # Línea separadora guinda debajo
-        self._add_separator_line(doc)
+        run = p.add_run("Gobierno del Estado\nde Michoacán de Ocampo")
+        run.font.size = Pt(8)
+        run.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
 
     def _add_header_image(self, doc: Document) -> None:
         """Agrega la imagen del membrete institucional (incluye recuadro vacío).
@@ -309,13 +307,23 @@ class OficioGeneratorService:
                     mar.append(side_el)
                 tc_pr.append(mar)
 
+    def _add_lema(self, doc: Document) -> None:
+        """Agrega el lema institucional del año, centrado entre comillas."""
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(8)
+        p.paragraph_format.space_after = Pt(4)
+        run = p.add_run('"50 Aniversario de los Santuarios de la Mariposa Monarca"')
+        run.font.size = Pt(10)
+        run.italic = True
+
     def _add_fecha(self, doc: Document, lugar: str, fecha: str) -> None:
         """Solo la línea de fecha, alineada a la derecha."""
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         p.paragraph_format.space_before = Pt(8)
         p.paragraph_format.space_after = Pt(0)
-        run = p.add_run(f"{lugar}, {fecha}")
+        run = p.add_run(f"{lugar}, a {fecha}.")
         run.font.size = Pt(11)
 
     @staticmethod
@@ -360,21 +368,299 @@ class OficioGeneratorService:
             run.bold = True
             run.font.size = Pt(11)
 
-    def _add_body_text(self, doc: Document, text: str) -> None:
-        """Agrega el cuerpo del oficio con formato justificado."""
-        for paragraph_text in text.split("\n\n"):
-            paragraph_text = paragraph_text.strip()
-            if not paragraph_text:
+    @staticmethod
+    def _is_table_line(line: str) -> bool:
+        """Detecta si una línea es parte de una tabla markdown (contiene |)."""
+        stripped = line.strip()
+        return stripped.startswith("|") and stripped.endswith("|") and stripped.count("|") >= 2
+
+    @staticmethod
+    def _is_separator_line(line: str) -> bool:
+        """Detecta líneas separadoras de tabla como |---|---|"""
+        stripped = line.strip().replace(" ", "")
+        if not stripped.startswith("|"):
+            return False
+        # Líneas tipo |---|---| o |:---|:---| etc
+        inner = stripped.strip("|")
+        parts = inner.split("|")
+        return all(set(p.strip()).issubset({"-", ":", " "}) and len(p.strip()) > 0 for p in parts)
+
+    def _parse_table_cells(self, line: str) -> list[str]:
+        """Extrae las celdas de una línea de tabla markdown."""
+        stripped = line.strip()
+        if stripped.startswith("|"):
+            stripped = stripped[1:]
+        if stripped.endswith("|"):
+            stripped = stripped[:-1]
+        return [cell.strip() for cell in stripped.split("|")]
+
+    def _add_word_table(self, doc: Document, table_lines: list[str]) -> None:
+        """Convierte líneas de tabla markdown en una tabla Word formateada."""
+        import re
+        # Filtrar líneas separadoras (|---|---|)
+        data_lines = [l for l in table_lines if not self._is_separator_line(l)]
+        if not data_lines:
+            return
+
+        # Parsear todas las filas
+        rows_data = [self._parse_table_cells(line) for line in data_lines]
+        if not rows_data:
+            return
+
+        # Determinar número de columnas (máximo entre todas las filas)
+        num_cols = max(len(row) for row in rows_data)
+        num_rows = len(rows_data)
+
+        # Crear tabla Word
+        table = doc.add_table(rows=num_rows, cols=num_cols)
+        table.autofit = True
+
+        # Estilo de bordes
+        tbl = table._tbl
+        tblPr = tbl.tblPr if tbl.tblPr is not None else tbl.makeelement(qn("w:tblPr"), {})
+        tblBorders = tblPr.makeelement(qn("w:tblBorders"), {})
+        for border_name in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            border_el = tblBorders.makeelement(
+                qn(f"w:{border_name}"),
+                {
+                    qn("w:val"): "single",
+                    qn("w:sz"): "4",
+                    qn("w:space"): "0",
+                    qn("w:color"): "333333",
+                },
+            )
+            tblBorders.append(border_el)
+        tblPr.append(tblBorders)
+        if tbl.tblPr is None:
+            tbl.insert(0, tblPr)
+
+        for i, row_data in enumerate(rows_data):
+            row = table.rows[i]
+            is_header = (i == 0)
+            for j in range(num_cols):
+                cell = row.cells[j]
+                cell_text = row_data[j] if j < len(row_data) else ""
+                # Limpiar marcadores markdown de bold
+                cell_text_clean = re.sub(r'\*\*(.+?)\*\*', r'\1', cell_text)
+
+                p = cell.paragraphs[0]
+                p.paragraph_format.space_after = Pt(1)
+                p.paragraph_format.space_before = Pt(1)
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+                run = p.add_run(cell_text_clean)
+                run.font.name = "Arial"
+                run.font.size = Pt(9)
+
+                if is_header or cell_text != cell_text_clean:
+                    run.bold = True
+                    # Fondo gris claro para encabezado
+                    if is_header:
+                        shading = cell._tc.get_or_add_tcPr().makeelement(
+                            qn("w:shd"),
+                            {qn("w:val"): "clear", qn("w:color"): "auto", qn("w:fill"): "E8E8E8"},
+                        )
+                        cell._tc.get_or_add_tcPr().append(shading)
+
+                # Padding de celdas
+                tc_pr = cell._tc.get_or_add_tcPr()
+                mar = tc_pr.makeelement(qn("w:tcMar"), {})
+                for side in ("top", "bottom", "start", "end"):
+                    side_el = mar.makeelement(
+                        qn(f"w:{side}"),
+                        {qn("w:w"): "40", qn("w:type"): "dxa"},
+                    )
+                    mar.append(side_el)
+                tc_pr.append(mar)
+
+    def _preprocess_tabla_blocks(self, text: str) -> str:
+        """Convierte bloques [TABLA]...[/TABLA] a formato markdown con pipes."""
+        import re
+        def _convert_block(match: re.Match) -> str:
+            block = match.group(1).strip()
+            lines = [l.strip() for l in block.split("\n") if l.strip()]
+            if not lines:
+                return ""
+            # Detectar si las líneas ya tienen formato pipe
+            has_pipes = any("|" in l for l in lines)
+            if has_pipes:
+                # Convertir líneas tipo "1 | dato" a "| 1 | dato |"
+                result = []
+                for line in lines:
+                    parts = [p.strip() for p in line.split("|")]
+                    # Asegurar que empiece y termine con |
+                    result.append("| " + " | ".join(parts) + " |")
+                # Agregar separador después del header
+                if len(result) > 1:
+                    num_cols = result[0].count("|") - 1
+                    sep = "|" + "|".join(["---"] * num_cols) + "|"
+                    result.insert(1, sep)
+                return "\n".join(result)
+            return block
+        return re.sub(r'\[TABLA\](.*?)\[/TABLA\]', _convert_block, text, flags=re.DOTALL)
+
+    @staticmethod
+    def _has_pipe_content(line: str) -> bool:
+        """Detecta si una línea contiene datos tabulares con | (no necesita empezar con |)."""
+        stripped = line.strip()
+        # Debe tener al menos un | y no ser solo separadores
+        if "|" not in stripped:
+            return False
+        parts = stripped.split("|")
+        # Al menos 2 partes con contenido
+        non_empty = [p.strip() for p in parts if p.strip()]
+        return len(non_empty) >= 2
+
+    def _add_body_text(self, doc: Document, text: str, *, tabla_imagen_path: Optional[str] = None, tabla_datos_json: Optional[list] = None) -> None:
+        """Agrega el cuerpo del oficio con formato justificado.
+        Detecta tablas markdown y bloques [TABLA]...[/TABLA] y los convierte en tablas Word.
+        Si hay tabla_datos_json, inserta una tabla Word real con esos datos.
+        Si hay tabla_imagen_path, inserta la imagen en lugar de la primera tabla detectada.
+        """
+        # Preprocesar: convertir [TABLA]...[/TABLA] a formato markdown pipe
+        text = self._preprocess_tabla_blocks(text)
+
+        tabla_imagen_usada = False
+        tabla_excel_usada = False
+        lines = text.split("\n")
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+
+            # Detectar inicio de tabla (líneas con | como tabla)
+            if self._is_table_line(line) or (self._has_pipe_content(line) and not line.strip().startswith("[")):
+                table_lines = []
+                while i < len(lines) and (
+                    self._is_table_line(lines[i])
+                    or self._is_separator_line(lines[i])
+                    or self._has_pipe_content(lines[i])
+                ):
+                    table_lines.append(lines[i])
+                    i += 1
+
+                # Prioridad: 1) datos Excel, 2) imagen, 3) tabla markdown generada por IA
+                if tabla_datos_json and not tabla_excel_usada:
+                    self._add_excel_table(doc, tabla_datos_json)
+                    tabla_excel_usada = True
+                elif tabla_imagen_path and not tabla_imagen_usada:
+                    self._add_table_image(doc, tabla_imagen_path)
+                    tabla_imagen_usada = True
+                else:
+                    # Normalizar: asegurar que todas empiecen/terminen con |
+                    normalized = []
+                    for tl in table_lines:
+                        s = tl.strip()
+                        if not s.startswith("|"):
+                            s = "| " + s
+                        if not s.endswith("|"):
+                            s = s + " |"
+                        normalized.append(s)
+                    self._add_word_table(doc, normalized)
                 continue
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            p.paragraph_format.space_after = Pt(6)
-            p.paragraph_format.line_spacing = 1.15
-            # Primera linea con sangria
-            p.paragraph_format.first_line_indent = Cm(1.0)
-            run = p.add_run(paragraph_text)
-            run.font.name = "Arial"
-            run.font.size = Pt(11)
+
+            # Saltar líneas separadoras sueltas
+            if self._is_separator_line(line):
+                i += 1
+                continue
+
+            # Línea vacía = salto de párrafo
+            stripped = line.strip()
+            if not stripped:
+                i += 1
+                continue
+
+            # Acumular párrafo (líneas consecutivas no-tabla, no-vacías)
+            para_lines = []
+            while i < len(lines):
+                l = lines[i].strip()
+                if not l or self._is_table_line(lines[i]) or self._is_separator_line(lines[i]) or self._has_pipe_content(lines[i]):
+                    break
+                para_lines.append(l)
+                i += 1
+
+            paragraph_text = " ".join(para_lines)
+            if paragraph_text:
+                p = doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                p.paragraph_format.space_after = Pt(6)
+                p.paragraph_format.line_spacing = 1.15
+                p.paragraph_format.first_line_indent = Cm(1.0)
+                run = p.add_run(paragraph_text)
+                run.font.name = "Arial"
+                run.font.size = Pt(11)
+
+    def _add_table_image(self, doc: Document, image_path: str) -> None:
+        """Inserta una imagen de tabla/cuadro en el documento."""
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(6)
+        p.paragraph_format.space_after = Pt(6)
+        run = p.add_run()
+        # Ancho máximo del contenido (página menos márgenes)
+        run.add_picture(image_path, width=Cm(14.5))
+
+    def _add_excel_table(self, doc: Document, table_data: list[list[str]]) -> None:
+        """Inserta una tabla Word real a partir de datos extraídos de Excel.
+        table_data: lista de filas, cada fila es una lista de strings.
+        La primera fila se trata como encabezado.
+        """
+        if not table_data or not table_data[0]:
+            return
+
+        num_rows = len(table_data)
+        num_cols = max(len(row) for row in table_data)
+
+        table = doc.add_table(rows=num_rows, cols=num_cols)
+        table.autofit = True
+
+        # Bordes
+        tbl = table._tbl
+        tblPr = tbl.tblPr if tbl.tblPr is not None else tbl.makeelement(qn("w:tblPr"), {})
+        tblBorders = tblPr.makeelement(qn("w:tblBorders"), {})
+        for border_name in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            border_el = tblBorders.makeelement(
+                qn(f"w:{border_name}"),
+                {qn("w:val"): "single", qn("w:sz"): "4", qn("w:space"): "0", qn("w:color"): "333333"},
+            )
+            tblBorders.append(border_el)
+        tblPr.append(tblBorders)
+        if tbl.tblPr is None:
+            tbl.insert(0, tblPr)
+
+        for i, row_data in enumerate(table_data):
+            row = table.rows[i]
+            is_header = (i == 0)
+            for j in range(num_cols):
+                cell = row.cells[j]
+                cell_text = row_data[j] if j < len(row_data) else ""
+
+                p = cell.paragraphs[0]
+                p.paragraph_format.space_after = Pt(1)
+                p.paragraph_format.space_before = Pt(1)
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+                run = p.add_run(cell_text)
+                run.font.name = "Arial"
+                run.font.size = Pt(9)
+
+                if is_header:
+                    run.bold = True
+                    shading = cell._tc.get_or_add_tcPr().makeelement(
+                        qn("w:shd"),
+                        {qn("w:val"): "clear", qn("w:color"): "auto", qn("w:fill"): "E8E8E8"},
+                    )
+                    cell._tc.get_or_add_tcPr().append(shading)
+
+                # Padding
+                tc_pr = cell._tc.get_or_add_tcPr()
+                mar = tc_pr.makeelement(qn("w:tcMar"), {})
+                for side in ("top", "bottom", "start", "end"):
+                    side_el = mar.makeelement(
+                        qn(f"w:{side}"),
+                        {qn("w:w"): "40", qn("w:type"): "dxa"},
+                    )
+                    mar.append(side_el)
+                tc_pr.append(mar)
 
     def _add_atentamente(self, doc: Document) -> None:
         """Agrega solo la palabra ATENTAMENTE centrada con espaciado."""

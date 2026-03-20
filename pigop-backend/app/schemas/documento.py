@@ -7,7 +7,7 @@ TIPOS_VALIDOS = [
     "oficio", "circular", "memorandum", "acuerdo",
     "convenio", "resolucion", "informe", "otro",
 ]
-ESTADOS_RECIBIDO = ["recibido", "turnado", "en_atencion", "devuelto", "respondido", "firmado", "archivado", "de_conocimiento", "atendido"]
+ESTADOS_RECIBIDO = ["recibido", "turnado", "en_atencion", "devuelto", "respondido", "firmado", "archivado", "de_conocimiento"]
 ESTADOS_EMITIDO  = ["borrador", "en_revision", "vigente", "archivado"]
 PRIORIDADES      = ["normal", "urgente", "muy_urgente"]
 FLUJOS           = ["recibido", "emitido"]
@@ -63,6 +63,7 @@ class DocumentoEmitidoCreate(BaseModel):
     area_turno:      Optional[str] = Field(None, max_length=10, description="Código del área de origen (DIR, SCG, SPF...)")
     area_turno_nombre: Optional[str] = Field(None, max_length=200, description="Nombre del área de origen")
     folio_respuesta: Optional[str] = Field(None, max_length=100, description="Folio institucional auto-generado")
+    fecha_respuesta: Optional[str] = Field(None, max_length=50, description="Fecha del oficio de respuesta")
     tags: Optional[List[str]] = None
 
 
@@ -84,6 +85,7 @@ class DocumentoUpdate(BaseModel):
     descripcion:        Optional[str] = None
     borrador_respuesta: Optional[str] = None
     folio_respuesta:    Optional[str] = Field(None, max_length=100)
+    fecha_respuesta:    Optional[str] = Field(None, max_length=50)
     referencia_elaboro: Optional[str] = Field(None, max_length=50)
     referencia_reviso:  Optional[str] = Field(None, max_length=50)
     firmado_digitalmente: Optional[bool] = None
@@ -151,8 +153,12 @@ class DocumentoResponse(DocumentoListResponse):
     regla_turno_codigo:   Optional[str]
     borrador_respuesta:   Optional[str]
     folio_respuesta:      Optional[str]
+    fecha_respuesta:      Optional[str]
     referencia_elaboro:   Optional[str]
     referencia_reviso:    Optional[str]
+    tabla_imagen_url:     Optional[str] = None
+    tabla_imagen_nombre:  Optional[str] = None
+    tabla_datos_json:     Optional[list] = None
     url_storage:          Optional[str]
     mime_type:            Optional[str]
     devuelto_por_id:      Optional[str] = None

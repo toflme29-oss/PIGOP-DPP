@@ -364,12 +364,11 @@ class CRUDDocumento(CRUDBase[DocumentoOficial]):
         usuario_id: str,
         area_nombre: str,
     ) -> DocumentoOficial:
-        """Marca un documento de_conocimiento como atendido y registra en historial."""
+        """Registra acuse de conocimiento. El estado se mantiene como de_conocimiento
+        (estado terminal) pero se registra quién lo revisó y cuándo."""
         from datetime import datetime, timezone
 
-        estado_anterior = db_obj.estado
         updates = {
-            "estado": "atendido",
             "atendido_por_id": usuario_id,
             "atendido_en": datetime.now(timezone.utc),
             "atendido_area": area_nombre,
@@ -380,8 +379,8 @@ class CRUDDocumento(CRUDBase[DocumentoOficial]):
             documento_id=str(db_obj.id),
             usuario_id=usuario_id,
             tipo_accion="acuse_conocimiento",
-            estado_anterior=estado_anterior,
-            estado_nuevo="atendido",
+            estado_anterior="de_conocimiento",
+            estado_nuevo="de_conocimiento",
             observaciones=f"Acuse de conocimiento registrado por área: {area_nombre}",
             version=db_obj.version or 1,
         )

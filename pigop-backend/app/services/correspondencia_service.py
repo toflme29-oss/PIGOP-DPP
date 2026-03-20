@@ -547,6 +547,13 @@ Determina el tipo según las instrucciones del Director y el contenido del ofici
 6. NO incluyas encabezado, recuadro institucional, fecha, destinatario, firma, copias ni referencia — se generan automáticamente.
 7. Si hay un EJEMPLO DE MODELO proporcionado arriba, REPLICA su estructura y estilo adaptándolo al caso concreto.
 8. RESPETA ESTRICTAMENTE las instrucciones del Director proporcionadas abajo.
+9. TABLAS: Cuando el contenido incluya tablas o cuadros de datos, SIEMPRE usa formato markdown con | (pipe).
+   Ejemplo:
+   | Columna 1 | Columna 2 | Columna 3 |
+   |---|---|---|
+   | dato 1 | dato 2 | dato 3 |
+   Reproduce FIELMENTE todas las columnas, filas y datos. NO omitas ni simplifiques tablas.
+10. Si las instrucciones piden incluir la fecha con un valor específico, USA ESA FECHA en el texto del oficio.
 
 Redacta ÚNICAMENTE el cuerpo del oficio de respuesta:"""
 
@@ -576,6 +583,13 @@ OFICIO A GENERAR:
    Oficio administrativo interno → cita artículos de las Condiciones Generales de Trabajo.
 7. NO incluyas encabezado, recuadro, fecha, destinatario, firma, copias ni referencia — se generan automáticamente.
 8. RESPETA ESTRICTAMENTE las instrucciones proporcionadas abajo.
+9. TABLAS: Cuando el contenido incluya tablas o cuadros de datos, SIEMPRE usa formato markdown con | (pipe).
+   Ejemplo:
+   | Columna 1 | Columna 2 | Columna 3 |
+   |---|---|---|
+   | dato 1 | dato 2 | dato 3 |
+   Reproduce FIELMENTE todas las columnas, filas y datos.
+10. Si las instrucciones piden una fecha específica, USA ESA FECHA en el texto del oficio.
 
 {instrucciones_extra}
 
@@ -828,12 +842,23 @@ class CorrespondenciaService:
             client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
             # ── Contenido multimodal: prompt + archivo de referencia si existe
+            # NOTA: Gemini solo soporta imágenes y PDF como multimodal.
+            # Para .docx/.xlsx/.csv/.txt se usa el texto extraído en el prompt.
+            GEMINI_MULTIMODAL_MIMES = {
+                "image/jpeg", "image/png", "image/webp", "image/tiff",
+                "application/pdf",
+            }
             contents: list = []
 
-            if referencia_archivo_bytes and referencia_mime_type:
-                # Enviar el archivo real a Gemini (multimodal) — Gemini ve tablas, formato, etc.
+            if referencia_archivo_bytes and referencia_mime_type and referencia_mime_type in GEMINI_MULTIMODAL_MIMES:
                 contents.append(
                     types.Part.from_bytes(data=referencia_archivo_bytes, mime_type=referencia_mime_type)
+                )
+            elif referencia_archivo_bytes and referencia_mime_type and contenido_referencia:
+                # Archivo no soportado por Gemini multimodal — usar texto extraído
+                prompt += (
+                    f"\n\nDOCUMENTO DE REFERENCIA (texto extraído del archivo adjunto):\n"
+                    f"---INICIO REFERENCIA---\n{contenido_referencia[:30000]}\n---FIN REFERENCIA---"
                 )
 
             contents.append(prompt)
@@ -927,10 +952,19 @@ class CorrespondenciaService:
 
             client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
+            GEMINI_MULTIMODAL_MIMES = {
+                "image/jpeg", "image/png", "image/webp", "image/tiff",
+                "application/pdf",
+            }
             contents: list = []
-            if referencia_archivo_bytes and referencia_mime_type:
+            if referencia_archivo_bytes and referencia_mime_type and referencia_mime_type in GEMINI_MULTIMODAL_MIMES:
                 contents.append(
                     types.Part.from_bytes(data=referencia_archivo_bytes, mime_type=referencia_mime_type)
+                )
+            elif referencia_archivo_bytes and referencia_mime_type and contenido_referencia:
+                prompt += (
+                    f"\n\nDOCUMENTO DE REFERENCIA (texto extraído del archivo adjunto):\n"
+                    f"---INICIO REFERENCIA---\n{contenido_referencia[:30000]}\n---FIN REFERENCIA---"
                 )
             contents.append(prompt)
 
