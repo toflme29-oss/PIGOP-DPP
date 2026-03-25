@@ -7,7 +7,6 @@ import {
   ArrowRight, InboxIcon, SendIcon, Building2,
   Download, Shield, BookOpen, FileSignature,
   History, CornerUpLeft, RefreshCw, Lock, Hash, Mail, ChevronLeft,
-  ImageIcon,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
@@ -20,7 +19,7 @@ import {
   type DocumentoRecibidoCreate, type DocumentoEmitidoCreate,
   type DocumentoUpdate, type PreviewOCRResult,
   type HistorialItem,
-  type TipoDocumento, type Prioridad,
+  type TipoDocumento, type Prioridad, type EstadoRecibido,
   type AreaDPP,
   type PlantillaOficio,
   type CertificadoInfo,
@@ -183,7 +182,7 @@ function ModalRegistrarRecibido({
   const [fileName, setFileName] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const _canvasRef = useRef<HTMLCanvasElement>(null)
   const [cropImage, setCropImage] = useState<HTMLImageElement | null>(null)
   const [cropFile, setCropFile] = useState<File | null>(null)
 
@@ -1194,8 +1193,7 @@ function PanelRecibido({
   const canEnviarParaFirma = isArea || isAsesor || isSuperadmin
   const canDescargarDocx = isDirector || isSuperadmin  // Solo Director y Admin descargan DOCX
   const canEliminar = isSecretaria || isSuperadmin  // Secretaria y Admin eliminan registros
-  const canReasignar = isDirector || isSubdirector || isJefeDepto || isSuperadmin
-  const isReadOnly = isAuditor  // Auditor SGC: solo lectura
+  // canReasignar e isReadOnly reservados para uso futuro
 
   // Auto-cargar original al montar
   useEffect(() => {
@@ -2646,7 +2644,7 @@ function PanelRecibido({
         <VisorFlotante
           url={pdfUrl}
           titulo={`${doc.folio_respuesta || doc.numero_oficio_origen || doc.asunto}`}
-          firmado={doc.firmado_digitalmente}
+          firmado={doc.firmado_digitalmente ?? undefined}
           onClose={() => setVisorFlotante(null)}
           onDownload={() => documentosApi.descargarOficioPdf(doc.id)}
         />
@@ -2775,6 +2773,7 @@ function PanelEmitido({
     folio_respuesta: doc.folio_respuesta || '',
   })
   const isDirector = user?.rol === 'admin_cliente' || user?.rol === 'superadmin'
+  const canDescargarDocx = isDirector  // Solo Director y Admin descargan DOCX
   // const isSecretaria = user?.rol === 'secretaria'  // reserved for future use
   // const canFirmar = isDirector  // Solo Director firma — reserved for future use
 

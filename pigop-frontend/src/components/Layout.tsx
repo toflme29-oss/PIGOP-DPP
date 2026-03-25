@@ -97,16 +97,6 @@ const NAV_MODULES: NavModule[] = [
   },
 ]
 
-// Módulo Admin (separado, no es módulo principal)
-const ADMIN_MODULE: NavModule = {
-  to: '/admin',
-  icon: Settings,
-  label: 'Admin',
-  fullLabel: 'Administración',
-  match: (path: string) => path.startsWith('/admin'),
-  active: true,
-  adminOnly: true,
-}
 
 // Guinda institucional
 const GUINDA = '#911A3A'
@@ -185,7 +175,7 @@ function UserDropdown({ user, onLogout }: { user: { nombre_completo?: string; em
 function ModuleDropdown({ mod, pathname }: { mod: NavModule; pathname: string }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>()
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const isActive = mod.match(pathname)
 
