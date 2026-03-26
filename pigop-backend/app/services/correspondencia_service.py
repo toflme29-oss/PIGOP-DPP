@@ -1131,6 +1131,22 @@ class CorrespondenciaService:
         # Eliminar línea suelta "PRESENTE." que pueda quedar
         text = _re.sub(r'^[ \t]*\*{0,2}PRESENTE\.?\*{0,2}\s*$', '', text, count=1, flags=_re.MULTILINE)
 
+        # Eliminar encabezado institucional que la IA genera
+        text = _re.sub(
+            r'^[ \t]*\*{0,2}Gobierno\s+del\s+Estado\s*(de\s+Michoac[áa]n\s*(de\s+Ocampo)?)?\*{0,2}\s*\n',
+            '', text, flags=_re.MULTILINE | _re.IGNORECASE
+        )
+        # Eliminar "Secretaría de Finanzas y Administración" suelto al inicio
+        text = _re.sub(
+            r'^[ \t]*\*{0,2}Secretar[íi]a\s+de\s+Finanzas\s+y\s+Administraci[óo]n\*{0,2}\s*\n',
+            '', text, flags=_re.MULTILINE | _re.IGNORECASE
+        )
+        # Eliminar "Dirección de Programación y Presupuesto" suelto al inicio
+        text = _re.sub(
+            r'^[ \t]*\*{0,2}Direcci[óo]n\s+de\s+Programaci[óo]n\s+y\s+Presupuesto\*{0,2}\s*\n',
+            '', text, flags=_re.MULTILINE | _re.IGNORECASE
+        )
+
         # Eliminar líneas de datos institucionales que la IA a veces incluye
         for pattern in [
             r'^[ \t]*\*{0,2}Depend?encia:\*{0,2}\s+.*$',

@@ -847,6 +847,9 @@ function ModalNuevoEmitido({
   const [err, setErr] = useState('')
   const [archivoSubir, setArchivoSubir] = useState<File | null>(null)
   const fileRefModal = useRef<HTMLInputElement>(null)
+  const [directoDirector, setDirectoDirector] = useState(false)
+  const [yaFirmadoAutografa, setYaFirmadoAutografa] = useState(false)
+  const [extrayendoMeta, setExtrayendoMeta] = useState(false)
   const set = (k: keyof DocumentoEmitidoCreate, v: unknown) => setForm(p => ({ ...p, [k]: v }))
 
   // Auto-generar folio al seleccionar área
@@ -883,9 +886,10 @@ function ModalNuevoEmitido({
     e.preventDefault(); setErr('')
     if (!form.asunto.trim()) { setErr('El asunto es obligatorio.'); return }
     if (!areaOrigen) { setErr('Seleccione el área de origen.'); return }
-    // Agregar area_turno y folio al form data
     const areaInfo = areasDisponibles?.find(a => a.codigo === areaOrigen)
     const folioFinal = folioEditado ? (form.numero_control ?? '') : folioGenerado
+    // Si ya tiene firma autógrafa, se registra como firmado directamente
+    const estadoInicial = yaFirmadoAutografa ? 'firmado' : 'borrador'
     try {
       const doc = await mutation.mutateAsync({
         ...form,
@@ -894,6 +898,7 @@ function ModalNuevoEmitido({
         area_turno_nombre: areaInfo?.nombre || '',
         folio_respuesta: folioFinal,
         numero_control: folioFinal,
+        estado: estadoInicial,
       })
       // Si hay archivo para subir, subirlo después de crear
       if (archivoSubir && doc.id) {
@@ -973,15 +978,25 @@ function ModalNuevoEmitido({
                   className="hidden"
                   onChange={e => { const f = e.target.files?.[0]; if (f) setArchivoSubir(f) }} />
                 {archivoSubir ? (
-                  <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                    <FileText size={18} className="text-blue-600 flex-shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-blue-800 truncate">{archivoSubir.name}</p>
-                      <p className="text-[10px] text-blue-600">{(archivoSubir.size / 1024 / 1024).toFixed(2)} MB</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                      <FileText size={18} className="text-blue-600 flex-shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-blue-800 truncate">{archivoSubir.name}</p>
+                        <p className="text-[10px] text-blue-600">{(archivoSubir.size / 1024 / 1024).toFixed(2)} MB</p>
+                      </div>
+                      <button type="button" onClick={() => setArchivoSubir(null)} className="text-blue-400 hover:text-blue-600">
+                        <X size={14} />
+                      </button>
                     </div>
-                    <button type="button" onClick={() => setArchivoSubir(null)} className="text-blue-400 hover:text-blue-600">
-                      <X size={14} />
-                    </button>
+                    {!extrayendoMeta && !form.asunto && (
+                      <p className="text-[9px] text-blue-500 italic px-1">Al registrar, se extraerán los metadatos automáticamente con IA</p>
+                    )}
+                    {extrayendoMeta && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-blue-600">
+                        <RotateCcw size={10} className="animate-spin" /> Extrayendo metadatos del documento...
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div onClick={() => fileRefModal.current?.click()}
@@ -1004,6 +1019,27 @@ function ModalNuevoEmitido({
               </div>
             )}
 
+            {/* ── Directo al Director ── */}
+            <label className="flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-200 rounded-lg cursor-pointer hover:bg-purple-100 transition-colors">
+              <input type="checkbox" checked={directoDirector} onChange={e => {
+                setDirectoDirector(e.target.checked)
+                if (e.target.checked) { setAreaOrigen('DIR'); handleAreaChange('DIR') }
+                else { setAreaOrigen(''); setFolioGenerado('') }
+              }} className="rounded border-purple-300 text-purple-600 focus:ring-purple-500" />
+              <span className="text-[11px] font-medium text-purple-800">Directo al Director (sin área intermedia)</span>
+              <span className="text-[9px] text-purple-500 ml-auto">Fondo revolvente, solicitudes internas, etc.</span>
+            </label>
+
+            {/* ── Documento ya firmado autógrafa (solo modo subir) ── */}
+            {modo === 'subir' && (
+              <label className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg cursor-pointer hover:bg-emerald-100 transition-colors">
+                <input type="checkbox" checked={yaFirmadoAutografa} onChange={e => setYaFirmadoAutografa(e.target.checked)}
+                  className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500" />
+                <span className="text-[11px] font-medium text-emerald-800">Documento ya tiene firma autógrafa</span>
+                <span className="text-[9px] text-emerald-500 ml-auto">Solo se registra, no requiere firma digital</span>
+              </label>
+            )}
+
             {/* ── Área de origen + folio automático ── */}
             <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3 space-y-3">
               <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
@@ -1012,12 +1048,13 @@ function ModalNuevoEmitido({
               <div>
                 <label className="block text-[10px] text-gray-600 mb-1">Área de origen <span className="text-red-500">*</span></label>
                 <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-                  value={areaOrigen} onChange={e => handleAreaChange(e.target.value)}>
+                  value={areaOrigen} onChange={e => handleAreaChange(e.target.value)} disabled={directoDirector}>
                   <option value="">— Seleccionar área —</option>
                   {areasDisponibles?.map(a => (
                     <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nombre}</option>
                   ))}
                 </select>
+                {directoDirector && <p className="text-[9px] text-purple-500 mt-1">Área fijada a Dirección (DIR)</p>}
               </div>
               {areaOrigen && (
                 <div>
@@ -1142,7 +1179,11 @@ function ModalNuevoEmitido({
               <button type="button" onClick={onClose}
                 className="px-4 py-2 text-sm text-gray-600 rounded-lg border border-gray-300 hover:bg-gray-50">Cancelar</button>
               <Button type="submit" size="sm" loading={mutation.isPending}>
-                {modo === 'subir' ? <><Upload size={14} /> Registrar</> : <><Wand2 size={14} /> Crear borrador</>}
+                {modo === 'subir'
+                  ? yaFirmadoAutografa
+                    ? <><CheckCircle2 size={14} /> Registrar como firmado</>
+                    : <><Upload size={14} /> Registrar y enviar para firma</>
+                  : <><Wand2 size={14} /> Crear borrador</>}
               </Button>
             </div>
           </form>
