@@ -369,9 +369,16 @@ sync_engine.dispose()
 # ── Usuarios de prueba ──────────────────────────────────────────────────────
 # Se crean al iniciar para que puedas probar todos los roles
 _USUARIOS_PRUEBA = [
-    ("director@pigop.gob.mx", "Director.2026!", "Mtro. Marco Antonio Flores Mejía", "admin_cliente"),
-    ("secretaria@pigop.gob.mx", "Secretaria.2026!", "Secretaria DPP", "analista"),
-    ("area@pigop.gob.mx", "Area.2026!", "Analista Área", "analista"),
+    ("director@pigop.gob.mx", "Dir2026!", "Marco Antonio Flores Mejía", "admin_cliente"),
+    ("secretaria@pigop.gob.mx", "Sec2026!", "Berenice Huerta Silva", "secretaria"),
+    ("asesor@pigop.gob.mx", "Ase2026!", "René Emilio Rico García", "asesor"),
+    ("subcep@pigop.gob.mx", "Sub2026!", "Eduardo Cortés Jaramillo", "subdirector"),
+    ("jdcpres@pigop.gob.mx", "Jef2026!", "Blanca Esthela Ortíz Soto", "jefe_depto"),
+    ("jdregej@pigop.gob.mx", "Jef2026!", "Luis Alberto Sánchez León", "jefe_depto"),
+    ("subpyf@pigop.gob.mx", "Sub2026!", "José Luis Pardo Escutia", "subdirector"),
+    ("jdasyp@pigop.gob.mx", "Jef2026!", "Seomara Mendoza Cárdenas", "jefe_depto"),
+    ("jdfyn@pigop.gob.mx", "Jef2026!", "Hugo Díaz Arechiaga", "jefe_depto"),
+    ("auditor@pigop.gob.mx", "Aud2026!", "Auditor SGC", "auditor"),
 ]
 _sync2 = create_engine(DB_SYNC, echo=False)
 with _sync2.connect() as c2:
