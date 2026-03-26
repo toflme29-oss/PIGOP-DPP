@@ -240,14 +240,14 @@ with sync_engine.connect() as conn:
             "titulo": "Campos obligatorios del DEPP",
             "descripcion": "El DEPP debe contener folio, UPP, ejercicio y monto total.",
             "tipo_validacion": "estructura", "aplica_clasificacion": None,
-            "aplica_capitulo": None, "gravedad": "critico", "bloquea_aprobacion": 1,
+            "aplica_capitulo": None, "gravedad": "critico", "bloquea_aprobacion": True,
         },
         {
             "codigo": "EST-002", "articulo": "Art. 25",
             "titulo": "Monto total válido",
             "descripcion": "El monto total del DEPP debe ser mayor a cero.",
             "tipo_validacion": "estructura", "aplica_clasificacion": None,
-            "aplica_capitulo": None, "gravedad": "critico", "bloquea_aprobacion": 1,
+            "aplica_capitulo": None, "gravedad": "critico", "bloquea_aprobacion": True,
         },
         {
             "codigo": "DOC-I1", "articulo": "Art. 39 fracc. I",
@@ -256,7 +256,7 @@ with sync_engine.connect() as conn:
             "tipo_validacion": "documental",
             "aplica_clasificacion": _json.dumps(["I.1"]),
             "aplica_capitulo": _json.dumps([2000, 3000, 5000, 6000]),
-            "gravedad": "critico", "bloquea_aprobacion": 1,
+            "gravedad": "critico", "bloquea_aprobacion": True,
         },
         {
             "codigo": "DOC-II1", "articulo": "Art. 39 fracc. II.1",
@@ -264,7 +264,7 @@ with sync_engine.connect() as conn:
             "descripcion": "Clasificación II.1: requiere DEPP + Acuerdo Único de Reasignación (AUR).",
             "tipo_validacion": "documental",
             "aplica_clasificacion": _json.dumps(["II.1"]),
-            "aplica_capitulo": None, "gravedad": "critico", "bloquea_aprobacion": 1,
+            "aplica_capitulo": None, "gravedad": "critico", "bloquea_aprobacion": True,
         },
         {
             "codigo": "DOC-II2", "articulo": "Art. 39 fracc. II.2",
@@ -273,7 +273,7 @@ with sync_engine.connect() as conn:
             "tipo_validacion": "documental",
             "aplica_clasificacion": _json.dumps(["II.2"]),
             "aplica_capitulo": _json.dumps([3000]),
-            "gravedad": "critico", "bloquea_aprobacion": 1,
+            "gravedad": "critico", "bloquea_aprobacion": True,
         },
         {
             "codigo": "DOC-II3", "articulo": "Art. 39 fracc. II.3",
@@ -281,7 +281,7 @@ with sync_engine.connect() as conn:
             "descripcion": "Clasificación II.3: requiere DEPP + Póliza Cheque/Transferencia (PCH).",
             "tipo_validacion": "documental",
             "aplica_clasificacion": _json.dumps(["II.3"]),
-            "aplica_capitulo": None, "gravedad": "critico", "bloquea_aprobacion": 1,
+            "aplica_capitulo": None, "gravedad": "critico", "bloquea_aprobacion": True,
         },
         {
             "codigo": "DOC-II4", "articulo": "Art. 39 fracc. II.4",
@@ -290,42 +290,42 @@ with sync_engine.connect() as conn:
             "tipo_validacion": "documental",
             "aplica_clasificacion": _json.dumps(["II.4"]),
             "aplica_capitulo": _json.dumps([2000, 3000, 5000]),
-            "gravedad": "critico", "bloquea_aprobacion": 1,
+            "gravedad": "critico", "bloquea_aprobacion": True,
         },
         {
             "codigo": "COH-001", "articulo": "Art. 40",
             "titulo": "Compatibilidad capítulo-clasificación",
             "descripcion": "El capítulo presupuestal debe ser compatible con la clasificación del DEPP.",
             "tipo_validacion": "presupuestal", "aplica_clasificacion": None,
-            "aplica_capitulo": None, "gravedad": "alto", "bloquea_aprobacion": 0,
+            "aplica_capitulo": None, "gravedad": "alto", "bloquea_aprobacion": False,
         },
         {
             "codigo": "COH-002", "articulo": "Art. 40",
             "titulo": "Monto mayor a $500,000 — verificar licitación",
             "descripcion": "Montos superiores a $500,000 deben contar con proceso de licitación o justificación.",
             "tipo_validacion": "presupuestal", "aplica_clasificacion": None,
-            "aplica_capitulo": None, "gravedad": "medio", "bloquea_aprobacion": 0,
+            "aplica_capitulo": None, "gravedad": "medio", "bloquea_aprobacion": False,
         },
         {
             "codigo": "COH-003", "articulo": "Art. 40",
             "titulo": "CFDI en capítulo 1000 sin contrato",
             "descripcion": "Capítulo 1000 con CFDI externo sin contrato requiere verificación adicional.",
             "tipo_validacion": "presupuestal", "aplica_clasificacion": None,
-            "aplica_capitulo": _json.dumps([1000]), "gravedad": "medio", "bloquea_aprobacion": 0,
+            "aplica_capitulo": _json.dumps([1000]), "gravedad": "medio", "bloquea_aprobacion": False,
         },
         {
             "codigo": "CLA-001", "articulo": "Art. 39",
             "titulo": "Clasificación normativa determinable",
             "descripcion": "El sistema debe poder determinar la clasificación normativa del DEPP.",
             "tipo_validacion": "documental", "aplica_clasificacion": None,
-            "aplica_capitulo": None, "gravedad": "alto", "bloquea_aprobacion": 0,
+            "aplica_capitulo": None, "gravedad": "alto", "bloquea_aprobacion": False,
         },
         {
             "codigo": "CLA-002", "articulo": "Art. 39",
             "titulo": "Coincidencia de clasificación capturada",
             "descripcion": "La clasificación capturada debe coincidir con la detectada automáticamente.",
             "tipo_validacion": "documental", "aplica_clasificacion": None,
-            "aplica_capitulo": None, "gravedad": "medio", "bloquea_aprobacion": 0,
+            "aplica_capitulo": None, "gravedad": "medio", "bloquea_aprobacion": False,
         },
     ]
 
@@ -343,7 +343,7 @@ with sync_engine.connect() as conn:
                     " bloquea_aprobacion, activa, version) "
                     "VALUES (:id, :codigo, :articulo, :titulo, :descripcion, :tipo_validacion, "
                     "        :aplica_clasificacion, :aplica_capitulo, :gravedad, "
-                    "        :bloquea_aprobacion, 1, 2)"
+                    "        :bloquea_aprobacion, true, 2)"
                 ),
                 {
                     "id": str(uuid.uuid4()),
