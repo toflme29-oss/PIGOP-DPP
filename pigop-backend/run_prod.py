@@ -213,6 +213,13 @@ with sync_engine.connect() as conn:
         conn.commit()
         print("✅ Cliente DPP creado")
 
+    # Obtener ID del cliente DPP (siempre, para asignarlo a los usuarios)
+    _dpp_row = conn.execute(
+        text("SELECT id FROM clientes WHERE codigo_upp='DPP'")
+    ).fetchone()
+    _dpp_cliente_id = str(_dpp_row[0]) if _dpp_row else None
+    print(f"✅ Cliente DPP ID: {_dpp_cliente_id}")
+
     # ── Superadmin ────────────────────────────────────────────────────────────
     _existing = conn.execute(
         text("SELECT id, password_hash FROM usuarios WHERE email=:e"), {"e": EMAIL}
@@ -382,22 +389,26 @@ _USUARIOS_PRUEBA = [
 ]
 _sync2 = create_engine(DB_SYNC, echo=False)
 with _sync2.connect() as c2:
+    # Obtener ID del cliente DPP para asignarlo a los usuarios
+    _dpp_row2 = c2.execute(text("SELECT id FROM clientes WHERE codigo_upp='DPP'")).fetchone()
+    _dpp_id = str(_dpp_row2[0]) if _dpp_row2 else None
+
     for _em, _pw, _nm, _rl in _USUARIOS_PRUEBA:
         _exists = c2.execute(text("SELECT 1 FROM usuarios WHERE email=:e"), {"e": _em}).fetchone()
         if not _exists:
             c2.execute(text(
-                "INSERT INTO usuarios (id,email,password_hash,nombre_completo,rol,activo,modulos_acceso) "
-                "VALUES (:id,:email,:pwd,:nombre,:rol,true,:modulos)"
+                "INSERT INTO usuarios (id,email,password_hash,nombre_completo,rol,activo,modulos_acceso,cliente_id) "
+                "VALUES (:id,:email,:pwd,:nombre,:rol,true,:modulos,:cid)"
             ), {"id": str(uuid.uuid4()), "email": _em, "pwd": get_password_hash(_pw),
-                "nombre": _nm, "rol": _rl, "modulos": '["todos"]'})
+                "nombre": _nm, "rol": _rl, "modulos": '["todos"]', "cid": _dpp_id})
         else:
-            # Actualizar hash por si se creó con columna incorrecta
+            # Actualizar hash Y cliente_id por si faltaba
             c2.execute(text(
-                "UPDATE usuarios SET password_hash=:pwd WHERE email=:e"
-            ), {"pwd": get_password_hash(_pw), "e": _em})
+                "UPDATE usuarios SET password_hash=:pwd, cliente_id=:cid WHERE email=:e"
+            ), {"pwd": get_password_hash(_pw), "cid": _dpp_id, "e": _em})
     c2.commit()
 _sync2.dispose()
-print("✅ Usuarios de prueba creados")
+print("✅ Usuarios de prueba creados/actualizados con cliente_id DPP")
 
 # ── Banner de inicio ──────────────────────────────────────────────────────────
 PORT = int(os.environ.get("PORT", 8000))
