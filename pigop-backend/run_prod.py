@@ -208,7 +208,7 @@ with sync_engine.connect() as conn:
             "INSERT INTO clientes "
             "(id, codigo_upp, nombre, tipo, activo, configuracion) "
             "VALUES (:id, 'DPP', 'Dirección de Programación y Presupuesto', "
-            "        'centralizada', 1, '{}')"
+            "        'centralizada', true, '{}')"
         ), {"id": str(uuid.uuid4())})
         conn.commit()
         print("✅ Cliente DPP creado")
@@ -221,7 +221,7 @@ with sync_engine.connect() as conn:
         conn.execute(text(
             "INSERT INTO usuarios "
             "(id, email, password_hash, nombre_completo, rol, activo, modulos_acceso)"
-            "VALUES (:id, :email, :pwd, 'Administrador PIGOP', 'superadmin', 1, :modulos)"
+            "VALUES (:id, :email, :pwd, 'Administrador PIGOP', 'superadmin', true, :modulos)"
         ), {"id": str(uuid.uuid4()), "email": EMAIL, "pwd": get_password_hash(PWD), "modulos": '["todos"]'})
         conn.commit()
         print(f"✅ Superadmin creado: {EMAIL}")
