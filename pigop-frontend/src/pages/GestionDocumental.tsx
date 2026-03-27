@@ -51,9 +51,8 @@ function diasHasta(fechaStr: string | null): number | null {
 // ── Autocompletado de destinatario desde catálogo ─────────────────────────────
 function DestinatarioAutocomplete({ form, set }: {
   form: { destinatario_nombre?: string; destinatario_cargo?: string; dependencia_destino?: string }
-  set: (k: string, v: unknown) => void
+  set: (k: keyof DocumentoEmitidoCreate, v: unknown) => void
 }) {
-  const [query, setQuery] = useState('')
   const [results, setResults] = useState<FuncionarioItem[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
   const [searching, setSearching] = useState(false)
@@ -72,7 +71,6 @@ function DestinatarioAutocomplete({ form, set }: {
 
   const handleInputChange = (value: string) => {
     set('destinatario_nombre', value)
-    setQuery(value)
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => doSearch(value), 300)
   }
@@ -82,7 +80,6 @@ function DestinatarioAutocomplete({ form, set }: {
     set('destinatario_cargo', f.nombre_ur || '')
     set('dependencia_destino', f.nombre_upp || '')
     setShowDropdown(false)
-    setQuery('')
   }
 
   return (
@@ -932,7 +929,7 @@ function ModalNuevoEmitido({
   const fileRefModal = useRef<HTMLInputElement>(null)
   const [directoDirector, setDirectoDirector] = useState(false)
   const [yaFirmadoAutografa, setYaFirmadoAutografa] = useState(false)
-  const [extrayendoMeta, setExtrayendoMeta] = useState(false)
+  const [extrayendoMeta] = useState(false)
   const set = (k: keyof DocumentoEmitidoCreate, v: unknown) => setForm(p => ({ ...p, [k]: v }))
 
   // Auto-generar folio al seleccionar área
@@ -972,7 +969,7 @@ function ModalNuevoEmitido({
     const areaInfo = areasDisponibles?.find(a => a.codigo === areaOrigen)
     const folioFinal = folioEditado ? (form.numero_control ?? '') : folioGenerado
     // Si ya tiene firma autógrafa, se registra como firmado directamente
-    const estadoInicial = yaFirmadoAutografa ? 'firmado' : 'borrador'
+    const estadoInicial: import('../api/documentos').EstadoEmitido = yaFirmadoAutografa ? 'vigente' : 'borrador'
     try {
       const doc = await mutation.mutateAsync({
         ...form,
@@ -1314,8 +1311,6 @@ function PanelRecibido({
   const isArea = ['analista', 'subdirector', 'jefe_depto'].includes(user?.rol || '')
   const isSubdirector = user?.rol === 'subdirector'
   const isJefeDepto = user?.rol === 'jefe_depto'
-  const isAuditor = user?.rol === 'auditor'
-  const isReadOnly = isAuditor
   const canTurnar = isDirector || isSecretaria || isSuperadmin
   const canReasignar = canTurnar || isSubdirector || isJefeDepto  // Áreas pueden redirigir
   const canGenerarRespuesta = isArea || isAsesor || isDirector || isSuperadmin
