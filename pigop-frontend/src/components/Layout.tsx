@@ -26,6 +26,7 @@ interface NavModule {
   match: (path: string) => boolean
   active: boolean
   adminOnly: boolean
+  moduleId: string
   submodules?: SubModule[]
 }
 
@@ -41,6 +42,7 @@ const NAV_MODULES: NavModule[] = [
       path.startsWith('/sap-import') || path.startsWith('/bandejas'),
     active: true,
     adminOnly: false,
+    moduleId: 'validacion_depp',
     submodules: [
       {
         to: '/depps',
@@ -76,6 +78,7 @@ const NAV_MODULES: NavModule[] = [
     match: (path: string) => path.startsWith('/gestion-documental'),
     active: true,
     adminOnly: false,
+    moduleId: 'gestion_documental',
   },
   {
     to: '/certificaciones',
@@ -85,6 +88,7 @@ const NAV_MODULES: NavModule[] = [
     match: (path: string) => path.startsWith('/certificaciones'),
     active: false,
     adminOnly: false,
+    moduleId: 'certificaciones',
   },
   {
     to: '/minutas',
@@ -94,6 +98,7 @@ const NAV_MODULES: NavModule[] = [
     match: (path: string) => path.startsWith('/minutas'),
     active: false,
     adminOnly: false,
+    moduleId: 'minutas',
   },
 ]
 
@@ -263,6 +268,21 @@ export default function Layout() {
 
   const isAdmin = user?.rol === 'superadmin' || user?.rol === 'admin_cliente'
 
+  // Módulos visibles según rol del usuario
+  const MODULOS_POR_ROL: Record<string, string[]> = {
+    superadmin:    ['validacion_depp', 'gestion_documental', 'certificaciones', 'minutas'],
+    admin_cliente: ['validacion_depp', 'gestion_documental', 'certificaciones', 'minutas'],
+    secretaria:    ['gestion_documental'],
+    asesor:        ['gestion_documental'],
+    subdirector:   ['gestion_documental'],
+    jefe_depto:    ['gestion_documental'],
+    analista:      ['gestion_documental', 'validacion_depp'],
+    auditor:       ['gestion_documental'],
+    consulta:      ['gestion_documental'],
+  }
+  const permitidos = MODULOS_POR_ROL[user?.rol || ''] || []
+  const visibleModules = NAV_MODULES.filter(mod => isAdmin || permitidos.includes(mod.moduleId))
+
   const handleLogout = () => {
     logout()
     navigate('/login')
@@ -349,7 +369,7 @@ export default function Layout() {
             <span>Inicio</span>
           </Link>
           <div className="h-4 w-px bg-white/15 mx-1" />
-          {NAV_MODULES.map(mod => {
+          {visibleModules.map(mod => {
             // Módulo con submódulos → dropdown
             if (mod.submodules && mod.submodules.length > 0) {
               return <ModuleDropdown key={mod.label} mod={mod} pathname={location.pathname} />
@@ -411,7 +431,7 @@ export default function Layout() {
                 <p className="text-sm font-medium">Inicio</p>
               </Link>
               <div className="h-px bg-white/10 my-1" />
-              {NAV_MODULES.map(mod => (
+              {visibleModules.map(mod => (
                 <div key={mod.label}>
                   {/* Título del módulo */}
                   {mod.submodules ? (

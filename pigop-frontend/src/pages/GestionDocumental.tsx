@@ -2444,8 +2444,16 @@ function PanelRecibido({
                       </div>
                       <div className="flex gap-1.5">
                         <button onClick={async () => {
-                          const url = await documentosApi.obtenerAcuseRecibidoUrl(doc.id)
-                          window.open(url, '_blank')
+                          try {
+                            const url = await documentosApi.obtenerAcuseRecibidoUrl(doc.id)
+                            // Abrir en nueva pestaña con blob URL
+                            const w = window.open(url, '_blank')
+                            if (!w) {
+                              // Si el navegador bloquea pop-ups, usar enlace directo
+                              const a = document.createElement('a')
+                              a.href = url; a.target = '_blank'; a.click()
+                            }
+                          } catch { window.alert('Error al cargar acuse') }
                         }} className="flex-1 flex items-center justify-center gap-1 py-1 text-[10px] rounded border border-blue-200 text-blue-700 hover:bg-blue-100">
                           <Eye size={10} /> Ver acuse
                         </button>

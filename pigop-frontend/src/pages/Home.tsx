@@ -113,13 +113,29 @@ export default function Home() {
   const isSuperadmin = user?.rol === 'superadmin'
   const canBypass = isSuperadmin || isDirector
 
-  // Módulos accesibles para este usuario
+  // Módulos accesibles según rol del usuario
+  const MODULOS_POR_ROL: Record<string, string[]> = {
+    superadmin:    ['validacion_depp', 'gestion_documental', 'certificaciones', 'minutas'],
+    admin_cliente: ['validacion_depp', 'gestion_documental', 'certificaciones', 'minutas'],
+    secretaria:    ['gestion_documental'],
+    asesor:        ['gestion_documental'],
+    subdirector:   ['gestion_documental'],
+    jefe_depto:    ['gestion_documental'],
+    analista:      ['gestion_documental', 'validacion_depp'],
+    auditor:       ['gestion_documental'],
+    consulta:      ['gestion_documental'],
+  }
   const userModules = useMemo(() => {
     if (!user) return []
+    const permitidos = MODULOS_POR_ROL[user.rol] || []
     return ALL_MODULES.filter(mod => {
       if (!mod.active) return false
       if (canBypass) return true
-      return (user.modulos_acceso || []).includes(mod.id)
+      // Revisar modulos_acceso: "todos" da acceso a todo, si no, verificar por rol
+      const acceso = user.modulos_acceso || []
+      if (acceso.includes('todos')) return permitidos.includes(mod.id)
+      if (acceso.length > 0) return acceso.includes(mod.id)
+      return permitidos.includes(mod.id)
     })
   }, [user, canBypass])
 
