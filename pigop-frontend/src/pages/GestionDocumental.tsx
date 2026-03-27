@@ -25,6 +25,7 @@ import {
   type PlantillaOficio,
   type CertificadoInfo,
 } from '../api/documentos'
+import { catalogoApi, type FuncionarioItem } from '../api/documentos'
 import { clientesApi } from '../api/depps'
 import { useAuth } from '../hooks/useAuth'
 import { Button } from '../components/ui/Button'
@@ -45,6 +46,88 @@ function diasHasta(fechaStr: string | null): number | null {
   if (!fechaStr) return null
   const diff = new Date(fechaStr).getTime() - Date.now()
   return Math.ceil(diff / 86400000)
+}
+
+// ── Autocompletado de destinatario desde catálogo ─────────────────────────────
+function DestinatarioAutocomplete({ form, set }: {
+  form: { destinatario_nombre?: string; destinatario_cargo?: string; dependencia_destino?: string }
+  set: (k: string, v: unknown) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<FuncionarioItem[]>([])
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const doSearch = useCallback(async (q: string) => {
+    if (q.length < 2) { setResults([]); setShowDropdown(false); return }
+    setSearching(true)
+    try {
+      const r = await catalogoApi.buscarFuncionarios(q)
+      setResults(r)
+      setShowDropdown(r.length > 0)
+    } catch { setResults([]) }
+    setSearching(false)
+  }, [])
+
+  const handleInputChange = (value: string) => {
+    set('destinatario_nombre', value)
+    setQuery(value)
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => doSearch(value), 300)
+  }
+
+  const selectFuncionario = (f: FuncionarioItem) => {
+    set('destinatario_nombre', f.nombre_titular || '')
+    set('destinatario_cargo', f.nombre_ur || '')
+    set('dependencia_destino', f.nombre_upp || '')
+    setShowDropdown(false)
+    setQuery('')
+  }
+
+  return (
+    <div className="bg-gray-50 rounded-xl p-3 space-y-2">
+      <p className="text-xs font-medium text-gray-600 mb-1">Destinatario</p>
+      <div className="relative">
+        <label className="block text-[10px] text-gray-500 mb-1">Nombre completo <span className="text-blue-500">(escriba para buscar en catálogo)</span></label>
+        <div className="relative">
+          <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm pr-8"
+            placeholder="Escriba nombre, dependencia o cargo..."
+            value={form.destinatario_nombre ?? ''}
+            onChange={e => handleInputChange(e.target.value)}
+            onFocus={() => { if (results.length > 0) setShowDropdown(true) }}
+            onBlur={() => setTimeout(() => setShowDropdown(false), 200)} />
+          {searching && <RotateCcw size={12} className="absolute right-2.5 top-2 text-blue-400 animate-spin" />}
+          {!searching && <Search size={12} className="absolute right-2.5 top-2 text-gray-400" />}
+        </div>
+        {showDropdown && (
+          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+            {results.map(f => (
+              <button key={f.id} type="button"
+                className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-50 transition-colors"
+                onMouseDown={() => selectFuncionario(f)}>
+                <p className="text-xs font-medium text-gray-800">{f.nombre_titular}</p>
+                <p className="text-[10px] text-gray-500">{f.nombre_ur} · <span className="text-blue-600">{f.nombre_upp}</span></p>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div>
+        <label className="block text-[10px] text-gray-500 mb-1">Cargo / Área</label>
+        <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+          placeholder="Delegada Administrativa"
+          value={form.destinatario_cargo ?? ''} onChange={e => set('destinatario_cargo', e.target.value)} />
+      </div>
+      <div>
+        <label className="block text-[10px] text-gray-500 mb-1">Dependencia / Entidad</label>
+        <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+          placeholder="Secretaría de Finanzas y Administración"
+          value={form.dependencia_destino ?? ''} onChange={e => set('dependencia_destino', e.target.value)} />
+      </div>
+      <p className="text-[9px] text-gray-400">En el oficio aparecerá: Nombre → Cargo → Dependencia → PRESENTE.</p>
+    </div>
+  )
 }
 
 function SemaforoAtencion({ fecha, estado }: { fecha: string | null; estado: string }) {
@@ -1123,29 +1206,8 @@ function ModalNuevoEmitido({
                 placeholder="Asunto del oficio"
                 value={form.asunto} onChange={e => set('asunto', e.target.value)} />
             </div>
-            {/* ── Destinatario (3 campos) ── */}
-            <div className="bg-gray-50 rounded-xl p-3 space-y-2">
-              <p className="text-xs font-medium text-gray-600 mb-1">Destinatario</p>
-              <div>
-                <label className="block text-[10px] text-gray-500 mb-1">Nombre completo</label>
-                <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-                  placeholder="C.P. Leticia Gálvez"
-                  value={form.destinatario_nombre ?? ''} onChange={e => set('destinatario_nombre', e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-[10px] text-gray-500 mb-1">Cargo</label>
-                <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-                  placeholder="Delegada Administrativa"
-                  value={form.destinatario_cargo ?? ''} onChange={e => set('destinatario_cargo', e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-[10px] text-gray-500 mb-1">Dependencia / Entidad</label>
-                <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-                  placeholder="Secretaría de Finanzas y Administración"
-                  value={form.dependencia_destino ?? ''} onChange={e => set('dependencia_destino', e.target.value)} />
-              </div>
-              <p className="text-[9px] text-gray-400">En el oficio aparecerá: Nombre → Cargo → Dependencia → PRESENTE.</p>
-            </div>
+            {/* ── Destinatario con autocompletado del catálogo ── */}
+            <DestinatarioAutocomplete form={form} set={set} />
 
             {/* Referencia interna MAFM/elaboro/reviso */}
             <div className="bg-gray-50 rounded-xl p-3">
