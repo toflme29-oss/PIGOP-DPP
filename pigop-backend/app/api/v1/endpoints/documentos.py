@@ -2176,7 +2176,8 @@ async def subir_acuse_recibido(
     db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
-    """Secretaria sube el escaneo del oficio con sello de acuse de la dependencia destino."""
+    """Secretaria sube el escaneo del oficio con sello de acuse de la dependencia destino.
+    La fecha del acuse se extrae automáticamente del sello vía IA."""
     if current_user.rol not in ("secretaria", "superadmin"):
         raise ForbiddenError("Solo Secretaría puede registrar acuses de recibido.")
     doc = await crud_documento.get(db, doc_id)
@@ -2195,11 +2196,37 @@ async def subir_acuse_recibido(
     with open(filepath, "wb") as f:
         f.write(content)
 
+    # ── Extraer fecha del sello de acuse vía Gemini Vision ──
+    fecha_extraida = fecha_acuse or None
+    try:
+        import google.generativeai as genai
+        api_key = os.environ.get("GEMINI_API_KEY", "")
+        if api_key and api_key != "placeholder":
+            genai.configure(api_key=api_key)
+            mime = "image/jpeg" if ext.lower() in (".jpg", ".jpeg") else "image/png" if ext.lower() == ".png" else "application/pdf"
+            model = genai.GenerativeModel("gemini-2.0-flash")
+            prompt = (
+                "Analiza este documento escaneado. Busca el SELLO DE ACUSE DE RECIBIDO "
+                "(generalmente un sello oficial con fecha de recepción). "
+                "Extrae SOLO la fecha del sello de acuse en formato 'DD de mes de YYYY'. "
+                "Si encuentras la fecha, responde SOLO con la fecha. "
+                "Si no encuentras sello de acuse, responde 'SIN_FECHA'."
+            )
+            response = model.generate_content([
+                prompt,
+                {"mime_type": mime, "data": content}
+            ])
+            fecha_text = response.text.strip()
+            if fecha_text and fecha_text != "SIN_FECHA" and len(fecha_text) < 60:
+                fecha_extraida = fecha_text
+    except Exception:
+        pass  # Si falla la IA, continúa sin fecha
+
     from datetime import datetime as dt
     update_data = {
         "acuse_recibido_url": filepath,
         "acuse_recibido_nombre": archivo.filename,
-        "acuse_recibido_fecha": fecha_acuse or None,
+        "acuse_recibido_fecha": fecha_extraida,
         "acuse_registrado_en": dt.now(),
         "acuse_registrado_por_id": str(current_user.id),
         "despachado": True,
