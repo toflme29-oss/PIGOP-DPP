@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  ShieldCheck, FolderOpen, Stamp, ClipboardList,
+  ShieldCheck, FolderOpen, Stamp,
   ArrowRight, FileSignature, Clock, CheckCircle2,
   AlertTriangle, FileText, BarChart3, Lock,
   TrendingUp, Inbox, CalendarDays,
@@ -20,6 +20,7 @@ const GUINDA = '#911A3A'
 interface ModuleDef {
   id: string
   label: string
+  subtitle: string
   description: string
   icon: typeof ShieldCheck
   path: string
@@ -30,29 +31,32 @@ interface ModuleDef {
 
 const ALL_MODULES: ModuleDef[] = [
   {
-    id: 'validacion_depp',
-    label: 'Validación del Gasto Público',
-    description: 'Revisión y dictamen de DEPPs, importación SAP y bandejas de validación',
-    icon: ShieldCheck,
-    path: '/depps',
+    id: 'gestion_documental',
+    label: 'Gestión Documental',
+    subtitle: 'CAPTURA Y SEGUIMIENTO DE OFICIOS',
+    description: 'Captura, análisis y relación general de oficios recibidos. Generación y seguimiento de oficios de respuesta.',
+    icon: FolderOpen,
+    path: '/gestion-documental',
     color: '#911A3A',
     bgColor: '#fdf2f8',
     active: true,
   },
   {
-    id: 'gestion_documental',
-    label: 'Gestión Documental',
-    description: 'Control de correspondencia, turnado, elaboración de oficios y firma digital',
-    icon: FolderOpen,
-    path: '/gestion-documental',
+    id: 'validacion_depp',
+    label: 'Validación de Gasto Público',
+    subtitle: 'CONTROL Y VALIDACIÓN NORMATIVA',
+    description: 'Validación de afectaciones presupuestales, revisión de CLC y documentos soporte conforme a normatividad vigente.',
+    icon: ShieldCheck,
+    path: '/depps',
     color: '#1d4ed8',
     bgColor: '#eff6ff',
-    active: true,
+    active: false,
   },
   {
     id: 'certificaciones',
-    label: 'Certificaciones Presupuestales',
-    description: 'Gestión de afectaciones y certificaciones al presupuesto',
+    label: 'Certificaciones y Validaciones',
+    subtitle: 'EMISIÓN DE DOCUMENTOS CERTIFICADOS',
+    description: 'Generación de certificaciones presupuestales, constancias de suficiencia y validaciones normativas para dependencias.',
     icon: Stamp,
     path: '/certificaciones',
     color: '#7c3aed',
@@ -61,9 +65,10 @@ const ALL_MODULES: ModuleDef[] = [
   },
   {
     id: 'minutas',
-    label: 'Minutas de Conciliación',
-    description: 'Control y seguimiento de reuniones entre áreas',
-    icon: ClipboardList,
+    label: 'Conciliación Presupuestal',
+    subtitle: 'ANÁLISIS Y SEGUIMIENTO DE PROGRAMAS',
+    description: 'Conciliación de cifras presupuestales, seguimiento al ejercicio del gasto y generación de reportes de avance programático.',
+    icon: BarChart3,
     path: '/minutas',
     color: '#0d9488',
     bgColor: '#f0fdfa',
@@ -146,8 +151,8 @@ export default function Home() {
     }
   }, [userModules, canBypass, navigate])
 
-  // Módulos próximamente — solo visibles para director y superadmin
-  const inactiveModules = canBypass ? ALL_MODULES.filter(m => !m.active) : []
+  // Módulos próximamente — visibles para todos los usuarios
+  const inactiveModules = ALL_MODULES.filter(m => !m.active)
 
   // ── Data fetching ───────────────────────────────────────────────────────────
   const hasDocModule = userModules.some(m => m.id === 'gestion_documental') || canBypass
@@ -386,58 +391,59 @@ export default function Home() {
         <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
           Tus módulos
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {userModules.map(mod => (
             <button
               key={mod.id}
               onClick={() => navigate(mod.path)}
-              className="group flex items-start gap-4 p-5 bg-white rounded-xl border border-gray-200 text-left transition-all hover:shadow-md hover:border-gray-300 hover:-translate-y-0.5"
+              className="group flex flex-col p-5 bg-white rounded-xl border border-gray-200 text-left transition-all hover:shadow-md hover:border-gray-300 hover:-translate-y-0.5"
             >
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-105"
-                   style={{ backgroundColor: mod.bgColor }}>
-                <mod.icon size={22} style={{ color: mod.color }} />
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-105 mb-4"
+                   style={{ backgroundColor: mod.color }}>
+                <mod.icon size={24} className="text-white" />
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-gray-900 group-hover:text-gray-700 truncate">
-                    {mod.label}
-                  </h3>
-                  <ArrowRight size={14} className="text-gray-300 group-hover:text-gray-500 transition-colors flex-shrink-0" />
+              <h3 className="text-base font-bold text-gray-900 group-hover:text-gray-700">
+                {mod.label}
+              </h3>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mt-0.5">
+                {mod.subtitle}
+              </p>
+              <p className="text-xs text-gray-500 mt-2 flex-1">
+                {mod.description}
+              </p>
+              {/* Mini-métricas inline */}
+              {mod.id === 'gestion_documental' && docMetrics && (
+                <div className="flex items-center gap-3 mt-2">
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-400">
+                    <Inbox size={10} /> {docMetrics.hoy} hoy
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-400">
+                    <FileText size={10} /> {(docsRecibidos?.length ?? 0) + (docsEmitidos?.length ?? 0)} total
+                  </span>
+                  {docMetrics.borradores > 0 && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-500">
+                      <Clock size={10} /> {docMetrics.borradores} borrador{docMetrics.borradores !== 1 ? 'es' : ''}
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                  {mod.description}
-                </p>
-                {/* Mini-métricas inline */}
-                {mod.id === 'gestion_documental' && docMetrics && (
-                  <div className="flex items-center gap-3 mt-2.5">
-                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-400">
-                      <Inbox size={10} /> {docMetrics.hoy} hoy
+              )}
+              {mod.id === 'validacion_depp' && deppMetrics && (
+                <div className="flex items-center gap-3 mt-2">
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-400">
+                    <TrendingUp size={10} /> {deppMetrics.hoy} hoy
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-400">
+                    <BarChart3 size={10} /> {deppMetrics.total} total
+                  </span>
+                  {deppMetrics.enRevision > 0 && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-500">
+                      <Clock size={10} /> {deppMetrics.enRevision} pendientes
                     </span>
-                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-400">
-                      <FileText size={10} /> {(docsRecibidos?.length ?? 0) + (docsEmitidos?.length ?? 0)} total
-                    </span>
-                    {docMetrics.borradores > 0 && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-500">
-                        <Clock size={10} /> {docMetrics.borradores} borrador{docMetrics.borradores !== 1 ? 'es' : ''}
-                      </span>
-                    )}
-                  </div>
-                )}
-                {mod.id === 'validacion_depp' && deppMetrics && (
-                  <div className="flex items-center gap-3 mt-2.5">
-                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-400">
-                      <TrendingUp size={10} /> {deppMetrics.hoy} hoy
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-400">
-                      <BarChart3 size={10} /> {deppMetrics.total} total
-                    </span>
-                    {deppMetrics.enRevision > 0 && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-500">
-                        <Clock size={10} /> {deppMetrics.enRevision} pendientes
-                      </span>
-                    )}
-                  </div>
-                )}
+                  )}
+                </div>
+              )}
+              <div className="flex items-center gap-1 mt-4 text-xs font-semibold" style={{ color: mod.color }}>
+                Acceder al módulo <ArrowRight size={13} />
               </div>
             </button>
           ))}
@@ -446,21 +452,20 @@ export default function Home() {
           {inactiveModules.map(mod => (
             <div
               key={mod.id}
-              className="flex items-start gap-4 p-5 bg-gray-50 rounded-xl border border-dashed border-gray-200 opacity-60"
+              className="relative flex flex-col p-5 bg-white rounded-xl border border-gray-200"
             >
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-gray-100">
-                <mod.icon size={22} className="text-gray-400" />
+              <span className="absolute top-3 right-3 inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                <Clock size={9} /> Próximamente
+              </span>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-gray-100 mb-4">
+                <mod.icon size={24} className="text-gray-400" />
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-medium text-gray-500 truncate">{mod.label}</h3>
-                  <Lock size={12} className="text-gray-400 flex-shrink-0" />
-                </div>
-                <p className="text-xs text-gray-400 mt-1">{mod.description}</p>
-                <span className="inline-block mt-2 text-[10px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                  Próximamente
-                </span>
-              </div>
+              <h3 className="text-base font-bold text-gray-500">{mod.label}</h3>
+              <p className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider mt-0.5">
+                {mod.subtitle}
+              </p>
+              <p className="text-xs text-gray-400 mt-2 flex-1">{mod.description}</p>
+              <p className="text-xs text-gray-400 mt-4 font-medium">Módulo en desarrollo</p>
             </div>
           ))}
         </div>

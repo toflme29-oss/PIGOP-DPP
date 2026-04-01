@@ -262,8 +262,8 @@ with sync_engine.connect() as conn:
     ).fetchone():
         conn.execute(text(
             "INSERT INTO usuarios "
-            "(id, email, password_hash, nombre_completo, rol, activo) "
-            "VALUES (:id, :email, :pwd, 'Administrador PIGOP', 'superadmin', 1)"
+            "(id, email, password_hash, nombre_completo, rol, activo, modulos_acceso) "
+            "VALUES (:id, :email, :pwd, 'Administrador PIGOP', 'superadmin', 1, '[]')"
         ), {"id": str(uuid.uuid4()), "email": EMAIL, "pwd": get_password_hash(PWD)})
         conn.commit()
         print(f"✅ Superadmin: {EMAIL}")
