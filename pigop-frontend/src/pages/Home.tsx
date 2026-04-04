@@ -159,18 +159,22 @@ export default function Home() {
   const hasDeppModule = userModules.some(m => m.id === 'validacion_depp') || canBypass
 
   const { data: docsRecibidosResult, isLoading: loadingDocs } = useQuery({
-    queryKey: ['home-docs-recibidos'],
-    queryFn: () => documentosApi.list({ flujo: 'recibido', limit: 200 }),
+    queryKey: ['documentos', 'home-recibidos'],
+    queryFn: () => documentosApi.list({ flujo: 'recibido', limit: 500 }),
     enabled: hasDocModule,
-    staleTime: 30_000,
+    staleTime: 10_000,
+    refetchInterval: 30_000,        // auto-refresh cada 30s
+    refetchOnWindowFocus: true,     // refresh al volver a la pestaña
   })
   const docsRecibidos = docsRecibidosResult?.items
 
   const { data: docsEmitidosResult } = useQuery({
-    queryKey: ['home-docs-emitidos'],
-    queryFn: () => documentosApi.list({ flujo: 'emitido', limit: 200 }),
+    queryKey: ['documentos', 'home-emitidos'],
+    queryFn: () => documentosApi.list({ flujo: 'emitido', limit: 500 }),
     enabled: hasDocModule,
-    staleTime: 30_000,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   })
   const docsEmitidos = docsEmitidosResult?.items
 
@@ -178,7 +182,9 @@ export default function Home() {
     queryKey: ['home-depps'],
     queryFn: () => deppsApi.list({ limit: 200 }),
     enabled: hasDeppModule,
-    staleTime: 30_000,
+    staleTime: 10_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   })
 
   // ── Métricas de documentos ──────────────────────────────────────────────────
@@ -193,6 +199,15 @@ export default function Home() {
       d.fecha_limite && new Date(d.fecha_limite) < new Date() &&
       d.estado !== 'firmado' && d.estado !== 'archivado'
     ).length
+    // Firmados pendientes de despacho (excluir ya despachados)
+    const firmadosSinDespachar = docsRecibidos.filter(d => d.estado === 'firmado' && !d.despachado).length
+    // Pendientes de visto bueno (subdirector)
+    const pendientesVB = docsRecibidos.filter(d => d.estado === 'respondido' && !d.visto_bueno_subdirector).length
+    // Memorándums pendientes
+    const memosPendientes = docsRecibidos.filter(d =>
+      d.tipo === 'memorandum' && d.tipo_memorandum === 'requiere_atencion' &&
+      !['firmado', 'archivado'].includes(d.estado)
+    ).length
 
     return {
       recibidos: byEstado('recibido'),
@@ -200,7 +215,10 @@ export default function Home() {
       enAtencion: byEstado('en_atencion'),
       respondidos: byEstado('respondido'),
       firmados: byEstado('firmado'),
+      firmadosSinDespachar,
       devueltos: byEstado('devuelto'),
+      pendientesVB,
+      memosPendientes,
       hoy,
       urgentes,
       vencidos,
@@ -249,14 +267,38 @@ export default function Home() {
         })
       }
 
-      // Secretaria: docs firmados para despacho
-      if (isSecretaria && docMetrics.firmados > 0) {
+      // Secretaria: docs firmados pendientes de despacho (excluye ya despachados)
+      if (isSecretaria && docMetrics.firmadosSinDespachar > 0) {
         items.push({
           icon: CheckCircle2,
           color: 'text-emerald-600',
           bg: 'bg-emerald-50',
           border: 'border-emerald-200',
-          text: `${docMetrics.firmados} documento${docMetrics.firmados !== 1 ? 's' : ''} firmado${docMetrics.firmados !== 1 ? 's' : ''} listo${docMetrics.firmados !== 1 ? 's' : ''} para despacho`,
+          text: `${docMetrics.firmadosSinDespachar} documento${docMetrics.firmadosSinDespachar !== 1 ? 's' : ''} firmado${docMetrics.firmadosSinDespachar !== 1 ? 's' : ''} pendiente${docMetrics.firmadosSinDespachar !== 1 ? 's' : ''} de despacho`,
+          action: () => navigate('/gestion-documental'),
+        })
+      }
+
+      // Subdirector: docs pendientes de visto bueno
+      if (user?.rol === 'subdirector' && docMetrics.pendientesVB > 0) {
+        items.push({
+          icon: CheckCircle2,
+          color: 'text-amber-600',
+          bg: 'bg-amber-50',
+          border: 'border-amber-200',
+          text: `${docMetrics.pendientesVB} documento${docMetrics.pendientesVB !== 1 ? 's' : ''} pendiente${docMetrics.pendientesVB !== 1 ? 's' : ''} de visto bueno`,
+          action: () => navigate('/gestion-documental'),
+        })
+      }
+
+      // Memorándums pendientes de atención
+      if (docMetrics.memosPendientes > 0) {
+        items.push({
+          icon: FileText,
+          color: 'text-indigo-600',
+          bg: 'bg-indigo-50',
+          border: 'border-indigo-200',
+          text: `${docMetrics.memosPendientes} memorándum${docMetrics.memosPendientes !== 1 ? 's' : ''} pendiente${docMetrics.memosPendientes !== 1 ? 's' : ''} de atención`,
           action: () => navigate('/gestion-documental'),
         })
       }
@@ -498,12 +540,22 @@ export default function Home() {
               )}
               {isSecretaria && (
                 <MetricCard
-                  label="Firmados para despacho"
-                  value={docMetrics.firmados}
+                  label="Pendientes despacho"
+                  value={docMetrics.firmadosSinDespachar}
                   icon={CheckCircle2}
                   color="#059669"
                   bgColor="#d1fae5"
-                  highlight={docMetrics.firmados > 0}
+                  highlight={docMetrics.firmadosSinDespachar > 0}
+                />
+              )}
+              {user?.rol === 'subdirector' && (
+                <MetricCard
+                  label="Pendientes V.B."
+                  value={docMetrics.pendientesVB}
+                  icon={CheckCircle2}
+                  color="#d97706"
+                  bgColor="#fef3c7"
+                  highlight={docMetrics.pendientesVB > 0}
                 />
               )}
               {!isDirector && !isSecretaria && (
