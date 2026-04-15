@@ -11,12 +11,88 @@ Reglas de turno derivadas de:
   - Manual de Organización SFA, secciones 1.1.1.x
   - Organigrama DPP (jefaturas de departamento)
 """
+import asyncio
 import logging
 import re
 from datetime import date, timedelta
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+# ── Helper: llamada a Gemini con retry automático + fallback de modelo ─────────
+# Modelos probados en orden: primario → fallback cuando el principal está saturado
+GEMINI_MODEL_PRIMARY = "gemini-2.5-flash"
+GEMINI_MODEL_FALLBACK = "gemini-2.5-flash-lite"
+
+def _is_overload_error(err_str: str) -> bool:
+    """Detecta si el error de Gemini es por saturación (reintentable)."""
+    e = err_str.lower()
+    return (
+        "503" in err_str
+        or "unavailable" in e
+        or "overloaded" in e
+        or "429" in err_str
+        or "resource_exhausted" in e
+        or "rate" in e
+        or "quota" in e
+    )
+
+async def _gemini_generate_with_retry(client, contents, *, max_retries: int = 3) -> str:
+    """
+    Llama a Gemini con retry automático y fallback a modelo secundario.
+
+    Estrategia:
+      1. Intenta con gemini-2.5-flash (hasta `max_retries` veces, backoff 1s, 2s, 4s)
+      2. Si sigue saturado, intenta con gemini-2.5-flash-lite (2 intentos más)
+      3. Si todo falla, propaga la excepción para que el caller muestre el error
+
+    Retorna el texto generado (ya strip()).
+    """
+    last_exc: Exception | None = None
+
+    # Fase 1: modelo primario con backoff exponencial
+    for attempt in range(max_retries):
+        try:
+            resp = client.models.generate_content(
+                model=GEMINI_MODEL_PRIMARY,
+                contents=contents,
+            )
+            return resp.text.strip()
+        except Exception as e:
+            last_exc = e
+            err_str = str(e)
+            if not _is_overload_error(err_str):
+                # Error no recuperable (API key inválida, prompt malformado, etc.)
+                raise
+            if attempt < max_retries - 1:
+                delay = 2 ** attempt  # 1s, 2s, 4s
+                logger.warning(
+                    f"Gemini {GEMINI_MODEL_PRIMARY} saturado (intento {attempt+1}/{max_retries}). "
+                    f"Reintentando en {delay}s..."
+                )
+                await asyncio.sleep(delay)
+
+    # Fase 2: fallback a modelo lite (2 intentos adicionales)
+    logger.warning(f"Gemini {GEMINI_MODEL_PRIMARY} agotado. Probando {GEMINI_MODEL_FALLBACK}...")
+    for attempt in range(2):
+        try:
+            resp = client.models.generate_content(
+                model=GEMINI_MODEL_FALLBACK,
+                contents=contents,
+            )
+            logger.info(f"Gemini fallback {GEMINI_MODEL_FALLBACK} respondió OK.")
+            return resp.text.strip()
+        except Exception as e:
+            last_exc = e
+            err_str = str(e)
+            if not _is_overload_error(err_str):
+                raise
+            if attempt < 1:
+                await asyncio.sleep(1.5)
+
+    # Todo falló — propagar última excepción
+    raise last_exc if last_exc else RuntimeError("Gemini no respondió tras todos los reintentos.")
 
 # ── Áreas de la DPP ────────────────────────────────────────────────────────────
 AREAS_DPP = {
@@ -901,19 +977,15 @@ class CorrespondenciaService:
 
             contents.append(prompt)
 
-            resp = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=contents,
-            )
+            # Llamada con retry automático + fallback a modelo lite
+            texto = await _gemini_generate_with_retry(client, contents)
             # Limpiar encabezados que la IA incluyó a pesar de las instrucciones
-            return self._limpiar_encabezados_ia(resp.text.strip())
+            return self._limpiar_encabezados_ia(texto)
         except Exception as e:
-            logger.error(f"Error Gemini generar_borrador: {e}")
+            logger.error(f"Error Gemini generar_borrador (tras reintentos): {e}")
             err_str = str(e)
-            if "503" in err_str or "UNAVAILABLE" in err_str or "overloaded" in err_str.lower():
-                return "[⚠️ El servicio de IA no está disponible temporalmente por alta demanda. Por favor, intente de nuevo en unos segundos usando el botón 'Regenerar IA'.]\n\nMientras tanto, puede escribir el contenido manualmente."
-            if "429" in err_str or "quota" in err_str.lower() or "rate" in err_str.lower():
-                return "[⚠️ Se ha excedido el límite de solicitudes al servicio de IA. Espere un momento e intente nuevamente.]\n\nMientras tanto, puede escribir el contenido manualmente."
+            if _is_overload_error(err_str):
+                return "[⚠️ El servicio de IA está sobrecargado tras varios intentos automáticos. Por favor, espere 1-2 minutos y use el botón 'Regenerar IA'.]\n\nMientras tanto, puede escribir el contenido manualmente."
             return f"[⚠️ Error al generar borrador. Intente nuevamente o complete manualmente.]\n\nDetalle técnico: {e}"
 
     # ── Generación de borrador para documentos EMITIDOS ─────────────────────
@@ -1012,19 +1084,15 @@ class CorrespondenciaService:
                 )
             contents.append(prompt)
 
-            resp = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=contents,
-            )
+            # Llamada con retry automático + fallback a modelo lite
+            texto = await _gemini_generate_with_retry(client, contents)
             # Limpiar encabezados que la IA incluyó a pesar de las instrucciones
-            return self._limpiar_encabezados_ia(resp.text.strip())
+            return self._limpiar_encabezados_ia(texto)
         except Exception as e:
-            logger.error(f"Error Gemini generar_borrador_emitido: {e}")
+            logger.error(f"Error Gemini generar_borrador_emitido (tras reintentos): {e}")
             err_str = str(e)
-            if "503" in err_str or "UNAVAILABLE" in err_str or "overloaded" in err_str.lower():
-                return "[⚠️ El servicio de IA no está disponible temporalmente por alta demanda. Por favor, intente de nuevo en unos segundos usando el botón 'Regenerar IA'.]\n\nMientras tanto, puede escribir el contenido manualmente."
-            if "429" in err_str or "quota" in err_str.lower() or "rate" in err_str.lower():
-                return "[⚠️ Se ha excedido el límite de solicitudes al servicio de IA. Espere un momento e intente nuevamente.]\n\nMientras tanto, puede escribir el contenido manualmente."
+            if _is_overload_error(err_str):
+                return "[⚠️ El servicio de IA está sobrecargado tras varios intentos automáticos. Por favor, espere 1-2 minutos y use el botón 'Regenerar IA'.]\n\nMientras tanto, puede escribir el contenido manualmente."
             return f"[⚠️ Error al generar borrador. Intente nuevamente o complete manualmente.]\n\nDetalle técnico: {e}"
 
     # ── Generación de oficio estructurado (4 secciones) ─────────────────────
