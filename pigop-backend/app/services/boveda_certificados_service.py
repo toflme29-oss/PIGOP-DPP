@@ -305,7 +305,11 @@ class BovedaCertificadosService:
         )
         old_cert = existing.scalar_one_or_none()
         if old_cert:
-            # Actualizar en lugar de crear nuevo
+            # Actualizar en lugar de crear nuevo (conservar total_firmas e historial)
+            logger.info(
+                f"[BOVEDA] Actualizando cert existente id={old_cert.id[:8]}... "
+                f"para usuario {usuario_id[:8]}..."
+            )
             old_cert.cer_data = base64.b64encode(cer_bytes).decode("ascii")
             old_cert.key_data_cifrada = base64.b64encode(ct).decode("ascii")
             old_cert.key_iv = iv.hex()
@@ -318,7 +322,7 @@ class BovedaCertificadosService:
             old_cert.emisor = cert_info["emisor"]
             old_cert.activo = True
             old_cert.registrado_en = ahora
-            old_cert.total_firmas = 0
+            # NOTA: NO resetear total_firmas — preserva historial de uso
 
             await self._registrar_bitacora(
                 db, usuario_id=usuario_id, accion="certificado_renovado",
@@ -327,11 +331,34 @@ class BovedaCertificadosService:
                 rfc=cert_info["rfc"], serial=cert_info["serial"], ip_origen=ip_origen,
             )
             await db.commit()
-            return old_cert
+            await db.refresh(old_cert)
+
+            # Verificación post-commit: confirmar que quedó persistido y activo
+            verify = await db.execute(
+                select(CertificadoFirma).where(
+                    CertificadoFirma.usuario_id == usuario_id,
+                    CertificadoFirma.activo == True,  # noqa: E712
+                )
+            )
+            verified = verify.scalar_one_or_none()
+            if not verified:
+                logger.error(
+                    f"[BOVEDA] ERROR CRÍTICO: cert actualizado pero no se encuentra "
+                    f"tras commit. usuario_id={usuario_id[:8]}..."
+                )
+                raise RuntimeError(
+                    "El certificado se actualizó pero no persistió. Contacte al administrador."
+                )
+            logger.info(
+                f"[BOVEDA] ✓ Cert renovado verificado en DB: id={verified.id[:8]}... "
+                f"activo={verified.activo} rfc={verified.rfc}"
+            )
+            return verified
 
         # 7. Crear nuevo registro
+        new_id = str(uuid.uuid4())
         cert_record = CertificadoFirma(
-            id=str(uuid.uuid4()),
+            id=new_id,
             usuario_id=usuario_id,
             cer_data=base64.b64encode(cer_bytes).decode("ascii"),
             key_data_cifrada=base64.b64encode(ct).decode("ascii"),
@@ -346,6 +373,10 @@ class BovedaCertificadosService:
             activo=True,
         )
         db.add(cert_record)
+        logger.info(
+            f"[BOVEDA] Creando nuevo cert id={new_id[:8]}... "
+            f"para usuario {usuario_id[:8]}..."
+        )
 
         await self._registrar_bitacora(
             db, usuario_id=usuario_id, accion="registro_certificado",
@@ -355,7 +386,29 @@ class BovedaCertificadosService:
         )
 
         await db.commit()
-        return cert_record
+        await db.refresh(cert_record)
+
+        # Verificación post-commit: confirmar persistencia real
+        verify = await db.execute(
+            select(CertificadoFirma).where(
+                CertificadoFirma.usuario_id == usuario_id,
+                CertificadoFirma.activo == True,  # noqa: E712
+            )
+        )
+        verified = verify.scalar_one_or_none()
+        if not verified:
+            logger.error(
+                f"[BOVEDA] ERROR CRÍTICO: cert creado pero no se encuentra "
+                f"tras commit. usuario_id={usuario_id[:8]}... id_esperado={new_id[:8]}..."
+            )
+            raise RuntimeError(
+                "El certificado se guardó pero no persistió. Contacte al administrador."
+            )
+        logger.info(
+            f"[BOVEDA] ✓ Cert nuevo verificado en DB: id={verified.id[:8]}... "
+            f"activo={verified.activo} rfc={verified.rfc}"
+        )
+        return verified
 
     # ── Obtener metadata del certificado ─────────────────────────────────────
 

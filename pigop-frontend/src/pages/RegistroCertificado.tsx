@@ -49,13 +49,30 @@ export default function RegistroCertificado({ open, onClose }: Props) {
       if (!cerFile || !keyFile || !password) throw new Error('Faltan datos')
       return certificadosApi.registrar(cerFile, keyFile, password)
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setSuccess(data)
       setError('')
       setCerFile(null)
       setKeyFile(null)
       setPassword('')
-      qc.invalidateQueries({ queryKey: ['mi-certificado'] })
+      // Actualizar cache directamente con los datos recién creados (respuesta inmediata)
+      qc.setQueryData(['mi-certificado'], {
+        tiene_certificado: true,
+        vigente: true,
+        activo: true,
+        rfc: data.rfc,
+        nombre_titular: data.nombre_titular,
+        numero_serie: data.numero_serie,
+        valido_desde: data.valido_desde,
+        valido_hasta: data.valido_hasta,
+        emisor: data.emisor,
+        total_firmas: 0,
+        registrado_en: new Date().toISOString(),
+        ultima_firma_en: null,
+      })
+      // Además, invalidar y refetch para confirmar que el backend también lo ve
+      await qc.invalidateQueries({ queryKey: ['mi-certificado'] })
+      await qc.refetchQueries({ queryKey: ['mi-certificado'] })
     },
     onError: (e: unknown) => {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -69,14 +86,29 @@ export default function RegistroCertificado({ open, onClose }: Props) {
       if (!cerFile || !keyFile || !password) throw new Error('Faltan datos')
       return certificadosApi.renovar(cerFile, keyFile, password)
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setSuccess(data)
       setError('')
       setMode('view')
       setCerFile(null)
       setKeyFile(null)
       setPassword('')
-      qc.invalidateQueries({ queryKey: ['mi-certificado'] })
+      qc.setQueryData(['mi-certificado'], {
+        tiene_certificado: true,
+        vigente: true,
+        activo: true,
+        rfc: data.rfc,
+        nombre_titular: data.nombre_titular,
+        numero_serie: data.numero_serie,
+        valido_desde: data.valido_desde,
+        valido_hasta: data.valido_hasta,
+        emisor: data.emisor,
+        total_firmas: 0,
+        registrado_en: new Date().toISOString(),
+        ultima_firma_en: null,
+      })
+      await qc.invalidateQueries({ queryKey: ['mi-certificado'] })
+      await qc.refetchQueries({ queryKey: ['mi-certificado'] })
     },
     onError: (e: unknown) => {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -87,9 +119,10 @@ export default function RegistroCertificado({ open, onClose }: Props) {
   // ── Mutation: revocar ──────────────────────────────────────────────────
   const revocarMut = useMutation({
     mutationFn: certificadosApi.revocar,
-    onSuccess: () => {
+    onSuccess: async () => {
       setMode('register')
-      qc.invalidateQueries({ queryKey: ['mi-certificado'] })
+      await qc.invalidateQueries({ queryKey: ['mi-certificado'] })
+      await qc.refetchQueries({ queryKey: ['mi-certificado'] })
     },
     onError: (e: unknown) => {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
