@@ -208,6 +208,15 @@ export default function Home() {
       d.tipo === 'memorandum' && d.tipo_memorandum === 'requiere_atencion' &&
       !['firmado', 'archivado'].includes(d.estado)
     ).length
+    // Oficios turnados a la Dirección para atención/revisión directa (area_turno = DIR)
+    const turnadosADireccion = docsRecibidos.filter(d =>
+      d.area_turno === 'DIR' &&
+      ['turnado', 'en_atencion'].includes(d.estado)
+    ).length
+    // Oficios de conocimiento para el Director (turnados sin requerir respuesta)
+    const conocimientoDireccion = docsRecibidos.filter(d =>
+      d.estado === 'de_conocimiento' && d.area_turno === 'DIR'
+    ).length
 
     return {
       recibidos: byEstado('recibido'),
@@ -219,6 +228,8 @@ export default function Home() {
       devueltos: byEstado('devuelto'),
       pendientesVB,
       memosPendientes,
+      turnadosADireccion,
+      conocimientoDireccion,
       hoy,
       urgentes,
       vencidos,
@@ -243,6 +254,30 @@ export default function Home() {
     const items: { icon: typeof Clock; color: string; bg: string; border: string; text: string; action: () => void }[] = []
 
     if (docMetrics && hasDocModule) {
+      // Director: oficios turnados por secretaría para revisión directa
+      if ((isDirector || isSuperadmin) && docMetrics.turnadosADireccion > 0) {
+        items.push({
+          icon: Inbox,
+          color: 'text-purple-600',
+          bg: 'bg-purple-50',
+          border: 'border-purple-200',
+          text: `${docMetrics.turnadosADireccion} oficio${docMetrics.turnadosADireccion !== 1 ? 's' : ''} turnado${docMetrics.turnadosADireccion !== 1 ? 's' : ''} a Dirección para revisión`,
+          action: () => navigate('/gestion-documental'),
+        })
+      }
+
+      // Director: oficios para conocimiento (sin respuesta requerida)
+      if ((isDirector || isSuperadmin) && docMetrics.conocimientoDireccion > 0) {
+        items.push({
+          icon: FileText,
+          color: 'text-sky-600',
+          bg: 'bg-sky-50',
+          border: 'border-sky-200',
+          text: `${docMetrics.conocimientoDireccion} oficio${docMetrics.conocimientoDireccion !== 1 ? 's' : ''} para conocimiento de Dirección`,
+          action: () => navigate('/gestion-documental'),
+        })
+      }
+
       // Director: docs por firmar
       if (isDirector && docMetrics.respondidos > 0) {
         items.push({

@@ -4469,9 +4469,41 @@ export default function GestionDocumental() {
               </button>
             )}
 
-            {/* Alerta director: turnados de conocimiento */}
+            {/* Alerta director: oficios turnados a Dirección para revisión/atención directa */}
             {(() => {
-              const turnadosConocimiento = docs?.filter(d => d.estado === 'turnado' && !d.requiere_respuesta) ?? []
+              const turnadosADireccion = docs?.filter(d =>
+                d.area_turno === 'DIR' && ['turnado', 'en_atencion'].includes(d.estado)
+              ) ?? []
+              if (!isDirector || turnadosADireccion.length === 0) return null
+              return (
+                <button onClick={() => { setFiltroArea('DIR'); setFiltroEstado('') }}
+                  className="w-full flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-200 rounded-lg text-left hover:bg-purple-100 transition-colors">
+                  <InboxIcon size={14} className="text-purple-600 flex-shrink-0" />
+                  <span className="text-xs font-medium text-purple-700">{turnadosADireccion.length} oficio{turnadosADireccion.length !== 1 ? 's' : ''} turnado{turnadosADireccion.length !== 1 ? 's' : ''} a Dirección para revisión</span>
+                </button>
+              )
+            })()}
+
+            {/* Alerta director: oficios de conocimiento turnados a Dirección */}
+            {(() => {
+              const conocimientoDireccion = docs?.filter(d =>
+                d.area_turno === 'DIR' && d.estado === 'de_conocimiento'
+              ) ?? []
+              if (!isDirector || conocimientoDireccion.length === 0) return null
+              return (
+                <button onClick={() => { setFiltroArea('DIR'); setFiltroEstado('de_conocimiento') }}
+                  className="w-full flex items-center gap-2 px-3 py-2 bg-sky-50 border border-sky-200 rounded-lg text-left hover:bg-sky-100 transition-colors">
+                  <FileText size={14} className="text-sky-600 flex-shrink-0" />
+                  <span className="text-xs font-medium text-sky-700">{conocimientoDireccion.length} oficio{conocimientoDireccion.length !== 1 ? 's' : ''} para conocimiento de Dirección</span>
+                </button>
+              )
+            })()}
+
+            {/* Alerta director: turnados de conocimiento (legado — otros turnos sin respuesta) */}
+            {(() => {
+              const turnadosConocimiento = docs?.filter(d =>
+                d.estado === 'turnado' && !d.requiere_respuesta && d.area_turno !== 'DIR'
+              ) ?? []
               if (!isDirector || turnadosConocimiento.length === 0) return null
               return (
                 <button onClick={() => setFiltroEstado('turnado')}
