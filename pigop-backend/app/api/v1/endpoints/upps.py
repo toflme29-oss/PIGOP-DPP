@@ -76,7 +76,7 @@ UPP_SEED: list[dict] = [
 
     # ── PARAESTATALES ──────────────────────────────────────────────────────────
     {"codigo": "017", "nombre": "Servicios de Salud de Michoacán",                                               "clasificacion_admin": "PARAESTATAL",  "organismo_code": "21120", "sigla": "SSM"},
-    {"codigo": "031", "nombre": "Instituto del Artesano Michoacano",                                             "clasificacion_admin": "PARAESTATAL",  "organismo_code": "21120", "sigla": "IAM"},
+    {"codigo": "031", "nombre": "Casa de las Artesanías de Michoacán de Ocampo",                                 "clasificacion_admin": "PARAESTATAL",  "organismo_code": "21120", "sigla": "CASART"},
     {"codigo": "033", "nombre": "Comisión Estatal de Cultura Física y Deporte",                                  "clasificacion_admin": "PARAESTATAL",  "organismo_code": "21120", "sigla": "CECUFID"},
     {"codigo": "035", "nombre": "Sistema Michoacano de Radio y Televisión",                                      "clasificacion_admin": "PARAESTATAL",  "organismo_code": "21120", "sigla": "SMRTV"},
     {"codigo": "036", "nombre": "Centro de Convenciones de Morelia",                                             "clasificacion_admin": "PARAESTATAL",  "organismo_code": "21120"},
@@ -111,7 +111,7 @@ UPP_SEED: list[dict] = [
     {"codigo": "094", "nombre": "Instituto de la Juventud Michoacana",                                           "clasificacion_admin": "PARAESTATAL",  "organismo_code": "21120", "sigla": "INJUMICH"},
     {"codigo": "096", "nombre": "Instituto de Ciencia, Tecnología e Innovación del Estado de Michoacán de Ocampo","clasificacion_admin":"PARAESTATAL","organismo_code": "21120", "sigla": "ICTI"},
     {"codigo": "099", "nombre": "Consejo Estatal para Prevenir y Eliminar la Discriminación y la Violencia",     "clasificacion_admin": "PARAESTATAL",  "organismo_code": "21120", "sigla": "COPREDV"},
-    {"codigo": "101", "nombre": "Universidad Tecnológica del Oriente de Michoacán",                              "clasificacion_admin": "PARAESTATAL",  "organismo_code": "21120", "sigla": "UTOM"},
+    {"codigo": "101", "nombre": "Universidad Tecnológica del Oriente",                                           "clasificacion_admin": "PARAESTATAL",  "organismo_code": "21120", "sigla": "UTOM"},
     {"codigo": "102", "nombre": "Secretaría Ejecutiva del Sistema Estatal Anticorrupción",                       "clasificacion_admin": "PARAESTATAL",  "organismo_code": "21120", "sigla": "SEA"},
     {"codigo": "103", "nombre": "Casa del Adulto Mayor",                                                         "clasificacion_admin": "PARAESTATAL",  "organismo_code": "21120"},
     {"codigo": "108", "nombre": "Instituto de Educación Media Superior y Superior del Estado de Michoacán",      "clasificacion_admin": "PARAESTATAL",  "organismo_code": "21120", "sigla": "IEMS"},
@@ -121,9 +121,9 @@ UPP_SEED: list[dict] = [
     # ── AUTÓNOMAS ──────────────────────────────────────────────────────────────
     {"codigo": "038", "nombre": "Universidad Michoacana de San Nicolás de Hidalgo",                              "clasificacion_admin": "AUTÓNOMA",     "organismo_code": "21114", "sigla": "UMSNH"},
     {"codigo": "041", "nombre": "Instituto Electoral de Michoacán",                                              "clasificacion_admin": "AUTÓNOMA",     "organismo_code": "21114", "sigla": "IEM"},
-    {"codigo": "042", "nombre": "Tribunal Electoral del Estado de Michoacán",                                    "clasificacion_admin": "AUTÓNOMA",     "organismo_code": "21114", "sigla": "TEEM"},
-    {"codigo": "044", "nombre": "Tribunal de Justicia Administrativa de Michoacán de Ocampo",                   "clasificacion_admin": "AUTÓNOMA",     "organismo_code": "21114", "sigla": "TJAM"},
-    {"codigo": "075", "nombre": "Comisión Estatal de Derechos Humanos",                                         "clasificacion_admin": "AUTÓNOMA",     "organismo_code": "21114", "sigla": "CEDH"},
+    {"codigo": "042", "nombre": "Tribunal Electoral del Estado",                                                 "clasificacion_admin": "AUTÓNOMA",     "organismo_code": "21114", "sigla": "TEEM"},
+    {"codigo": "044", "nombre": "Tribunal en Materia Anticorrupción y Administrativa del Estado de Michoacán de Ocampo", "clasificacion_admin": "AUTÓNOMA",     "organismo_code": "21114", "sigla": "TJAM"},
+    {"codigo": "075", "nombre": "Comisión Estatal de los Derechos Humanos",                                     "clasificacion_admin": "AUTÓNOMA",     "organismo_code": "21114", "sigla": "CEDH"},
     {"codigo": "079", "nombre": "Instituto Michoacano de Transparencia, Acceso a la Información y Protección de Datos Personales", "clasificacion_admin": "AUTÓNOMA","organismo_code": "21114", "sigla": "IMTAIP"},
     {"codigo": "110", "nombre": "Consejo Económico y Social del Estado de Michoacán",                            "clasificacion_admin": "AUTÓNOMA",     "organismo_code": "21114", "sigla": "CEESM"},
     {"codigo": "A13", "nombre": "Fiscalía General del Estado de Michoacán",                                      "clasificacion_admin": "AUTÓNOMA",     "organismo_code": "21114", "sigla": "FGE"},
@@ -133,25 +133,60 @@ UPP_SEED: list[dict] = [
 # ─── Seed helper ──────────────────────────────────────────────────────────────
 
 async def _seed_upps(db: AsyncSession) -> None:
-    """Inserta las UPPs si la tabla está vacía."""
-    count = await db.scalar(select(func.count()).select_from(UnidadProgramatica))
-    if count and count > 0:
-        return
+    """Inserta o sincroniza las UPPs contra el catálogo oficial 2026.
+
+    En deployments existentes actualiza los nombres/siglas si cambian en el
+    catálogo (p.ej. cuando SFA renombra una dependencia). No elimina
+    registros — marca como inactiva cualquier UPP que desaparezca del
+    catálogo oficial para que siga siendo auditable.
+    """
+    # Cargar las existentes en un solo query
+    result = await db.execute(
+        select(UnidadProgramatica).where(UnidadProgramatica.ejercicio == 2026)
+    )
+    existentes = {u.codigo: u for u in result.scalars().all()}
+
+    codigos_semilla = {d["codigo"] for d in UPP_SEED}
+    cambios = 0
 
     for data in UPP_SEED:
-        obj = UnidadProgramatica(
-            id=str(uuid.uuid4()),
-            codigo=data["codigo"],
-            nombre=data["nombre"],
-            clasificacion_admin=data["clasificacion_admin"],
-            organismo_code=data.get("organismo_code"),
-            sigla=data.get("sigla"),
-            ejercicio=2026,
-            activa=True,
-        )
-        db.add(obj)
+        u = existentes.get(data["codigo"])
+        if u is None:
+            db.add(UnidadProgramatica(
+                id=str(uuid.uuid4()),
+                codigo=data["codigo"],
+                nombre=data["nombre"],
+                clasificacion_admin=data["clasificacion_admin"],
+                organismo_code=data.get("organismo_code"),
+                sigla=data.get("sigla"),
+                ejercicio=2026,
+                activa=True,
+            ))
+            cambios += 1
+        else:
+            # Upsert: actualizar solo si cambió el nombre/sigla o si estaba inactiva.
+            dirty = False
+            if u.nombre != data["nombre"]:
+                u.nombre = data["nombre"]; dirty = True
+            nueva_sigla = data.get("sigla")
+            if (u.sigla or None) != (nueva_sigla or None):
+                u.sigla = nueva_sigla; dirty = True
+            nueva_clasif = data["clasificacion_admin"]
+            if u.clasificacion_admin != nueva_clasif:
+                u.clasificacion_admin = nueva_clasif; dirty = True
+            if not u.activa:
+                u.activa = True; dirty = True
+            if dirty:
+                cambios += 1
 
-    await db.commit()
+    # Marcar como inactivas las que no estén ya en el catálogo (soft delete)
+    for codigo, u in existentes.items():
+        if codigo not in codigos_semilla and u.activa:
+            u.activa = False
+            cambios += 1
+
+    if cambios:
+        await db.commit()
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────

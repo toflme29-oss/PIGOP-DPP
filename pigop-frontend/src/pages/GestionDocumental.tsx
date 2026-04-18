@@ -4296,7 +4296,21 @@ export default function GestionDocumental() {
     return best ? best.u : null
   }
 
-  // Devuelve una etiqueta "NNN — Nombre" para una UPP a partir del código explícito,
+  // Formato de display del código: catálogo usa 3 dígitos ("007", "019"),
+  // pero el formato esperado por la DPP es 2 dígitos sin cero a la izquierda
+  // (p.ej. "07 - Secretaría de Finanzas y Administración"). Los códigos
+  // alfanuméricos ("A13") o de 3+ dígitos ("115") se respetan tal cual.
+  const displayUppCode = (codigo: string): string => {
+    const c = codigo.trim()
+    if (/^\d+$/.test(c)) {
+      const n = parseInt(c, 10)
+      return n.toString().padStart(2, '0') // 007→07, 115→115, 7→07
+    }
+    return c
+  }
+  const labelUpp = (u: UPP): string => `${displayUppCode(u.codigo)} - ${u.nombre}`
+
+  // Devuelve una etiqueta "NN - Nombre" para una UPP a partir del código explícito,
   // el texto de OCR en upp_solicitante, o el remitente (remitente_dependencia /
   // dependencia_origen). El remitente suele ser la institución externa que envía
   // el oficio y casi siempre corresponde a una UPP del catálogo.
@@ -4308,35 +4322,26 @@ export default function GestionDocumental() {
     // 1) Código explícito guardado en la BD
     if (codigo) {
       const u = uppsByCode[codigo.toUpperCase().trim()]
-      if (u) return `${u.codigo} — ${u.nombre}`
+      if (u) return labelUpp(u)
     }
     // 2) Texto del OCR: puede ser un código "016" o un nombre/sigla
     if (texto) {
       const t = texto.trim()
       const tCode = t.toUpperCase().replace(/^UPP\s*/i, '').replace(/[^A-Z0-9]/g, '')
-      if (tCode && uppsByCode[tCode]) {
-        const u = uppsByCode[tCode]
-        return `${u.codigo} — ${u.nombre}`
-      }
+      if (tCode && uppsByCode[tCode]) return labelUpp(uppsByCode[tCode])
       const tLower = t.toLowerCase()
-      if (uppsByName[tLower]) {
-        const u = uppsByName[tLower]
-        return `${u.codigo} — ${u.nombre}`
-      }
+      if (uppsByName[tLower]) return labelUpp(uppsByName[tLower])
       const m = t.match(/^\s*([A-Z0-9]{2,4})\b/i)
-      if (m && uppsByCode[m[1].toUpperCase()]) {
-        const u = uppsByCode[m[1].toUpperCase()]
-        return `${u.codigo} — ${u.nombre}`
-      }
+      if (m && uppsByCode[m[1].toUpperCase()]) return labelUpp(uppsByCode[m[1].toUpperCase()])
       // Intentar match fuzzy contra el nombre (p.ej. "SFA" → UPP 007)
       const fz = fuzzyFindUpp(t)
-      if (fz) return `${fz.codigo} — ${fz.nombre}`
+      if (fz) return labelUpp(fz)
     }
     // 3) Como último recurso, intentar con el remitente (dependencia que envía el
     //    oficio). La mayoría de los oficios vienen de instituciones del catálogo.
     if (remitente) {
       const fz = fuzzyFindUpp(remitente)
-      if (fz) return `${fz.codigo} — ${fz.nombre}`
+      if (fz) return labelUpp(fz)
     }
     return null
   }
