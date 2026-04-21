@@ -5667,21 +5667,26 @@ export default function GestionDocumental() {
                                 doc.upp_solicitante,
                                 doc.remitente_dependencia,
                               )
+                              // Fallback: mostrar la dependencia remitente si no hay match en catálogo
+                              const fallback = doc.remitente_dependencia || doc.upp_solicitante || ''
                               return (
                                 <p
                                   className="text-[10px] text-gray-500 truncate max-w-[180px]"
-                                  title={uppLabel || (doc.remitente_dependencia || doc.upp_solicitante || '')}
+                                  title={uppLabel || fallback}
                                 >
-                                  {uppLabel || '—'}
+                                  {uppLabel || fallback || '—'}
                                 </p>
                               )
                             })()}
                           </td>
-                          {/* Remitente */}
+                          {/* Remitente (quien firma) */}
                           <td className="px-3 py-2.5">
-                            <p className="text-[10px] text-gray-600 truncate max-w-[120px]">
-                              {doc.remitente_dependencia || doc.remitente_nombre || '—'}
+                            <p className="text-[10px] text-gray-600 truncate max-w-[120px]" title={doc.remitente_nombre || ''}>
+                              {doc.remitente_nombre || '—'}
                             </p>
+                            {doc.remitente_cargo && (
+                              <p className="text-[9px] text-gray-400 truncate max-w-[120px]">{doc.remitente_cargo}</p>
+                            )}
                           </td>
                           {/* Asunto */}
                           <td className="px-3 py-2.5">
