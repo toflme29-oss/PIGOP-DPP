@@ -4833,10 +4833,10 @@ export default function GestionDocumental() {
     queryFn:  documentosApi.areas,
   })
 
-  // Catálogo de UPPs — fuente para la columna UPP (3 dígitos + nombre)
-  const { data: uppsCatalogo = [] } = useQuery<UPP[]>({
-    queryKey: ['upps-catalogo-main'],
-    queryFn:  () => uppsApi.list(),
+  // Catálogo de Dependencias (Panel Admin) — fuente para la columna UPP
+  const { data: uppsCatalogo = [] } = useQuery<Cliente[]>({
+    queryKey: ['clientes-catalogo-main'],
+    queryFn:  clientesApi.list,
     staleTime: 10 * 60_000,
   })
 
@@ -4848,13 +4848,13 @@ export default function GestionDocumental() {
       .replace(/\s+/g, ' ')
       .trim()
 
-  const uppsByCode: Record<string, UPP> = {}
-  const uppsByName: Record<string, UPP> = {}
-  const uppsNorm: Array<{ u: UPP; nombreN: string }> = []
+  const uppsByCode: Record<string, Cliente> = {}
+  const uppsByName: Record<string, Cliente> = {}
+  const uppsNorm: Array<{ u: Cliente; nombreN: string }> = []
 
   for (const u of uppsCatalogo) {
-    if (!u.activa) continue
-    const code = u.codigo.toUpperCase().trim()
+    if (!u.activo) continue
+    const code = u.codigo_upp.toUpperCase().trim()
     // Indexar por el código exacto del catálogo
     uppsByCode[code] = u
     // Si el código es puramente numérico, indexar también sin ceros y con 2/3 dígitos
@@ -4870,7 +4870,7 @@ export default function GestionDocumental() {
   }
 
   // Busca la mejor dependencia para un texto libre usando matching fuzzy.
-  const fuzzyFindUpp = (texto: string): UPP | null => {
+  const fuzzyFindUpp = (texto: string): Cliente | null => {
     const tN = normalizeText(texto)
     if (!tN || tN.length < 3) return null
     // 1) Match exacto por nombre normalizado
@@ -4879,7 +4879,7 @@ export default function GestionDocumental() {
     }
     // 2) Contención por tokens significativos
     const tTokens = tN.split(' ').filter(w => w.length >= 4)
-    let best: { u: UPP; score: number } | null = null
+    let best: { u: Cliente; score: number } | null = null
     for (const { u, nombreN } of uppsNorm) {
       const nTokens = nombreN.split(' ').filter(w => w.length >= 4)
       if (!nTokens.length) continue
@@ -4890,9 +4890,9 @@ export default function GestionDocumental() {
     return best ? best.u : null
   }
 
-  // Etiqueta final: código a 3 dígitos + nombre
-  const labelUpp = (u: UPP): string => {
-    const code = /^\d+$/.test(u.codigo) ? u.codigo.padStart(3, '0') : u.codigo
+  // Etiqueta final: código a 3 dígitos + nombre (Vinculado al catálogo del Admin Panel)
+  const labelUpp = (u: Cliente): string => {
+    const code = /^\d+$/.test(u.codigo_upp) ? u.codigo_upp.padStart(3, '0') : u.codigo_upp
     return `${code} - ${u.nombre}`
   }
 
