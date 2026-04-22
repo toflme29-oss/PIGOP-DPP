@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../hooks/useAuth'
+import { usePermissionsBootstrap } from '../hooks/usePermissionsBootstrap'
 
 // ── Tipos de navegación ────────────────────────────────────────────────────────
 interface SubModule {
@@ -279,6 +280,9 @@ export default function Layout() {
   const { user, logout } = useAuth()
   const meta = getPageMeta(location.pathname)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  // Hidrata overrides de permisos desde backend + polling de versión
+  usePermissionsBootstrap()
 
   const isAdmin = user?.rol === 'superadmin' || user?.rol === 'admin_cliente'
 

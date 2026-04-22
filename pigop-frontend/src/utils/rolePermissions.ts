@@ -1,9 +1,15 @@
 /**
- * rolePermissions — Permisos por rol con soporte de overrides en localStorage
- * Los valores guardados en AdminPermisos sobreescriben los predeterminados.
+ * rolePermissions — Permisos por rol con overrides persistidos en backend.
+ *
+ * Fuente de verdad:
+ *   - Defaults: PERMISSION_DEFAULTS (en este archivo)
+ *   - Overrides: API /permisos/ (cliente-scoped, persistente)
+ *
+ * El acceso síncrono se mantiene vía cache en memoria, hidratada desde
+ * el backend por usePermissionsBootstrap y refrescada por usePermissionsVersion.
  */
 
-export const PERMISSION_STORAGE_KEY = 'pigop_permisos_v1'
+import { permisosApi } from '../api/permisos'
 
 // Permisos predeterminados: actionId → rolKey → boolean
 export const PERMISSION_DEFAULTS: Record<string, Partial<Record<string, boolean>>> = {
@@ -32,46 +38,70 @@ export const PERMISSION_DEFAULTS: Record<string, Partial<Record<string, boolean>
   firmar:              { admin_cliente: true },
   firmar_lote:         { admin_cliente: true },
   validar_cert:        { superadmin: true, admin_cliente: true },
-  // ── Nuevos permisos v2 ─────────────────────────────────────────────────────
-  // Visor flotante (92vw): abrir el panel de detalle desde la tabla
+  // ── Permisos v2 ──────────────────────────────────────────────────────────────
   ver_visor_flotante:  { superadmin: true, admin_cliente: true, secretaria: true, asesor: true, subdirector: true, jefe_depto: true, auditor: true, analista: true },
-  // Cambiar estado del trámite (En atención / Respondido / Conocimiento)
   cambiar_estado:      { superadmin: true, admin_cliente: true, secretaria: true, asesor: true, subdirector: true, jefe_depto: true, analista: true },
-  // Registrar nuevo memorándum (flujo especializado)
   registrar_memo:      { superadmin: true, admin_cliente: true, secretaria: true },
 }
 
 export type PermissionOverrides = Record<string, boolean>
 
-export function loadPermissionOverrides(): PermissionOverrides {
-  try {
-    const stored = localStorage.getItem(PERMISSION_STORAGE_KEY)
-    return stored ? JSON.parse(stored) : {}
-  } catch {
-    return {}
-  }
-}
+// ── Cache en memoria ──────────────────────────────────────────────────────────
 
-export const PERMISOS_UPDATED_EVENT = 'pigop:permisos-updated'
+let _overridesCache: PermissionOverrides = {}
+let _versionCache = 0
+let _hydrated = false
 
-export function savePermissionOverrides(overrides: PermissionOverrides): void {
-  localStorage.setItem(PERMISSION_STORAGE_KEY, JSON.stringify(overrides))
+/** Llamar una vez al inicio (bootstrap) o cuando la versión cambia. */
+export function setPermissionOverrides(overrides: PermissionOverrides, version: number): void {
+  _overridesCache = { ...overrides }
+  _versionCache = version
+  _hydrated = true
   window.dispatchEvent(new CustomEvent(PERMISOS_UPDATED_EVENT))
 }
+
+/** Acceso síncrono al cache (usado por los checkers de consumidores). */
+export function loadPermissionOverrides(): PermissionOverrides {
+  return _overridesCache
+}
+
+export function getCachedVersion(): number {
+  return _versionCache
+}
+
+export function isPermissionsHydrated(): boolean {
+  return _hydrated
+}
+
+/** Evento de actualización: listeners re-memoizan checkers. */
+export const PERMISOS_UPDATED_EVENT = 'pigop:permisos-updated'
+
+// ── Persistencia backend ──────────────────────────────────────────────────────
+
+/**
+ * Guarda overrides en el backend y actualiza el cache local al instante.
+ * Solo admin_cliente/superadmin puede llamar (backend valida).
+ */
+export async function savePermissionOverrides(overrides: PermissionOverrides): Promise<void> {
+  const res = await permisosApi.update(overrides)
+  setPermissionOverrides(res.overrides, res.version)
+}
+
+// ── Checker ───────────────────────────────────────────────────────────────────
 
 export function getPermission(
   actionId: string,
   rol: string,
   overrides?: PermissionOverrides,
 ): boolean {
-  const resolved = overrides ?? loadPermissionOverrides()
+  const resolved = overrides ?? _overridesCache
   const key = `${actionId}.${rol}`
   if (key in resolved) return resolved[key]
   return PERMISSION_DEFAULTS[actionId]?.[rol] ?? false
 }
 
-/** Carga overrides una sola vez y devuelve una función checker para un rol fijo */
+/** Carga overrides una sola vez y devuelve una función checker para un rol fijo. */
 export function makePermissionChecker(rol: string): (actionId: string) => boolean {
-  const overrides = loadPermissionOverrides()
+  const overrides = _overridesCache
   return (actionId: string) => getPermission(actionId, rol, overrides)
 }

@@ -1,8 +1,8 @@
 /**
  * AdminPermisos — Matriz editable de Roles y Permisos del Sistema PIGOP
- * Grupos contraíbles · Celdas activables/desactivables · Persistencia localStorage
+ * Grupos contraíbles · Celdas activables/desactivables · Persistencia en backend
  */
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   ChevronRight, CheckCircle2, XCircle, AlertCircle,
   FileText, Eye, ArrowRightLeft, PenLine, Bell,
@@ -12,6 +12,7 @@ import {
   PERMISSION_DEFAULTS,
   loadPermissionOverrides,
   savePermissionOverrides,
+  PERMISOS_UPDATED_EVENT,
   type PermissionOverrides,
 } from '../utils/rolePermissions'
 
@@ -327,6 +328,15 @@ export function TablaPermisos() {
   const [overrides, setOverrides] = useState<PermissionOverrides>(() => loadPermissionOverrides())
   const [pending,   setPending]   = useState<PermissionOverrides>({})
   const [saved,     setSaved]     = useState(false)
+  const [saving,    setSaving]    = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Re-sincroniza desde cache cuando otro tab o el polling trae cambios nuevos
+  useEffect(() => {
+    const handler = () => setOverrides(loadPermissionOverrides())
+    window.addEventListener(PERMISOS_UPDATED_EVENT, handler)
+    return () => window.removeEventListener(PERMISOS_UPDATED_EVENT, handler)
+  }, [])
 
   const hasChanges = Object.keys(pending).length > 0
 
@@ -335,28 +345,50 @@ export function TablaPermisos() {
     const current = resolveCell(fila, grupoId, filaIdx, rolKey, overrides, pending)
     setPending(prev => ({ ...prev, [key]: !current }))
     setSaved(false)
+    setSaveError(null)
   }
 
-  const guardar = () => {
+  const guardar = async () => {
+    if (saving) return
+    setSaving(true)
+    setSaveError(null)
     const next = { ...overrides, ...pending }
-    savePermissionOverrides(next)
-    setOverrides(next)
-    setPending({})
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
+    try {
+      await savePermissionOverrides(next)
+      setOverrides(next)
+      setPending({})
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setSaveError(detail || 'No se pudieron guardar los cambios. Intenta de nuevo.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const descartar = () => {
     setPending({})
     setSaved(false)
+    setSaveError(null)
   }
 
-  const restablecerTodo = () => {
-    savePermissionOverrides({})
-    setOverrides({})
-    setPending({})
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
+  const restablecerTodo = async () => {
+    if (saving) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await savePermissionOverrides({})
+      setOverrides({})
+      setPending({})
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setSaveError(detail || 'No se pudo restablecer. Intenta de nuevo.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const contarActivos = (grupo: Grupo) =>
@@ -412,11 +444,12 @@ export function TablaPermisos() {
             </button>
             <button
               onClick={guardar}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
+              disabled={saving}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               style={{ backgroundColor: '#911A3A' }}
             >
               <Save size={11} />
-              Guardar cambios
+              {saving ? 'Guardando…' : 'Guardar cambios'}
             </button>
           </div>
         </div>
@@ -427,8 +460,16 @@ export function TablaPermisos() {
         <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
           <CheckCircle2 size={14} className="text-green-600" />
           <span className="text-xs font-semibold text-green-700">
-            Permisos guardados. Los cambios aplican de inmediato cuando el usuario con ese rol usa el módulo.
+            Permisos guardados en el servidor. Los cambios aplican de inmediato para todos los usuarios.
           </span>
+        </div>
+      )}
+
+      {/* Error de guardado */}
+      {saveError && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
+          <AlertCircle size={14} className="text-red-600" />
+          <span className="text-xs font-semibold text-red-700">{saveError}</span>
         </div>
       )}
 

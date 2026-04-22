@@ -12,6 +12,7 @@ from app.models.lote_firma import LoteFirma, LoteFirmaItem
 from app.models.certificado_firma import CertificadoFirma
 from app.models.bitacora_firma import BitacoraFirma
 from app.models.oficio import OficioRecibido
+from app.models.permiso import PermisoOverride
 
 __all__ = [
     "Cliente", "Usuario",
@@ -26,4 +27,5 @@ __all__ = [
     "LoteFirma", "LoteFirmaItem",
     "CertificadoFirma", "BitacoraFirma",
     "OficioRecibido",
+    "PermisoOverride",
 ]
