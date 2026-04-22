@@ -101,6 +101,11 @@ export const clientesAdminApi = {
     const res = await apiClient.put(`/usuarios/clientes/${id}`, data)
     return res.data
   },
+
+  delete: async (id: string): Promise<{ message: string }> => {
+    const res = await apiClient.delete(`/usuarios/clientes/${id}`)
+    return res.data
+  },
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

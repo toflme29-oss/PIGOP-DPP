@@ -34,7 +34,7 @@ router = APIRouter()
 async def crear_cliente(
     data: ClienteCreate,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(get_current_superadmin),
+    _: Usuario = Depends(get_current_admin),
 ):
     """Solo superadmin puede crear clientes (UPPs)."""
     existente = await crud_cliente.get_by_codigo_upp(db, data.codigo_upp)
@@ -82,12 +82,35 @@ async def actualizar_cliente(
     cliente_id: UUID,
     data: ClienteUpdate,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(get_current_superadmin),
+    _: Usuario = Depends(get_current_admin),
 ):
     cliente = await crud_cliente.get(db, cliente_id)
     if not cliente:
         raise NotFoundError("Cliente")
     return await crud_cliente.update(db, db_obj=cliente, obj_in=data.model_dump(exclude_unset=True))
+
+
+@router.delete(
+    "/clientes/{cliente_id}",
+    response_model=MessageResponse,
+    summary="Eliminar cliente (UPP)",
+)
+async def eliminar_cliente(
+    cliente_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(get_current_admin),
+):
+    """Permite eliminar una UPP del catálogo."""
+    cliente = await crud_cliente.get(db, cliente_id)
+    if not cliente:
+        raise NotFoundError("Cliente")
+    
+    # Opcional: Verificar si tiene usuarios ligados
+    # if cliente.usuarios: ...
+    
+    await crud_cliente.delete(db, id=str(cliente_id))
+    return MessageResponse(message="Dependencia eliminada correctamente.")
+
 
 
 # ── Usuarios ──────────────────────────────────────────────────────────────────

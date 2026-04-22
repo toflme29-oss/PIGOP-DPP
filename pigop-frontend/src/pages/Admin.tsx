@@ -438,7 +438,15 @@ function TablaUsuarios({
 
 // ── Tabla de Clientes ──────────────────────────────────────────────────────────
 
-function TablaClientes({ clientes }: { clientes: ClienteAdmin[] }) {
+function TablaClientes({
+  clientes,
+  onEdit,
+  onDelete,
+}: {
+  clientes: ClienteAdmin[]
+  onEdit: (c: ClienteAdmin) => void
+  onDelete: (c: ClienteAdmin) => void
+}) {
   return (
     <div className="overflow-auto rounded-xl border border-gray-200 max-h-[calc(100vh-300px)]">
       <table className="w-full text-sm">
@@ -458,6 +466,9 @@ function TablaClientes({ clientes }: { clientes: ClienteAdmin[] }) {
             </th>
             <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
               Registrado
+            </th>
+            <th className="px-4 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+              Acciones
             </th>
           </tr>
         </thead>
@@ -483,17 +494,36 @@ function TablaClientes({ clientes }: { clientes: ClienteAdmin[] }) {
               <td className="px-4 py-3">
                 <span className="text-[11px] text-gray-400">{formatDate(c.creado_en)}</span>
               </td>
+              <td className="px-4 py-3">
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    onClick={() => onEdit(c)}
+                    className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-colors"
+                    title="Editar"
+                  >
+                    <RefreshCw size={12} />
+                  </button>
+                  <button
+                    onClick={() => onDelete(c)}
+                    className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors"
+                    title="Eliminar"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              </td>
             </tr>
           ))}
           {clientes.length === 0 && (
             <tr>
-              <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-400">
+              <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">
                 No hay clientes registrados.
               </td>
             </tr>
           )}
         </tbody>
       </table>
+
       <div className="px-4 py-2 border-t border-gray-100 bg-gray-50">
         <p className="text-[11px] text-gray-400">
           {clientes.length} cliente{clientes.length !== 1 ? 's' : ''} registrado{clientes.length !== 1 ? 's' : ''}
@@ -840,6 +870,110 @@ function ModalCrearCliente({
   )
 }
 
+// ── Modal: Editar Cliente ───────────────────────────────────────────────────────
+
+function ModalEditarCliente({
+  cliente,
+  onClose,
+  onEditado,
+}: {
+  cliente: ClienteAdmin
+  onClose: () => void
+  onEditado: () => void
+}) {
+  const qc = useQueryClient()
+  const [form, setForm] = useState({
+    nombre: cliente.nombre,
+    tipo: cliente.tipo || 'centralizada',
+    activo: cliente.activo,
+  })
+  const [error, setError] = useState('')
+
+  const actualizar = useMutation({
+    mutationFn: () => clientesAdminApi.update(cliente.id, form),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-clientes'] })
+      onEditado()
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(typeof msg === 'string' ? msg : 'Error al actualizar cliente.')
+    },
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+            <Building2 size={16} style={{ color: GUINDA }} />
+            Editar dependencia: {cliente.codigo_upp}
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          {error && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700">
+              <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-semibold text-gray-700 block mb-1">Nombre / Dependencia *</label>
+            <input
+              value={form.nombre}
+              onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1"
+              style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-700 block mb-1">Tipo *</label>
+            <select
+              value={form.tipo}
+              onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1"
+            >
+              {TIPOS_CLIENTE.map(t => (
+                <option key={t} value={t}>{TIPO_CLIENTE_LABELS[t]}</option>
+              ))}
+            </select>
+          </div>
+
+          <label className="flex items-center gap-2 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={form.activo}
+              onChange={e => setForm(f => ({ ...f, activo: e.target.checked }))}
+              className="w-3.5 h-3.5 rounded border-gray-300 accent-[#911A3A]"
+            />
+            <span className="text-xs font-semibold text-gray-700 group-hover:text-gray-900">Activa</span>
+          </label>
+        </div>
+
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
+          <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+            Cancelar
+          </button>
+          <button
+            onClick={() => actualizar.mutate()}
+            disabled={!form.nombre || actualizar.isPending}
+            className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-50"
+            style={{ backgroundColor: GUINDA }}
+          >
+            {actualizar.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Guardar cambios'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Modal: Importar Dependencias ───────────────────────────────────────────────
 
 function ModalImportarDependencias({
@@ -1069,6 +1203,8 @@ export default function Admin() {
   const [showModalUsuario, setShowModalUsuario] = useState(false)
   const [showModalCliente, setShowModalCliente] = useState(false)
   const [showModalImportar, setShowModalImportar] = useState(false)
+  const [clienteAEditar, setClienteAEditar] = useState<ClienteAdmin | null>(null)
+
 
   // ── Queries ────────────────────────────────────────────────────────────────
 
@@ -1102,6 +1238,16 @@ export default function Admin() {
       usuariosApi.update(id, { rol }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-usuarios'] }),
   })
+
+  const eliminarClienteMutation = useMutation({
+    mutationFn: (id: string) => clientesAdminApi.delete(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-clientes'] }),
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      alert(typeof msg === 'string' ? msg : 'Error al eliminar dependencia. Puede que tenga usuarios asociados.')
+    }
+  })
+
 
   // ── Stats ──────────────────────────────────────────────────────────────────
 
@@ -1220,8 +1366,9 @@ export default function Admin() {
             Nuevo usuario
           </button>
         )}
-        {tab === 'clientes' && isSuperadmin && (
+        {tab === 'clientes' && (isSuperadmin || user?.rol === 'admin_cliente') && (
           <div className="flex items-center gap-2">
+
             <button
               onClick={() => setShowModalImportar(true)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors border"
@@ -1266,9 +1413,18 @@ export default function Admin() {
             <Loader2 size={22} className="animate-spin text-gray-400" />
           </div>
         ) : (
-          <TablaClientes clientes={clientes} />
+          <TablaClientes
+            clientes={clientes}
+            onEdit={c => setClienteAEditar(c)}
+            onDelete={c => {
+              if (confirm(`¿Estás seguro de eliminar la dependencia "${c.nombre}"?`)) {
+                eliminarClienteMutation.mutate(c.id)
+              }
+            }}
+          />
         )
       )}
+
 
       {tab === 'permisos' && <TablaPermisos />}
 
@@ -1294,6 +1450,14 @@ export default function Admin() {
           onImportado={() => setShowModalImportar(false)}
         />
       )}
+      {clienteAEditar && (
+        <ModalEditarCliente
+          cliente={clienteAEditar}
+          onClose={() => setClienteAEditar(null)}
+          onEditado={() => setClienteAEditar(null)}
+        />
+      )}
+
 
       {/* Nota de acceso restringido */}
       {!isSuperadmin && (
