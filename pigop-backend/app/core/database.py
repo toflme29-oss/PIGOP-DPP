@@ -53,10 +53,10 @@ async def create_tables():
 
 
 async def init_db_data():
-    """Siembra datos iniciales (Admin y Cliente DPP) si no existen."""
+    """Siembra o actualiza datos iniciales (Admin y Cliente DPP)."""
     async with AsyncSessionLocal() as db:
         # 1. Crear Cliente DPP
-        res = await db.execute(text("SELECT 1 FROM clientes WHERE codigo_upp='DPP'"))
+        res = await db.execute(text("SELECT id FROM clientes WHERE codigo_upp='DPP'"))
         if not res.fetchone():
             await db.execute(text(
                 "INSERT INTO clientes (id, codigo_upp, nombre, tipo, activo, configuracion) "
@@ -64,17 +64,26 @@ async def init_db_data():
             ), {"id": str(uuid.uuid4())})
             print("✅ Cliente DPP inicializado")
 
-        # 2. Crear Superadmin
-        res = await db.execute(text("SELECT 1 FROM usuarios WHERE email=:e"), {"e": settings.SUPERADMIN_EMAIL})
-        if not res.fetchone():
+        # 2. Crear o Actualizar Superadmin (Reseteo de clave forzado)
+        pwd_hash = get_password_hash(settings.SUPERADMIN_PASSWORD)
+        res = await db.execute(text("SELECT id FROM usuarios WHERE email=:e"), {"e": settings.SUPERADMIN_EMAIL})
+        user = res.fetchone()
+        
+        if not user:
             await db.execute(text(
                 "INSERT INTO usuarios (id, email, password_hash, nombre_completo, rol, activo, modulos_acceso) "
                 "VALUES (:id, :email, :pwd, 'Administrador PIGOP', 'superadmin', 1, '[]')"
             ), {
                 "id": str(uuid.uuid4()),
                 "email": settings.SUPERADMIN_EMAIL,
-                "pwd": get_password_hash(settings.SUPERADMIN_PASSWORD)
+                "pwd": pwd_hash
             })
-            print(f"✅ Superadmin {settings.SUPERADMIN_EMAIL} inicializado")
+            print(f"✅ Superadmin {settings.SUPERADMIN_EMAIL} creado")
+        else:
+            # Forzar actualización de clave en caso de que haya cambiado o esté corrupta
+            await db.execute(text(
+                "UPDATE usuarios SET password_hash=:pwd, activo=1, rol='superadmin' WHERE email=:email"
+            ), {"pwd": pwd_hash, "email": settings.SUPERADMIN_EMAIL})
+            print(f"✅ Superadmin {settings.SUPERADMIN_EMAIL} actualizado/reseteado")
 
         await db.commit()
