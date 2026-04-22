@@ -53,37 +53,43 @@ async def create_tables():
 
 
 async def init_db_data():
-    """Siembra o actualiza datos iniciales (Admin y Cliente DPP)."""
+    """Siembra o actualiza datos iniciales (Admin y Cliente DPP).
+
+    Compatible con SQLite y PostgreSQL: usa parámetros bindeados con valores
+    booleanos de Python para que el driver infiera el tipo correcto (evita
+    DatatypeMismatchError en PostgreSQL donde `activo` es BOOLEAN).
+    """
     async with AsyncSessionLocal() as db:
         # 1. Crear Cliente DPP
         res = await db.execute(text("SELECT id FROM clientes WHERE codigo_upp='DPP'"))
         if not res.fetchone():
             await db.execute(text(
                 "INSERT INTO clientes (id, codigo_upp, nombre, tipo, activo, configuracion) "
-                "VALUES (:id, 'DPP', 'Dirección de Programación y Presupuesto', 'centralizada', 1, '{}')"
-            ), {"id": str(uuid.uuid4())})
+                "VALUES (:id, 'DPP', 'Dirección de Programación y Presupuesto', 'centralizada', :activo, '{}')"
+            ), {"id": str(uuid.uuid4()), "activo": True})
             print("✅ Cliente DPP inicializado")
 
         # 2. Crear o Actualizar Superadmin (Reseteo de clave forzado)
         pwd_hash = get_password_hash(settings.SUPERADMIN_PASSWORD)
         res = await db.execute(text("SELECT id FROM usuarios WHERE email=:e"), {"e": settings.SUPERADMIN_EMAIL})
         user = res.fetchone()
-        
+
         if not user:
             await db.execute(text(
                 "INSERT INTO usuarios (id, email, password_hash, nombre_completo, rol, activo, modulos_acceso) "
-                "VALUES (:id, :email, :pwd, 'Administrador PIGOP', 'superadmin', 1, '[]')"
+                "VALUES (:id, :email, :pwd, 'Administrador PIGOP', 'superadmin', :activo, '[]')"
             ), {
                 "id": str(uuid.uuid4()),
                 "email": settings.SUPERADMIN_EMAIL,
-                "pwd": pwd_hash
+                "pwd": pwd_hash,
+                "activo": True,
             })
             print(f"✅ Superadmin {settings.SUPERADMIN_EMAIL} creado")
         else:
             # Forzar actualización de clave en caso de que haya cambiado o esté corrupta
             await db.execute(text(
-                "UPDATE usuarios SET password_hash=:pwd, activo=1, rol='superadmin' WHERE email=:email"
-            ), {"pwd": pwd_hash, "email": settings.SUPERADMIN_EMAIL})
+                "UPDATE usuarios SET password_hash=:pwd, activo=:activo, rol='superadmin' WHERE email=:email"
+            ), {"pwd": pwd_hash, "email": settings.SUPERADMIN_EMAIL, "activo": True})
             print(f"✅ Superadmin {settings.SUPERADMIN_EMAIL} actualizado/reseteado")
 
         await db.commit()
