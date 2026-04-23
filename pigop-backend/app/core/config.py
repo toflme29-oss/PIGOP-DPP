@@ -58,7 +58,7 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:5173",
         "https://pigop.michoacan.gob.mx",
-        "https://lightskyblue-jaguar-400145.hostingersite.com",
+        "https://seashell-woodcock-771978.hostingersite.com",
     ]
 
     # Celery
@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     SUPERADMIN_EMAIL: str = "admin@pigop.gob.mx"
     SUPERADMIN_PASSWORD: str = "Admin.2026!"
 
-    model_config = {"env_file": ".env", "case_sensitive": True}
+    model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 
 
 @lru_cache()

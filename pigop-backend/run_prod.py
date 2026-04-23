@@ -34,12 +34,15 @@ os.environ.setdefault("SUPERADMIN_EMAIL", "admin@pigop.gob.mx")
 os.environ.setdefault("SUPERADMIN_PASSWORD", "Admin.2026!")
 
 # ── CORS: Frontend en Hostinger + localhost para pruebas ─────────────────────
-# Railway inyecta RAILWAY_PUBLIC_DOMAIN con el dominio público del servicio
-frontend_url = os.environ.get("FRONTEND_URL", "https://magenta-mallard-924557.hostingersite.com")
+# FRONTEND_URLS (plural, coma-separado) tiene precedencia sobre FRONTEND_URL
+# para soportar más de un dominio simultáneamente (p. ej. preview + producción).
+_default_frontend = "https://seashell-woodcock-771978.hostingersite.com"
+_urls_env = os.environ.get("FRONTEND_URLS") or os.environ.get("FRONTEND_URL") or _default_frontend
+frontend_urls = [u.strip() for u in _urls_env.split(",") if u.strip()]
 railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
 
 cors_origins = [
-    frontend_url,
+    *frontend_urls,
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost:5174",
@@ -47,6 +50,9 @@ cors_origins = [
 # Agregar el propio dominio de Railway si existe
 if railway_domain:
     cors_origins.append(f"https://{railway_domain}")
+
+# Deduplicar preservando orden
+cors_origins = list(dict.fromkeys(cors_origins))
 
 import json as _json_cors
 os.environ["ALLOWED_ORIGINS"] = _json_cors.dumps(cors_origins)
