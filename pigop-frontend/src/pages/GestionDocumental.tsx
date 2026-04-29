@@ -1219,6 +1219,18 @@ function ModalNuevoEmitido({
     }, 600)
   }
 
+  // ── Auto-seleccionar área del usuario al montar el modal ──────────────────
+  useEffect(() => {
+    if (!areasDisponibles || areasDisponibles.length === 0) return
+    const userArea = (user as any)?.area_codigo as string | undefined
+    const rolArea: Record<string, string> = { admin_cliente: 'DIR', secretaria: 'SEC' }
+    const defaultArea = userArea ?? rolArea[user?.rol ?? ''] ?? ''
+    if (defaultArea && areasDisponibles.find(a => a.codigo === defaultArea)) {
+      handleAreaChange(defaultArea)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [areasDisponibles])
+
   // ── Auto-generar folio al seleccionar área ─────────────────────────────────
   const handleAreaChange = async (codigo: string) => {
     setAreaOrigen(codigo)
@@ -6111,7 +6123,14 @@ export default function GestionDocumental() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {docs?.filter(doc => {
+                  {docs?.slice().sort((a, b) => {
+                    const extractNum = (d: typeof a) => {
+                      const noOf = d.flujo === 'recibido' ? d.folio_respuesta : d.numero_control
+                      const seg = noOf ? noOf.split('/').slice(-2, -1)[0] : null
+                      return seg ? parseInt(seg, 10) : -1
+                    }
+                    return extractNum(b) - extractNum(a)
+                  }).filter(doc => {
                     const esR = doc.flujo === 'recibido'
                     const noOf = esR ? doc.folio_respuesta : doc.numero_control
                     const numFol = noOf ? (noOf.split('/').slice(-2, -1)[0] ?? '') : ''
