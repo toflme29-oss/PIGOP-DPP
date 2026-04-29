@@ -1,7 +1,7 @@
 from typing import List, Optional
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -42,6 +42,8 @@ class CRUDDocumento(CRUDBase[DocumentoOficial]):
         busqueda: Optional[str] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
+        solo_urgentes: bool = False,
+        incluir_respuestas: bool = False,
         skip: int = 0,
         limit: int = 100,
     ) -> List[DocumentoOficial]:
@@ -49,7 +51,17 @@ class CRUDDocumento(CRUDBase[DocumentoOficial]):
 
         if cliente_id:
             stmt = stmt.where(DocumentoOficial.cliente_id == str(cliente_id))
-        if flujo:
+        if incluir_respuestas:
+            # Emitidos directos + recibidos con folio de respuesta en estado para firma o firmado
+            stmt = stmt.where(
+                or_(
+                    DocumentoOficial.flujo == "emitido",
+                    (DocumentoOficial.flujo == "recibido")
+                    & DocumentoOficial.folio_respuesta.isnot(None)
+                    & DocumentoOficial.estado.in_(["respondido", "firmado", "archivado"]),
+                )
+            )
+        elif flujo:
             stmt = stmt.where(DocumentoOficial.flujo == flujo)
         if tipo:
             stmt = stmt.where(DocumentoOficial.tipo == tipo)
@@ -85,6 +97,8 @@ class CRUDDocumento(CRUDBase[DocumentoOficial]):
                 stmt = stmt.where(DocumentoOficial.creado_en <= hasta)
             except ValueError:
                 pass
+        if solo_urgentes:
+            stmt = stmt.where(DocumentoOficial.prioridad.in_(["urgente", "muy_urgente"]))
 
         stmt = stmt.order_by(DocumentoOficial.creado_en.desc()).offset(skip).limit(limit)
         result = await db.execute(stmt)
@@ -103,12 +117,23 @@ class CRUDDocumento(CRUDBase[DocumentoOficial]):
         busqueda: Optional[str] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
+        solo_urgentes: bool = False,
+        incluir_respuestas: bool = False,
     ) -> int:
         """Cuenta documentos con los mismos filtros que list_documentos."""
         stmt = select(func.count()).select_from(DocumentoOficial)
         if cliente_id:
             stmt = stmt.where(DocumentoOficial.cliente_id == str(cliente_id))
-        if flujo:
+        if incluir_respuestas:
+            stmt = stmt.where(
+                or_(
+                    DocumentoOficial.flujo == "emitido",
+                    (DocumentoOficial.flujo == "recibido")
+                    & DocumentoOficial.folio_respuesta.isnot(None)
+                    & DocumentoOficial.estado.in_(["respondido", "firmado", "archivado"]),
+                )
+            )
+        elif flujo:
             stmt = stmt.where(DocumentoOficial.flujo == flujo)
         if tipo:
             stmt = stmt.where(DocumentoOficial.tipo == tipo)
@@ -142,6 +167,8 @@ class CRUDDocumento(CRUDBase[DocumentoOficial]):
                 stmt = stmt.where(DocumentoOficial.creado_en <= hasta)
             except ValueError:
                 pass
+        if solo_urgentes:
+            stmt = stmt.where(DocumentoOficial.prioridad.in_(["urgente", "muy_urgente"]))
         result = await db.execute(stmt)
         return result.scalar() or 0
 

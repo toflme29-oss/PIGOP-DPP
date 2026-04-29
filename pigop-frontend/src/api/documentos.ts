@@ -75,6 +75,8 @@ export interface DocumentoListItem {
   documento_origen_id: string | null
   memorandum_orden_direccion: number | null
   has_borrador:     boolean
+  folio_respuesta:  string | null
+  fecha_respuesta:  string | null
   creado_en:        string
 }
 
@@ -89,8 +91,6 @@ export interface Documento extends DocumentoListItem {
   confianza_clasificacion: number | null
   regla_turno_codigo:    string | null
   borrador_respuesta:    string | null
-  folio_respuesta:       string | null
-  fecha_respuesta:       string | null
   referencia_elaboro:    string | null
   referencia_reviso:     string | null
   tabla_imagen_url:      string | null
@@ -393,6 +393,8 @@ export const documentosApi = {
     busqueda?:   string
     fecha_desde?: string
     fecha_hasta?: string
+    solo_urgentes?: boolean
+    incluir_respuestas?: boolean
     skip?: number
     limit?: number
   }): Promise<{ items: DocumentoListItem[]; total: number }> => {

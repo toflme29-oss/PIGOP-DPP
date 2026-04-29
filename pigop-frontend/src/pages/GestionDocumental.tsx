@@ -4,7 +4,7 @@ import { usePermissionsVersion } from '../hooks/usePermissionsVersion'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FolderOpen, Plus, Search, FileText, Trash2, Upload,
-  X, CheckCircle2, Clock,
+  X, CheckCircle2, Clock, SlidersHorizontal,
   Wand2, Send, AlertTriangle, Eye, Edit3, RotateCcw,
   ArrowRight, InboxIcon, SendIcon, Building2,
   Download, Shield, BookOpen, FileSignature,
@@ -33,11 +33,10 @@ import { uppsApi, type UPP } from '../api/upps'
 import { useAuth } from '../hooks/useAuth'
 import { Button } from '../components/ui/Button'
 import { PageSpinner } from '../components/ui/Spinner'
-import { formatDate, formatDateTime } from '../utils'
+import { formatDate, formatDateTime, localToday } from '../utils'
 import FirmaLoteWizard from './FirmaLoteWizard'
 import RegistroCertificado from './RegistroCertificado'
 import ControlOficios from './ControlOficios'
-import { useColumnResize } from '../hooks/useColumnResize'
 
 const GUINDA = '#911A3A'
 const TIPOS: TipoDocumento[] = [
@@ -298,8 +297,8 @@ function ModalRegistrarRecibido({
     remitente_nombre: '',
     remitente_cargo: '',
     remitente_dependencia: '',
-    fecha_documento: new Date().toISOString().slice(0, 10),
-    fecha_recibido: new Date().toISOString().slice(0, 10),
+    fecha_documento: localToday(),
+    fecha_recibido: localToday(),
     prioridad: 'normal',
     descripcion: '',
   })
@@ -1112,7 +1111,7 @@ function ModalNuevoEmitido({
     dependencia_destino: '',
     destinatario_nombre: '',
     destinatario_cargo: '',
-    fecha_documento: new Date().toISOString().slice(0, 10),
+    fecha_documento: localToday(),
     estado: 'borrador',
     referencia_elaboro: '',
     referencia_reviso: '',
@@ -1640,6 +1639,8 @@ function PanelRecibido({
   const canTurnar           = can('turnar')
   const canReasignar        = can('reasignar') || can('turnar')
   const canGenerarRespuesta = can('generar_resp')
+  // Secretaria puede responder cuando el oficio está turnado directamente a la Dirección
+  const canGenerarRespuestaEfectivo = canGenerarRespuesta || (isSecretaria && doc.area_turno === 'DIR')
   const canFirmar           = can('firmar')
   const canEnviarParaFirma  = can('enviar_firma')
   const canDescargarDocx    = can('descargar_docx')
@@ -1994,16 +1995,18 @@ function PanelRecibido({
                 <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Estado del trámite</p>
                 {canCambiarEstado && <div className="flex gap-1 flex-wrap justify-end">
                   {(['en_atencion', 'respondido', ...(!doc.requiere_respuesta ? ['de_conocimiento'] : [])] as string[]).map(e => {
-                    const sinTurno     = e === 'en_atencion' && !doc.area_turno_confirmada
-                    const sinRespuesta = e === 'respondido'  && doc.requiere_respuesta && !doc.borrador_respuesta
-                    const bloqueado    = sinTurno || sinRespuesta
+                    const sinTurno          = e === 'en_atencion' && !doc.area_turno_confirmada
+                    const sinRespuesta      = e === 'respondido'  && doc.requiere_respuesta && !doc.borrador_respuesta
+                    const secretariaSinDir  = e === 'en_atencion' && isSecretaria && doc.area_turno !== 'DIR'
+                    const bloqueado         = sinTurno || sinRespuesta || secretariaSinDir
                     return (
                       <button key={e}
                         onClick={() => estadoMutation.mutate(e)}
                         disabled={doc.estado === e || bloqueado}
                         title={
-                          sinTurno     ? 'Confirma primero el área de turno' :
-                          sinRespuesta ? 'Genera primero la respuesta en el tab Respuesta' :
+                          secretariaSinDir ? 'Solo puedes poner en atención oficios turnados directamente a Dirección' :
+                          sinTurno         ? 'Confirma primero el área de turno' :
+                          sinRespuesta     ? 'Genera primero la respuesta en el tab Respuesta' :
                           undefined
                         }
                         className={clsx(
@@ -2536,16 +2539,18 @@ function PanelRecibido({
                 <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Estado del trámite</p>
                 {canCambiarEstado && <div className="flex gap-1 flex-wrap justify-end">
                   {(['en_atencion', 'respondido', ...(!doc.requiere_respuesta ? ['de_conocimiento'] : [])] as string[]).map(e => {
-                    const sinTurno     = e === 'en_atencion' && !doc.area_turno_confirmada
-                    const sinRespuesta = e === 'respondido'  && doc.requiere_respuesta && !doc.borrador_respuesta
-                    const bloqueado    = sinTurno || sinRespuesta
+                    const sinTurno         = e === 'en_atencion' && !doc.area_turno_confirmada
+                    const sinRespuesta     = e === 'respondido'  && doc.requiere_respuesta && !doc.borrador_respuesta
+                    const secretariaSinDir = e === 'en_atencion' && isSecretaria && doc.area_turno !== 'DIR'
+                    const bloqueado        = sinTurno || sinRespuesta || secretariaSinDir
                     return (
                       <button key={e}
                         onClick={() => estadoMutation.mutate(e)}
                         disabled={doc.estado === e || bloqueado}
                         title={
-                          sinTurno     ? 'Confirma primero el área de turno' :
-                          sinRespuesta ? 'Genera primero la respuesta' :
+                          secretariaSinDir ? 'Solo puedes poner en atención oficios turnados directamente a Dirección' :
+                          sinTurno         ? 'Confirma primero el área de turno' :
+                          sinRespuesta     ? 'Genera primero la respuesta' :
                           undefined
                         }
                         className={clsx(
@@ -2568,7 +2573,7 @@ function PanelRecibido({
             </div>
 
             {/* ── Datos del oficio de respuesta — al inicio en modo flotante ── */}
-            {hideDocumentVisor && canGenerarRespuesta && (
+            {hideDocumentVisor && canGenerarRespuestaEfectivo && (
               <div className="bg-gray-50 rounded-lg p-3 space-y-2">
                 <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Datos del oficio de respuesta</p>
                 <div>
@@ -2628,7 +2633,7 @@ function PanelRecibido({
             )}
 
             {/* ── Generación de respuesta con IA (solo Área + Director + Super) ── */}
-            {canGenerarRespuesta && (
+            {canGenerarRespuestaEfectivo && (
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
                 <div className="flex items-center gap-2">
                   <Wand2 size={14} className="text-blue-600" />
@@ -2651,7 +2656,7 @@ function PanelRecibido({
             )}
 
             {/* ── Cargar documento de referencia para IA ── */}
-            {canGenerarRespuesta && (
+            {canGenerarRespuestaEfectivo && (
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
                 <div className="flex items-center gap-2">
                   <Upload size={14} className="text-blue-600" />
@@ -2717,8 +2722,8 @@ function PanelRecibido({
               </div>
             )}
 
-            {/* Secretaría: solo puede ver el borrador, no generar */}
-            {isSecretaria && !doc.borrador_respuesta && (
+            {/* Secretaría: mensaje informativo solo cuando NO está turnado a DIR */}
+            {isSecretaria && !doc.borrador_respuesta && doc.area_turno !== 'DIR' && (
               <div className="text-center py-4 text-gray-400">
                 <p className="text-xs">El área responsable generará la respuesta al oficio.</p>
               </div>
@@ -2728,7 +2733,7 @@ function PanelRecibido({
             {doc.borrador_respuesta && (
               <>
                 {/* Datos del oficio de respuesta — solo en vista normal (en flotante aparece arriba) */}
-                {canGenerarRespuesta && !hideDocumentVisor && (
+                {canGenerarRespuestaEfectivo && !hideDocumentVisor && (
                   <div className="bg-gray-50 rounded-lg p-3 space-y-2">
                     <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Datos del oficio de respuesta</p>
                     <div>
@@ -2788,7 +2793,7 @@ function PanelRecibido({
                 )}
 
                 {/* Tabla/cuadro para el DOCX: imagen, Excel o pegado desde clipboard */}
-                {canGenerarRespuesta && (
+                {canGenerarRespuestaEfectivo && (
                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
                     <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">Tabla/Cuadro para el oficio (opcional)</p>
                     <p className="text-[9px] text-amber-600">
@@ -2885,7 +2890,7 @@ function PanelRecibido({
 
                 {/* ── Fila horizontal: Editar borrador | Descargar oficio | Firmar documento ── */}
                 <div className="flex gap-2">
-                  {canGenerarRespuesta && doc.borrador_respuesta && (
+                  {canGenerarRespuestaEfectivo && doc.borrador_respuesta && (
                     <button onClick={() => { setEditBorrador(prev => !prev); setBorradorText(doc.borrador_respuesta ?? '') }}
                       className={clsx(
                         'flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium border transition-colors',
@@ -2943,7 +2948,7 @@ function PanelRecibido({
                 </div>
 
                 {/* Editor expandible — aparece bajo la fila de botones */}
-                {editBorrador && canGenerarRespuesta && (
+                {editBorrador && canGenerarRespuestaEfectivo && (
                   <div className="space-y-2">
                     <textarea rows={10} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs resize-none focus:ring-1"
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
@@ -3320,8 +3325,8 @@ function PanelRecibido({
                   </button>
                 )}
               </div>
-              {/* Visto Bueno del Subdirector (u otro mando medio autorizado) */}
-              {(!hideDocumentVisor || tab === 'ocr') && can('visto_bueno') && !doc.visto_bueno_subdirector && (
+              {/* Visto Bueno del Subdirector — no aplica cuando está turnado a Dirección */}
+              {(!hideDocumentVisor || tab === 'ocr') && can('visto_bueno') && !doc.visto_bueno_subdirector && doc.area_turno !== 'DIR' && (
                 <button onClick={async () => {
                   try { await documentosApi.registrarVistoBueno(doc.id); invalidate() } catch (e) { window.alert('Error (Visto Bueno): ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo')) }
                 }}
@@ -3329,7 +3334,7 @@ function PanelRecibido({
                   <CheckCircle2 size={12} /> Dar Visto Bueno
                 </button>
               )}
-              {(!hideDocumentVisor || tab === 'ocr') && doc.visto_bueno_subdirector && (
+              {(!hideDocumentVisor || tab === 'ocr') && doc.visto_bueno_subdirector && doc.area_turno !== 'DIR' && (
                 <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg">
                   <CheckCircle2 size={12} className="text-green-600" />
                   <span className="text-[10px] text-green-700 font-medium">Visto Bueno del Subdirector registrado</span>
@@ -4710,6 +4715,10 @@ export default function GestionDocumental() {
   const [busquedaDebounced, setBusquedaDebounced] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
   const [filtroArea, setFiltroArea] = useState('')
+  const [filtroUrgente, setFiltroUrgente] = useState(false)
+  const [showColFiltros, setShowColFiltros] = useState(false)
+  const [colFiltros, setColFiltros] = useState({ fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' })
+  const setColFiltro = (k: keyof typeof colFiltros, v: string) => setColFiltros(p => ({ ...p, [k]: v }))
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
   const [fechaDesdeDebounced, setFechaDesdeDebounced] = useState('')
@@ -4765,13 +4774,15 @@ export default function GestionDocumental() {
   const [pageSize, setPageSize] = useState(15)
 
   const params = {
-    flujo:      tab === 'memorandums' ? 'recibido' : tab === 'recibidos' ? 'recibido' : 'emitido',
-    tipo:       tab === 'memorandums' ? 'memorandum' as string : undefined,
-    busqueda:   busquedaDebounced || undefined,
-    estado:     filtroEstado || undefined,
-    area_turno: filtroArea || undefined,
-    fecha_desde: fechaDesdeDebounced || undefined,
-    fecha_hasta: fechaHastaDebounced || undefined,
+    flujo:               tab === 'memorandums' ? 'recibido' : tab === 'recibidos' ? 'recibido' : 'emitido',
+    incluir_respuestas:  tab === 'emitidos' ? true : undefined,
+    tipo:                tab === 'memorandums' ? 'memorandum' as string : undefined,
+    busqueda:            busquedaDebounced || undefined,
+    estado:              filtroEstado || undefined,
+    area_turno:          filtroArea || undefined,
+    solo_urgentes:       filtroUrgente || undefined,
+    fecha_desde:         fechaDesdeDebounced || undefined,
+    fecha_hasta:         fechaHastaDebounced || undefined,
     skip:  page * pageSize,
     limit: pageSize,
   }
@@ -4799,9 +4810,10 @@ export default function GestionDocumental() {
   // Query separada SIN paginación para calcular métricas reales del tab
   // (los contadores deben reflejar carga TOTAL del usuario, no solo la página)
   const paramsMetricas = {
-    flujo: params.flujo,
-    tipo:  params.tipo,
-    limit: 500,  // tope defensivo
+    flujo:              params.flujo,
+    incluir_respuestas: params.incluir_respuestas,
+    tipo:               params.tipo,
+    limit: 500,
   }
   const { data: metricasResult } = useQuery({
     queryKey: ['documentos-metricas', paramsMetricas],
@@ -4813,20 +4825,13 @@ export default function GestionDocumental() {
   const docsMetricas = metricasResult?.items ?? []
 
   // Reset page cuando cambian filtros
-  useEffect(() => { setPage(0) }, [tab, busquedaDebounced, filtroEstado, filtroArea, fechaDesdeDebounced, fechaHastaDebounced, pageSize])
+  useEffect(() => { setPage(0) }, [tab, busquedaDebounced, filtroEstado, filtroArea, filtroUrgente, fechaDesdeDebounced, fechaHastaDebounced, pageSize])
 
-  // Columnas redimensionables
-  const { widths: colW, onMouseDown: onColResize } = useColumnResize('recibidos-v2', [
-    { key: 'oficio', defaultWidth: 130, minWidth: 80 },
-    { key: 'asunto', defaultWidth: 220, minWidth: 120 },
-    { key: 'remitente', defaultWidth: 130, minWidth: 80 },
-    { key: 'area', defaultWidth: 110, minWidth: 60 },
-    { key: 'upp', defaultWidth: 180, minWidth: 90 },
-    { key: 'estado', defaultWidth: 100, minWidth: 70 },
-    { key: 'check', defaultWidth: 80, minWidth: 60 },
-    { key: 'atencion', defaultWidth: 90, minWidth: 60 },
-    { key: 'fecha', defaultWidth: 90, minWidth: 60 },
-  ])
+  // Anchos fijos de columnas
+  const colW: Record<string, number> = {
+    fecha: 80, oficio: 130, upp: 170, remitente: 180,
+    asunto: 220, area: 180, atencion: 80, check: 80, estado: 80,
+  }
 
   const { data: areas = [] } = useQuery({
     queryKey: ['areas-dpp'],
@@ -5030,12 +5035,10 @@ export default function GestionDocumental() {
     !['firmado', 'archivado', 'de_conocimiento'].includes(d.estado)
   ).length
 
-  // Pendientes reales: turnados + en_atencion que NO están firmados ni archivados ni despachados
-  // Excluye oficios informativos (requiere_respuesta=false si ya están en de_conocimiento)
+  // Pendientes: solo estado "turnado" (coincide con el filtro que aplica la tarjeta)
   const pendientesReales = docsMetricas.filter(d =>
-    ['turnado', 'en_atencion'].includes(d.estado) &&
-    !d.firmado_digitalmente &&
-    d.requiere_respuesta !== false
+    d.estado === 'turnado' &&
+    !d.firmado_digitalmente
   ).length
 
   if (isLoading) return <PageSpinner />
@@ -5059,15 +5062,51 @@ export default function GestionDocumental() {
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-4 pt-4 pb-0">
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#FDF2F4' }}>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#FDF2F4' }}>
                 <FolderOpen size={16} style={{ color: GUINDA }} />
               </div>
-              <div>
+              <div className="flex-shrink-0">
                 <h1 className="text-sm font-bold text-gray-900">Gestión Documental</h1>
                 <p className="text-[10px] text-gray-500">Correspondencia institucional DPP</p>
               </div>
             </div>
+            {tab === 'recibidos' && (
+              <div className="flex items-center gap-1.5 flex-1 justify-center px-4">
+                {([
+                  { label: 'Recibidos',   val: porEstado('recibido'),    color: '#3b82f6', filtro: 'recibido',    urgente: false, title: 'Oficios nuevos sin turno' },
+                  { label: 'Pendientes',  val: pendientesReales,         color: '#f59e0b', filtro: 'turnado',     urgente: false, title: 'Turnados o en atención' },
+                  { label: 'En atención', val: porEstado('en_atencion'), color: '#a855f7', filtro: 'en_atencion', urgente: false, title: 'En atención por el área' },
+                  { label: 'Firmados',    val: porEstado('firmado'),     color: '#10b981', filtro: 'firmado',     urgente: false, title: 'Firmados por el Director' },
+                  { label: 'Devueltos',   val: porEstado('devuelto'),    color: '#dc2626', filtro: 'devuelto',    urgente: false, title: 'Devueltos para corrección' },
+                  { label: 'Urgentes',    val: urgentes,                 color: '#ef4444', filtro: '',            urgente: true,  title: 'Prioridad alta o urgente' },
+                ] as { label: string; val: number; color: string; filtro: string; urgente: boolean; title: string }[]).map(({ label, val, color, filtro, urgente: esUrgente, title }) => {
+                  const activo = esUrgente ? filtroUrgente : filtroEstado === filtro
+                  return (
+                    <button
+                      key={label}
+                      title={title}
+                      onClick={() => {
+                        if (esUrgente) {
+                          setFiltroUrgente(p => !p)
+                          setFiltroEstado('')
+                        } else {
+                          setFiltroEstado(activo ? '' : filtro)
+                          setFiltroUrgente(false)
+                        }
+                      }}
+                      className="flex flex-col items-center px-3 py-1 rounded-md transition-colors min-w-[52px]"
+                      style={{
+                        backgroundColor: activo ? color + '22' : '#f9fafb',
+                        border: `1px solid ${activo ? color : '#e5e7eb'}`,
+                      }}>
+                      <span className="text-sm font-bold leading-tight" style={{ color }}>{val}</span>
+                      <span className="text-[9px] leading-tight" style={{ color: activo ? color : '#6b7280' }}>{label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             <div className="flex items-center gap-2">
               {/* Indicador e.firma */}
               {canVerCert && (
@@ -5130,7 +5169,7 @@ export default function GestionDocumental() {
           <div className="flex gap-0">
             {([['recibidos', 'Correspondencia recibida', InboxIcon], ['emitidos', 'Documentos emitidos', SendIcon], ['memorandums', 'MEMORANDUMS', FileText], ['oficios', 'Control de Oficios', Mail]] as const).map(([key, label, Icon]) => (
               <button key={key}
-                onClick={() => { setTab(key); setSelectedId(null); setFiltroEstado(''); setFiltroArea('') }}
+                onClick={() => { setTab(key); setSelectedId(null); setFiltroEstado(''); setFiltroArea(''); setFiltroUrgente(false); setColFiltros({ fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' }) }}
                 className={clsx(
                   'flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors',
                   tab === key ? 'border-[#911A3A] text-[#911A3A]' : 'border-transparent text-gray-500 hover:text-gray-700',
@@ -5298,24 +5337,8 @@ export default function GestionDocumental() {
           </div>
         </>) : (<>
 
-        {/* Métricas rápidas */}
-        {tab === 'recibidos' ? (
-          <div className="grid grid-cols-6 gap-2 px-4 py-2 bg-white border-b border-gray-100">
-            {[
-              { label: 'Recibidos',   val: porEstado('recibido'),    color: '#3b82f6', title: 'Oficios nuevos sin turno' },
-              { label: 'Pendientes',  val: pendientesReales,         color: '#f59e0b', title: 'Turnados o en atención — carga real pendiente' },
-              { label: 'En atención', val: porEstado('en_atencion'), color: '#a855f7', title: 'Recibidos por el área responsable' },
-              { label: 'Firmados',    val: porEstado('firmado'),     color: '#10b981', title: 'Ya firmados por el Director' },
-              { label: 'Devueltos',   val: porEstado('devuelto'),    color: '#dc2626', title: 'Devueltos al área para corrección' },
-              { label: 'Urgentes',    val: urgentes,                 color: '#ef4444', title: 'Oficios con prioridad alta/urgente' },
-            ].map(({ label, val, color, title }) => (
-              <div key={label} className="text-center" title={title}>
-                <p className="text-lg font-bold" style={{ color }}>{val}</p>
-                <p className="text-[9px] text-gray-500 leading-tight">{label}</p>
-              </div>
-            ))}
-          </div>
-        ) : (
+        {/* Métricas emitidos */}
+        {tab !== 'recibidos' && (
           <div className="px-4 py-2 bg-white border-b border-gray-100 space-y-2">
             <div className="grid grid-cols-3 gap-2">
               {[
@@ -5339,7 +5362,7 @@ export default function GestionDocumental() {
                 const blob = await res.blob()
                 const a = document.createElement('a')
                 a.href = URL.createObjectURL(blob)
-                a.download = `emitidos_${new Date().toISOString().slice(0, 10)}.xlsx`
+                a.download = `emitidos_${localToday()}.xlsx`
                 a.click()
               } catch { window.alert('Error al exportar a Excel') }
             }}
@@ -5406,6 +5429,21 @@ export default function GestionDocumental() {
               )
             })()}
 
+            {/* Alerta secretaria: oficios turnados a Dirección pendientes de respuesta */}
+            {(() => {
+              const turnadosDirSecretaria = docs?.filter(d =>
+                d.area_turno === 'DIR' && ['turnado', 'en_atencion'].includes(d.estado)
+              ) ?? []
+              if (!isSecretaria || turnadosDirSecretaria.length === 0) return null
+              return (
+                <button onClick={() => { setFiltroArea('DIR'); setFiltroEstado('') }}
+                  className="w-full flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-200 rounded-lg text-left hover:bg-purple-100 transition-colors">
+                  <InboxIcon size={14} className="text-purple-600 flex-shrink-0" />
+                  <span className="text-xs font-medium text-purple-700">{turnadosDirSecretaria.length} oficio{turnadosDirSecretaria.length !== 1 ? 's' : ''} turnado{turnadosDirSecretaria.length !== 1 ? 's' : ''} a Dirección — requiere{turnadosDirSecretaria.length !== 1 ? 'n' : ''} respuesta</span>
+                </button>
+              )
+            })()}
+
             {/* Alerta director: oficios de conocimiento turnados a Dirección */}
             {(() => {
               const conocimientoDireccion = docs?.filter(d =>
@@ -5438,7 +5476,7 @@ export default function GestionDocumental() {
 
             {/* Alerta subdirectores: pendientes de visto bueno */}
             {(() => {
-              const pendientesVB = docs?.filter(d => d.estado === 'respondido' && !d.visto_bueno_subdirector) ?? []
+              const pendientesVB = docs?.filter(d => d.estado === 'respondido' && !d.visto_bueno_subdirector && d.area_turno !== 'DIR') ?? []
               if (user?.rol !== 'subdirector' || pendientesVB.length === 0) return null
               return (
                 <button onClick={() => setFiltroEstado('respondido')}
@@ -5495,13 +5533,32 @@ export default function GestionDocumental() {
                 {areas.map(a => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.titular.split(' ')[0]}</option>)}
               </select>
             )}
+            {filtroUrgente && (
+              <button onClick={() => setFiltroUrgente(false)}
+                title="Quitar filtro de urgentes"
+                className="flex items-center gap-1 px-2 py-1.5 text-xs border border-red-300 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors">
+                <span className="font-medium">Urgentes</span>
+                <X size={10} />
+              </button>
+            )}
             <button onClick={() => setShowDateFilters(!showDateFilters)}
+              title="Filtrar por fecha"
               className={clsx('px-2 py-1.5 text-xs border rounded-lg transition-colors',
                 showDateFilters || fechaDesde || fechaHasta
                   ? 'border-[#911A3A]/30 bg-[#FDF2F4] text-[#911A3A]'
                   : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50')}>
               <Clock size={12} />
             </button>
+            {tab === 'recibidos' && (
+              <button onClick={() => { setShowColFiltros(p => !p); if (showColFiltros) setColFiltros({ fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' }) }}
+                title="Filtros por columna"
+                className={clsx('px-2 py-1.5 text-xs border rounded-lg transition-colors',
+                  showColFiltros || Object.values(colFiltros).some(Boolean)
+                    ? 'border-[#911A3A]/30 bg-[#FDF2F4] text-[#911A3A]'
+                    : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50')}>
+                <SlidersHorizontal size={12} />
+              </button>
+            )}
           </div>
           {/* Filtro de fechas expandible */}
           {showDateFilters && (
@@ -5519,30 +5576,36 @@ export default function GestionDocumental() {
             </div>
           )}
           {/* Contador de resultados */}
-          {docs && (busquedaDebounced || filtroEstado || filtroArea || fechaDesde || fechaHasta) && (
-            <p className="text-[10px] text-gray-500">
-              {docs.length} documento{docs.length !== 1 ? 's' : ''} encontrado{docs.length !== 1 ? 's' : ''}
-              {busquedaDebounced && <> para "<strong>{busquedaDebounced}</strong>"</>}
-            </p>
-          )}
+          {docs && (busquedaDebounced || filtroEstado || filtroArea || filtroUrgente || fechaDesde || fechaHasta) && (() => {
+            const countVisible = filtroUrgente
+              ? docs.filter(d => d.prioridad !== 'normal' && d.prioridad != null && !['firmado', 'archivado', 'de_conocimiento'].includes(d.estado)).length
+              : docs.length
+            return (
+              <p className="text-[10px] text-gray-500">
+                {countVisible} documento{countVisible !== 1 ? 's' : ''} encontrado{countVisible !== 1 ? 's' : ''}
+                {busquedaDebounced && <> para "<strong>{busquedaDebounced}</strong>"</>}
+                {filtroUrgente && !busquedaDebounced && <> — <strong>urgentes</strong></>}
+              </p>
+            )
+          })()}
         </div>
 
         {/* Lista */}
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
+        <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-2">
           {!docs || docs.length === 0 ? (
             <div className="text-center py-16">
               <div className="w-12 h-12 rounded-xl mx-auto mb-3 flex items-center justify-center" style={{ backgroundColor: '#FDF2F4' }}>
                 {tab === 'recibidos' ? <InboxIcon size={22} style={{ color: GUINDA }} /> : <SendIcon size={22} style={{ color: GUINDA }} />}
               </div>
               <p className="text-sm font-semibold text-gray-700 mb-1">
-                {busqueda || filtroEstado || filtroArea ? 'Sin resultados' : tab === 'recibidos' ? 'Sin correspondencia recibida' : 'Sin documentos emitidos'}
+                {busqueda || filtroEstado || filtroArea || filtroUrgente ? 'Sin resultados' : tab === 'recibidos' ? 'Sin correspondencia recibida' : 'Sin documentos emitidos'}
               </p>
               <p className="text-xs text-gray-500 mb-3">
-                {busqueda || filtroEstado || filtroArea
+                {busqueda || filtroEstado || filtroArea || filtroUrgente
                   ? 'Ajusta los filtros de búsqueda'
                   : tab === 'recibidos' ? 'Registra el primer oficio recibido' : 'Crea el primer documento emitido'}
               </p>
-              {!busqueda && !filtroEstado && !filtroArea && (
+              {!busqueda && !filtroEstado && !filtroArea && !filtroUrgente && (
                 <Button size="sm" onClick={() => tab === 'recibidos' ? setShowModalRecibido(true) : setShowModalEmitido(true)}>
                   <Plus size={13} />
                   {tab === 'recibidos' ? 'Registrar recibido' : 'Nuevo emitido'}
@@ -5585,11 +5648,11 @@ export default function GestionDocumental() {
               })()}
 
               {/* Tabla funcional de recibidos */}
-              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="bg-white rounded-xl border border-gray-200">
                 <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
-                  <thead>
+                  <thead className="sticky top-0 z-10" style={{ backgroundColor: '#911A3A' }}>
                     <tr className="text-white" style={{ backgroundColor: '#911A3A' }}>
-                      {multiSelectMode && <th className="px-2 py-2.5 w-8" />}
+                      {multiSelectMode && <th className="px-2 py-2.5 w-8" style={{ backgroundColor: '#911A3A' }} />}
                       {([
                         ['fecha', 'Fecha', 'left'],
                         ['oficio', 'No. Oficio', 'left'],
@@ -5601,21 +5664,110 @@ export default function GestionDocumental() {
                         ['check', 'V°B° Sub.', 'center'],
                         ['estado', 'Estado', 'center'],
                       ] as const).map(([key, label, align]) => (
-                        <th key={key} className={`px-3 py-2.5 text-${align} text-xs font-semibold relative`}
-                          style={{ width: colW[key], minWidth: 50 }}>
+                        <th key={key} className={`px-3 py-2.5 text-${align} text-xs font-semibold`}
+                          style={{ width: colW[key], minWidth: 50, backgroundColor: '#911A3A' }}>
                           {label}
-                          <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-white/30 active:bg-white/50"
-                            onMouseDown={e => onColResize(key, e)} />
                         </th>
                       ))}
-                      <th className="px-3 py-2.5 text-center text-xs font-semibold">Acciones</th>
+                      <th className="px-3 py-2.5 text-center text-xs font-semibold" style={{ width: 90, backgroundColor: '#911A3A' }}>Acciones</th>
+                    </tr>
+                    {/* Fila de filtros por columna */}
+                    <tr className={showColFiltros ? 'bg-[#7a1530]' : 'hidden'}>
+                      {multiSelectMode && <th className="px-2 py-1 w-8" />}
+                      {/* Fecha */}
+                      <th className="px-1.5 py-1" style={{ width: colW['fecha'] }}>
+                        <input type="text" placeholder="ej: 28, abr, 2026" value={colFiltros.fecha}
+                          onChange={e => setColFiltro('fecha', e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                      </th>
+                      {/* No. Oficio */}
+                      <th className="px-1.5 py-1" style={{ width: colW['oficio'] }}>
+                        <input type="text" placeholder="Buscar…" value={colFiltros.oficio}
+                          onChange={e => setColFiltro('oficio', e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                      </th>
+                      {/* UPP */}
+                      <th className="px-1.5 py-1" style={{ width: colW['upp'] }}>
+                        <input type="text" placeholder="Buscar…" value={colFiltros.upp}
+                          onChange={e => setColFiltro('upp', e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                      </th>
+                      {/* Remitente */}
+                      <th className="px-1.5 py-1" style={{ width: colW['remitente'] }}>
+                        <input type="text" placeholder="Buscar…" value={colFiltros.remitente}
+                          onChange={e => setColFiltro('remitente', e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                      </th>
+                      {/* Asunto */}
+                      <th className="px-1.5 py-1" style={{ width: colW['asunto'] }}>
+                        <input type="text" placeholder="Buscar…" value={colFiltros.asunto}
+                          onChange={e => setColFiltro('asunto', e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                      </th>
+                      {/* Área */}
+                      <th className="px-1.5 py-1" style={{ width: colW['area'] }}>
+                        <input type="text" placeholder="Buscar…" value={colFiltros.area}
+                          onChange={e => setColFiltro('area', e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                      </th>
+                      {/* Atención — sin filtro */}
+                      <th className="px-1.5 py-1" style={{ width: colW['atencion'] }} />
+                      {/* V°B° — sin filtro */}
+                      <th className="px-1.5 py-1" style={{ width: colW['check'] }} />
+                      {/* Estado — select */}
+                      <th className="px-1.5 py-1" style={{ width: colW['estado'] }}>
+                        <select value={colFiltros.estado}
+                          onChange={e => setColFiltro('estado', e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          className="w-full px-1 py-0.5 text-[9px] rounded bg-white/15 text-white border border-white/20 focus:outline-none focus:bg-white/25"
+                          style={{ colorScheme: 'dark' }}>
+                          <option value="" className="text-gray-900 bg-white">Todos</option>
+                          {Object.entries(ESTADO_RECIBIDO_CONFIG).map(([k, v]) => (
+                            <option key={k} value={k} className="text-gray-900 bg-white">{v.label}</option>
+                          ))}
+                        </select>
+                      </th>
+                      {/* Acciones — botón limpiar */}
+                      <th className="px-1.5 py-1 text-center">
+                        {Object.values(colFiltros).some(Boolean) && (
+                          <button
+                            onClick={() => setColFiltros({ fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' })}
+                            title="Limpiar filtros de columna"
+                            className="text-[9px] text-white/70 hover:text-white underline">
+                            Limpiar
+                          </button>
+                        )}
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {docs.map(doc => {
+                    {docs.filter(doc => {
+                      const fechaIso = doc.fecha_recibido || doc.creado_en?.slice(0, 10) || ''
+                      const fechaDisplay = formatDate(fechaIso).toLowerCase()
+                      const uppLabel = (formatUpp(doc.upp_solicitante_codigo, doc.upp_solicitante, doc.remitente_dependencia) || doc.remitente_dependencia || doc.upp_solicitante || '').toLowerCase()
+                      const area = (doc.area_turno_nombre || '').toLowerCase()
+                      const cf = colFiltros
+                      const pasaUrgente = !filtroUrgente || (doc.prioridad !== 'normal' && doc.prioridad != null && !['firmado', 'archivado', 'de_conocimiento'].includes(doc.estado))
+                      return (
+                        pasaUrgente &&
+                        (!cf.fecha     || fechaDisplay.includes(cf.fecha.toLowerCase()) || fechaIso.includes(cf.fecha)) &&
+                        (!cf.oficio    || (doc.numero_oficio_origen || '').toLowerCase().includes(cf.oficio.toLowerCase())) &&
+                        (!cf.upp       || uppLabel.includes(cf.upp.toLowerCase())) &&
+                        (!cf.remitente || (doc.remitente_nombre || '').toLowerCase().includes(cf.remitente.toLowerCase())) &&
+                        (!cf.asunto    || (doc.asunto || '').toLowerCase().includes(cf.asunto.toLowerCase())) &&
+                        (!cf.area      || area.includes(cf.area.toLowerCase())) &&
+                        (!cf.estado    || doc.estado === cf.estado)
+                      )
+                    }).map(doc => {
                       const cfg = ESTADO_RECIBIDO_CONFIG[doc.estado as keyof typeof ESTADO_RECIBIDO_CONFIG]
                       const canSelect = (doc.estado === 'en_atencion' || doc.estado === 'respondido') && doc.has_borrador === true && !doc.firmado_digitalmente
-                      const isToday = doc.fecha_recibido === new Date().toISOString().slice(0, 10) || doc.creado_en?.slice(0, 10) === new Date().toISOString().slice(0, 10)
+                      const isToday = doc.fecha_recibido === localToday() || doc.creado_en?.slice(0, 10) === localToday()
                       return (
                         <tr key={doc.id}
                           onClick={() => {
@@ -5656,10 +5808,12 @@ export default function GestionDocumental() {
                           </td>
                           {/* No. Oficio */}
                           <td className="px-3 py-2.5">
-                            <div className="flex items-center gap-1.5">
-                              <PrioridadBadge prioridad={doc.prioridad} />
-                              <span className="font-mono text-[10px] text-gray-600 truncate max-w-[120px]">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="font-mono text-[10px] text-gray-600 truncate min-w-0 flex-1">
                                 {doc.numero_oficio_origen || '—'}
+                              </span>
+                              <span className="flex-shrink-0">
+                                <PrioridadBadge prioridad={doc.prioridad} />
                               </span>
                             </div>
                           </td>
@@ -5685,20 +5839,23 @@ export default function GestionDocumental() {
                           </td>
                           {/* Remitente (quien firma) */}
                           <td className="px-3 py-2.5">
-                            <p className="text-[10px] text-gray-600 truncate max-w-[120px]" title={doc.remitente_nombre || ''}>
+                            <p className="text-[10px] text-gray-600 truncate" title={doc.remitente_nombre || ''}>
                               {doc.remitente_nombre || '—'}
                             </p>
                             {doc.remitente_cargo && (
-                              <p className="text-[9px] text-gray-400 truncate max-w-[120px]">{doc.remitente_cargo}</p>
+                              <p className="text-[9px] text-gray-400 truncate">{doc.remitente_cargo}</p>
                             )}
                           </td>
                           {/* Asunto */}
                           <td className="px-3 py-2.5">
-                            <p className="text-xs font-medium text-gray-900 truncate max-w-[200px] leading-tight">{doc.asunto}</p>
+                            <p className="text-xs font-bold text-gray-900 leading-tight line-clamp-2">{doc.asunto}</p>
+                            {doc.dependencia_origen && (
+                              <p className="text-[9px] text-gray-400 truncate mt-0.5">{doc.dependencia_origen}</p>
+                            )}
                           </td>
                           {/* Área */}
                           <td className="px-3 py-2.5">
-                            <p className="text-[10px] text-gray-500 truncate max-w-[100px]">
+                            <p className="text-[10px] text-gray-500 truncate">
                               {doc.area_turno_nombre ? doc.area_turno_nombre.replace(/^(Departamento|Subdirección|Dirección)\s+de\s+/i, '') : '—'}
                             </p>
                           </td>
@@ -5706,9 +5863,11 @@ export default function GestionDocumental() {
                           <td className="px-3 py-2.5">
                             <SemaforoAtencion fecha={doc.fecha_limite} estado={doc.estado} />
                           </td>
-                          {/* V°B° Subdirector */}
+                          {/* V°B° Subdirector — no aplica para turnos directos a DIR */}
                           <td className="px-3 py-2.5 text-center">
-                            {doc.visto_bueno_subdirector ? (
+                            {doc.area_turno === 'DIR' ? (
+                              <span className="text-[10px] text-gray-300">—</span>
+                            ) : doc.visto_bueno_subdirector ? (
                               <span className="inline-flex items-center justify-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium bg-green-50 text-green-700 border border-green-200 whitespace-nowrap" title="Visto bueno del Subdirector registrado">
                                 <CheckCircle2 size={12} /> V°B°
                               </span>
@@ -5851,36 +6010,68 @@ export default function GestionDocumental() {
               <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
                 <thead>
                   <tr className="text-white" style={{ backgroundColor: '#911A3A' }}>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 80 }}>Tipo</th>
                     <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 130 }}>No. Oficio</th>
-                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 200 }}>Asunto</th>
-                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 120 }}>Área</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 190 }}>Asunto</th>
                     <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 130 }}>Destinatario</th>
                     <th className="px-3 py-2.5 text-center text-xs font-semibold" style={{ width: 90 }}>Estado</th>
                     <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 80 }}>Fecha</th>
-                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 180 }}>UPP</th>
-                    <th className="px-3 py-2.5 text-center text-xs font-semibold" style={{ width: 90 }}>Acuse</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 160 }}>UPP / Dependencia</th>
+                    <th className="px-3 py-2.5 text-center text-xs font-semibold" style={{ width: 80 }}>Acuse</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {docs?.map(doc => {
-                    const cfg = ESTADO_EMITIDO_CONFIG[doc.estado as keyof typeof ESTADO_EMITIDO_CONFIG]
+                    const esRespuesta = doc.flujo === 'recibido'
+                    const cfg = esRespuesta
+                      ? ESTADO_RECIBIDO_CONFIG[doc.estado as keyof typeof ESTADO_RECIBIDO_CONFIG]
+                      : ESTADO_EMITIDO_CONFIG[doc.estado as keyof typeof ESTADO_EMITIDO_CONFIG]
+                    // fecha_respuesta puede ser texto libre ("16 de marzo de 2026") o ISO
+                    const fechaDocRaw = esRespuesta
+                      ? (doc.fecha_respuesta || doc.fecha_documento || null)
+                      : (doc.fecha_documento || null)
+                    const isIsoFecha = fechaDocRaw ? /^\d{4}-\d{2}-\d{2}/.test(fechaDocRaw) : false
+                    const noOficio = esRespuesta ? doc.folio_respuesta : doc.numero_control
+                    const destinatario = esRespuesta
+                      ? (doc.remitente_nombre || doc.remitente_dependencia)
+                      : (doc.destinatario_nombre || doc.dependencia_destino)
+                    const uppDest = esRespuesta
+                      ? (doc.remitente_dependencia || doc.upp_solicitante)
+                      : (doc.dependencia_destino || doc.upp_solicitante)
                     return (
                       <tr key={doc.id}
-                        onClick={() => setSelectedId(doc.id === selectedId ? null : doc.id)}
+                        onClick={() => {
+                          if (esRespuesta) {
+                            setFloatingDocTab('ocr'); setFloatingActiveTab('ocr'); setFloatingDocId(doc.id)
+                          } else {
+                            setSelectedId(doc.id === selectedId ? null : doc.id)
+                          }
+                        }}
                         className={clsx('cursor-pointer transition-colors', doc.id === selectedId ? 'bg-[#FDF8F9]' : 'hover:bg-gray-50')}>
                         <td className="px-3 py-2.5">
-                          <span className="font-mono text-[10px] text-gray-600 truncate block max-w-[120px]">
-                            {doc.numero_control || '—'}
+                          {esRespuesta ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+                              <CornerUpLeft size={9} /> Respuesta
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-purple-50 text-purple-700 border border-purple-200 whitespace-nowrap">
+                              <SendIcon size={9} /> Emitido
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className="font-mono text-[10px] text-gray-600 truncate block max-w-[120px]" title={noOficio || ''}>
+                            {noOficio || '—'}
                           </span>
                         </td>
                         <td className="px-3 py-2.5">
                           <p className="text-xs font-medium text-gray-900 truncate leading-tight">{doc.asunto}</p>
+                          {esRespuesta && doc.numero_oficio_origen && (
+                            <p className="text-[9px] text-gray-400 truncate mt-0.5">En resp. a: {doc.numero_oficio_origen}</p>
+                          )}
                         </td>
                         <td className="px-3 py-2.5">
-                          <p className="text-[10px] text-gray-500 truncate">{doc.area_turno_nombre ? doc.area_turno_nombre.replace(/^(Departamento|Subdirección|Dirección)\s+de\s+/i, '') : '—'}</p>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <p className="text-[10px] text-gray-600 truncate">{doc.destinatario_nombre || doc.dependencia_destino || '—'}</p>
+                          <p className="text-[10px] text-gray-600 truncate" title={destinatario || ''}>{destinatario || '—'}</p>
                         </td>
                         <td className="px-3 py-2.5 text-center">
                           {cfg && (
@@ -5892,24 +6083,16 @@ export default function GestionDocumental() {
                           )}
                         </td>
                         <td className="px-3 py-2.5">
-                          <span className="text-[10px] text-gray-400 whitespace-nowrap">{doc.fecha_documento ? formatDate(doc.fecha_documento) : doc.creado_en ? formatDate(doc.creado_en) : '—'}</span>
+                          <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                            {fechaDocRaw
+                              ? (isIsoFecha ? formatDate(fechaDocRaw) : fechaDocRaw.slice(0, 20))
+                              : doc.creado_en ? formatDate(doc.creado_en) : '—'}
+                          </span>
                         </td>
                         <td className="px-3 py-2.5">
-                          {(() => {
-                            const uppLabel = formatUpp(
-                              doc.upp_solicitante_codigo,
-                              doc.upp_solicitante,
-                              doc.dependencia_destino ?? doc.remitente_dependencia,
-                            )
-                            return (
-                              <p
-                                className="text-[10px] text-gray-500 truncate max-w-[180px]"
-                                title={uppLabel || (doc.dependencia_destino || doc.upp_solicitante || '')}
-                              >
-                                {uppLabel || '—'}
-                              </p>
-                            )
-                          })()}
+                          <p className="text-[10px] text-gray-500 truncate max-w-[160px]" title={uppDest || ''}>
+                            {uppDest || '—'}
+                          </p>
                         </td>
                         <td className="px-3 py-2.5 text-center">
                           {doc.acuse_recibido_url ? (
@@ -5919,7 +6102,7 @@ export default function GestionDocumental() {
                               <CheckCircle2 size={10} />
                               {doc.acuse_recibido_fecha ? doc.acuse_recibido_fecha.slice(0, 10) : 'Ver'}
                             </button>
-                          ) : doc.estado === 'vigente' || doc.firmado_digitalmente ? (
+                          ) : !esRespuesta && (doc.estado === 'vigente' || doc.firmado_digitalmente) ? (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-600 border border-red-200">
                               Pendiente
                             </span>
@@ -6115,7 +6298,7 @@ function RegistroMemorandumModal({ clienteId, onClose, onSaved }: {
   // Campos del formulario
   const [emisor, setEmisor] = useState('Secretaría de Finanzas y Administración')
   const [numeroMemo, setNumeroMemo] = useState('')
-  const [fechaMemo, setFechaMemo] = useState(new Date().toISOString().slice(0, 10))
+  const [fechaMemo, setFechaMemo] = useState(localToday())
   const [asunto, setAsunto] = useState('')
   const [tipoMemo, setTipoMemo] = useState<'requiere_atencion' | 'conocimiento'>('requiere_atencion')
   const [depSolicitante, setDepSolicitante] = useState('')
@@ -6170,7 +6353,7 @@ function RegistroMemorandumModal({ clienteId, onClose, onSaved }: {
         remitente_nombre: emisor,
         remitente_dependencia: emisor,
         fecha_documento: fechaMemo,
-        fecha_recibido: new Date().toISOString().slice(0, 10),
+        fecha_recibido: localToday(),
         prioridad,
         descripcion: descripcion || undefined,
         requiere_respuesta: tipoMemo === 'requiere_atencion',

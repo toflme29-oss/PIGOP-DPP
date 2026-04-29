@@ -168,6 +168,8 @@ class DocumentoListResponse(BaseModel):
     documento_origen_id:     Optional[str] = None
     memorandum_orden_direccion: Optional[int] = None
     has_borrador:     bool = False
+    folio_respuesta:  Optional[str] = None
+    fecha_respuesta:  Optional[str] = None
     tags:             Optional[List[str]]
     creado_en:        datetime
     model_config = {"from_attributes": True}

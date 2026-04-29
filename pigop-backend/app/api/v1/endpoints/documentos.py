@@ -183,6 +183,8 @@ async def listar_documentos(
     busqueda:   Optional[str] = Query(None),
     fecha_desde: Optional[str] = Query(None, description="Fecha inicio YYYY-MM-DD"),
     fecha_hasta: Optional[str] = Query(None, description="Fecha fin YYYY-MM-DD"),
+    solo_urgentes: bool = Query(False, description="Solo documentos urgentes o muy urgentes"),
+    incluir_respuestas: bool = Query(False, description="Incluir recibidos con oficio de respuesta generado (para tab Documentos emitidos)"),
     db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
@@ -200,6 +202,8 @@ async def listar_documentos(
         area_turno=area_turno,
         area_turno_in=areas_vis if not area_turno else None,
         busqueda=busqueda, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
+        solo_urgentes=solo_urgentes,
+        incluir_respuestas=incluir_respuestas,
     )
 
     # Obtener total para paginación (header X-Total-Count)
