@@ -17,8 +17,8 @@ param(
 $VPS_HOST    = "srv1532208.hstgr.cloud"
 $VPS_USER    = "root"
 $VPS_SSH_KEY = "$env:USERPROFILE\.ssh\id_ed25519"   # cambia si tu llave tiene otro nombre
-$VPS_PATH    = "/var/www/pigop/pigop-backend"        # ruta del repo en el VPS
-$VPS_SERVICE = "pigop-backend"                       # nombre del servicio systemd
+$VPS_PATH    = "/var/www/pigop"                      # ruta del repo en el VPS
+$VPS_SERVICE = "pigop"                               # nombre del servicio systemd
 
 $REPO_ROOT   = Split-Path $PSScriptRoot -Parent
 $FRONTEND    = Join-Path $REPO_ROOT "pigop-frontend"
@@ -97,10 +97,11 @@ if ($SoloFrontend) {
     $cmd = @"
 set -e
 cd /var/www/pigop
+git stash 2>/dev/null || true
 git pull --ff-only origin main
 cd pigop-backend
-if [ -d .venv ]; then
-  .venv/bin/pip install -q --no-cache-dir -r requirements.txt
+if [ -d venv ]; then
+  venv/bin/pip install -q --no-cache-dir -r requirements.txt
 fi
 sudo systemctl restart $VPS_SERVICE
 echo "Servicio reiniciado"
