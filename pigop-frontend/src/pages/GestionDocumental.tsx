@@ -4720,7 +4720,7 @@ export default function GestionDocumental() {
   const [colFiltros, setColFiltros] = useState({ fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' })
   const setColFiltro = (k: keyof typeof colFiltros, v: string) => setColFiltros(p => ({ ...p, [k]: v }))
   const [showColFiltrosEmitidos, setShowColFiltrosEmitidos] = useState(false)
-  const [colFiltrosEmitidos, setColFiltrosEmitidos] = useState({ oficio: '', upp: '', destinatario: '', asunto: '' })
+  const [colFiltrosEmitidos, setColFiltrosEmitidos] = useState({ no: '', fecha: '', oficio: '', upp: '', destinatario: '', asunto: '', tipo: '', estado: '' })
   const setColFiltroEmitidos = (k: keyof typeof colFiltrosEmitidos, v: string) => setColFiltrosEmitidos(p => ({ ...p, [k]: v }))
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
@@ -5567,7 +5567,7 @@ export default function GestionDocumental() {
               <Clock size={12} />
             </button>
             {tab === 'emitidos' && (
-              <button onClick={() => { setShowColFiltrosEmitidos(p => !p); if (showColFiltrosEmitidos) setColFiltrosEmitidos({ oficio: '', upp: '', destinatario: '', asunto: '' }) }}
+              <button onClick={() => { setShowColFiltrosEmitidos(p => !p); if (showColFiltrosEmitidos) setColFiltrosEmitidos({ no: '', fecha: '', oficio: '', upp: '', destinatario: '', asunto: '', tipo: '', estado: '' }) }}
                 title="Filtros por columna"
                 className={clsx('px-2 py-1.5 text-xs border rounded-lg transition-colors',
                   showColFiltrosEmitidos || Object.values(colFiltrosEmitidos).some(Boolean)
@@ -6048,30 +6048,55 @@ export default function GestionDocumental() {
                     <th className="px-3 py-2.5 text-center text-xs font-semibold" style={{ width: 80, backgroundColor: '#911A3A' }}>Acuse</th>
                   </tr>
                   <tr className={showColFiltrosEmitidos ? 'bg-[#7a1530]' : 'hidden'}>
-                    <th style={{ backgroundColor: '#7a1530' }} />
-                    <th style={{ backgroundColor: '#7a1530' }} />
+                    {/* No. */}
+                    <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
+                      <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.no}
+                        onChange={e => setColFiltroEmitidos('no', e.target.value)}
+                        className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                    </th>
+                    {/* Fecha */}
+                    <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
+                      <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.fecha}
+                        onChange={e => setColFiltroEmitidos('fecha', e.target.value)}
+                        className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                    </th>
+                    {/* No. Oficio */}
                     <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
                       <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.oficio}
                         onChange={e => setColFiltroEmitidos('oficio', e.target.value)}
                         className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
                     </th>
+                    {/* UPP */}
                     <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
                       <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.upp}
                         onChange={e => setColFiltroEmitidos('upp', e.target.value)}
                         className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
                     </th>
+                    {/* Destinatario */}
                     <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
                       <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.destinatario}
                         onChange={e => setColFiltroEmitidos('destinatario', e.target.value)}
                         className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
                     </th>
+                    {/* Asunto */}
                     <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
                       <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.asunto}
                         onChange={e => setColFiltroEmitidos('asunto', e.target.value)}
                         className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
                     </th>
-                    <th style={{ backgroundColor: '#7a1530' }} />
-                    <th style={{ backgroundColor: '#7a1530' }} />
+                    {/* Tipo */}
+                    <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
+                      <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.tipo}
+                        onChange={e => setColFiltroEmitidos('tipo', e.target.value)}
+                        className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                    </th>
+                    {/* Estado */}
+                    <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
+                      <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.estado}
+                        onChange={e => setColFiltroEmitidos('estado', e.target.value)}
+                        className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                    </th>
+                    {/* Acuse */}
                     <th style={{ backgroundColor: '#7a1530' }} />
                   </tr>
                 </thead>
@@ -6079,15 +6104,22 @@ export default function GestionDocumental() {
                   {docs?.filter(doc => {
                     const esR = doc.flujo === 'recibido'
                     const noOf = esR ? doc.folio_respuesta : doc.numero_control
+                    const numFol = noOf ? (noOf.split('/').slice(-2, -1)[0] ?? '') : ''
+                    const fechaRaw = esR ? (doc.fecha_respuesta || '') : (doc.fecha_documento || '')
                     const upp = doc.upp_solicitante_codigo
                       ? `${doc.upp_solicitante_codigo}-${esR ? doc.remitente_dependencia : (doc.dependencia_destino || doc.upp_solicitante)}`
                       : (esR ? doc.remitente_dependencia : (doc.dependencia_destino || doc.upp_solicitante))
                     const dest = esR ? doc.remitente_nombre : doc.destinatario_nombre
-                    const { oficio: fOf, upp: fUpp, destinatario: fDest, asunto: fAs } = colFiltrosEmitidos
-                    if (fOf  && !(noOf  || '').toLowerCase().includes(fOf.toLowerCase()))  return false
-                    if (fUpp && !(upp   || '').toLowerCase().includes(fUpp.toLowerCase()))  return false
-                    if (fDest && !(dest || '').toLowerCase().includes(fDest.toLowerCase())) return false
-                    if (fAs  && !doc.asunto.toLowerCase().includes(fAs.toLowerCase()))      return false
+                    const tipoLabel = esR ? 'respuesta' : (doc.tipo || '')
+                    const { no: fNo, fecha: fFecha, oficio: fOf, upp: fUpp, destinatario: fDest, asunto: fAs, tipo: fTipo, estado: fEst } = colFiltrosEmitidos
+                    if (fNo   && !numFol.toLowerCase().includes(fNo.toLowerCase()))           return false
+                    if (fFecha && !fechaRaw.toLowerCase().includes(fFecha.toLowerCase()))     return false
+                    if (fOf   && !(noOf  || '').toLowerCase().includes(fOf.toLowerCase()))    return false
+                    if (fUpp  && !(upp   || '').toLowerCase().includes(fUpp.toLowerCase()))   return false
+                    if (fDest && !(dest  || '').toLowerCase().includes(fDest.toLowerCase()))  return false
+                    if (fAs   && !doc.asunto.toLowerCase().includes(fAs.toLowerCase()))       return false
+                    if (fTipo && !tipoLabel.toLowerCase().includes(fTipo.toLowerCase()))      return false
+                    if (fEst  && !doc.estado.toLowerCase().includes(fEst.toLowerCase()))      return false
                     return true
                   }).map(doc => {
                     const esRespuesta = doc.flujo === 'recibido'
