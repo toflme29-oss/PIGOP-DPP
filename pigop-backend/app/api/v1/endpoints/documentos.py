@@ -1308,7 +1308,7 @@ async def cambiar_turno(
     # Regla adicional: áreas operativas (subdirector, jefe_depto, analista) solo
     # pueden redirigir a su propia subárea o departamentos bajo su línea jerárquica,
     # no a DIR ni a otras subdirecciones. Esto refuerza la compartimentación.
-    if current_user.rol in ("subdirector", "jefe_depto", "analista"):
+    if current_user.rol in ("subdirector", "analista"):
         user_area = getattr(current_user, "area_codigo", None)
         permitidas = AREA_JERARQUIA.get(user_area, [user_area] if user_area else [])
         if permitidas is None:
