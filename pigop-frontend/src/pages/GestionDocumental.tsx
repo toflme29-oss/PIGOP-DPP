@@ -5088,12 +5088,13 @@ export default function GestionDocumental() {
                   <button key={label}
                     onClick={() => setFiltroEstado(activo ? '' : filtro)}
                     title={label}
-                    className={clsx(
-                      'flex flex-col items-center px-3 py-1 rounded-lg border transition-colors min-w-[58px]',
-                      activo ? 'border-gray-400 bg-gray-50' : 'border-transparent hover:bg-gray-50'
-                    )}>
+                    className="flex flex-col items-center px-3 py-1 rounded-md transition-colors min-w-[52px]"
+                    style={{
+                      backgroundColor: activo ? color + '22' : '#f9fafb',
+                      border: `1px solid ${activo ? color : '#e5e7eb'}`,
+                    }}>
                     <span className="text-sm font-bold leading-tight" style={{ color }}>{val}</span>
-                    <span className="text-[9px] text-gray-500 leading-tight whitespace-nowrap">{label}</span>
+                    <span className="text-[9px] leading-tight" style={{ color: activo ? color : '#6b7280' }}>{label}</span>
                   </button>
                   )
                 })}
