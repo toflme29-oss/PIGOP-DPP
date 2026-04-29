@@ -6105,21 +6105,26 @@ export default function GestionDocumental() {
                     const esR = doc.flujo === 'recibido'
                     const noOf = esR ? doc.folio_respuesta : doc.numero_control
                     const numFol = noOf ? (noOf.split('/').slice(-2, -1)[0] ?? '') : ''
-                    const fechaRaw = esR ? (doc.fecha_respuesta || '') : (doc.fecha_documento || '')
+                    // Fecha: combinar raw + formateada + creado_en para que "21", "mar", "2026" coincidan
+                    const fechaRawStr = esR ? (doc.fecha_respuesta || '') : (doc.fecha_documento || '')
+                    const fechaFmt = fechaRawStr && /^\d{4}-\d{2}-\d{2}/.test(fechaRawStr) ? formatDate(fechaRawStr) : fechaRawStr
+                    const fechaFallback = doc.creado_en ? formatDate(doc.creado_en) : ''
+                    const fechaBusqueda = `${fechaRawStr} ${fechaFmt} ${fechaFallback}`.toLowerCase()
                     const upp = doc.upp_solicitante_codigo
                       ? `${doc.upp_solicitante_codigo}-${esR ? doc.remitente_dependencia : (doc.dependencia_destino || doc.upp_solicitante)}`
                       : (esR ? doc.remitente_dependencia : (doc.dependencia_destino || doc.upp_solicitante))
                     const dest = esR ? doc.remitente_nombre : doc.destinatario_nombre
-                    const tipoLabel = esR ? 'respuesta' : (doc.tipo || '')
+                    // Tipo: "respuesta" para recibidos mostrados aquí, "emitido <tipo>" para los emitidos reales
+                    const tipoLabel = esR ? 'respuesta' : `emitido ${doc.tipo || ''}`
                     const { no: fNo, fecha: fFecha, oficio: fOf, upp: fUpp, destinatario: fDest, asunto: fAs, tipo: fTipo, estado: fEst } = colFiltrosEmitidos
-                    if (fNo   && !numFol.toLowerCase().includes(fNo.toLowerCase()))           return false
-                    if (fFecha && !fechaRaw.toLowerCase().includes(fFecha.toLowerCase()))     return false
-                    if (fOf   && !(noOf  || '').toLowerCase().includes(fOf.toLowerCase()))    return false
-                    if (fUpp  && !(upp   || '').toLowerCase().includes(fUpp.toLowerCase()))   return false
-                    if (fDest && !(dest  || '').toLowerCase().includes(fDest.toLowerCase()))  return false
-                    if (fAs   && !doc.asunto.toLowerCase().includes(fAs.toLowerCase()))       return false
-                    if (fTipo && !tipoLabel.toLowerCase().includes(fTipo.toLowerCase()))      return false
-                    if (fEst  && !doc.estado.toLowerCase().includes(fEst.toLowerCase()))      return false
+                    if (fNo   && !numFol.toLowerCase().includes(fNo.toLowerCase()))              return false
+                    if (fFecha && !fechaBusqueda.includes(fFecha.toLowerCase()))                 return false
+                    if (fOf   && !(noOf  || '').toLowerCase().includes(fOf.toLowerCase()))       return false
+                    if (fUpp  && !(upp   || '').toLowerCase().includes(fUpp.toLowerCase()))      return false
+                    if (fDest && !(dest  || '').toLowerCase().includes(fDest.toLowerCase()))     return false
+                    if (fAs   && !doc.asunto.toLowerCase().includes(fAs.toLowerCase()))          return false
+                    if (fTipo && !tipoLabel.toLowerCase().includes(fTipo.toLowerCase()))         return false
+                    if (fEst  && !doc.estado.toLowerCase().includes(fEst.toLowerCase()))         return false
                     return true
                   }).map(doc => {
                     const esRespuesta = doc.flujo === 'recibido'
