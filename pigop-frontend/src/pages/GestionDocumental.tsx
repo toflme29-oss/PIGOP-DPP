@@ -5074,6 +5074,31 @@ export default function GestionDocumental() {
                 <p className="text-[10px] text-gray-500">Correspondencia institucional DPP</p>
               </div>
             </div>
+            {tab === 'emitidos' && (
+              <div className="flex items-center gap-1.5 flex-1 justify-center px-4">
+                {[
+                  { label: 'Borradores',  val: porEstado('borrador'),    color: '#d97706', filtro: 'borrador' },
+                  { label: 'En revisión', val: porEstado('en_revision'), color: '#a855f7', filtro: 'en_revision' },
+                  { label: 'Vigentes',    val: porEstado('vigente'),     color: '#10b981', filtro: 'vigente' },
+                  { label: 'Respondidos', val: porEstado('respondido'),  color: '#3b82f6', filtro: 'respondido' },
+                  { label: 'Firmados',    val: porEstado('firmado'),     color: '#059669', filtro: 'firmado' },
+                ].map(({ label, val, color, filtro }) => {
+                  const activo = filtroEstado === filtro
+                  return (
+                  <button key={label}
+                    onClick={() => setFiltroEstado(activo ? '' : filtro)}
+                    title={label}
+                    className={clsx(
+                      'flex flex-col items-center px-3 py-1 rounded-lg border transition-colors min-w-[58px]',
+                      activo ? 'border-gray-400 bg-gray-50' : 'border-transparent hover:bg-gray-50'
+                    )}>
+                    <span className="text-sm font-bold leading-tight" style={{ color }}>{val}</span>
+                    <span className="text-[9px] text-gray-500 leading-tight whitespace-nowrap">{label}</span>
+                  </button>
+                  )
+                })}
+              </div>
+            )}
             {tab === 'recibidos' && (
               <div className="flex items-center gap-1.5 flex-1 justify-center px-4">
                 {([
@@ -5340,51 +5365,6 @@ export default function GestionDocumental() {
           </div>
         </>) : (<>
 
-        {/* Métricas emitidos */}
-        {tab !== 'recibidos' && (
-          <div className="px-4 py-2 bg-white border-b border-gray-100 space-y-2">
-            <div className="flex items-center gap-1.5 flex-1 justify-center px-4">
-              {[
-                { label: 'Borradores',  val: porEstado('borrador'),    color: '#d97706', filtro: 'borrador' },
-                { label: 'En revisión', val: porEstado('en_revision'), color: '#a855f7', filtro: 'en_revision' },
-                { label: 'Vigentes',    val: porEstado('vigente'),     color: '#10b981', filtro: 'vigente' },
-                { label: 'Respondidos', val: porEstado('respondido'),  color: '#3b82f6', filtro: 'respondido' },
-                { label: 'Firmados',    val: porEstado('firmado'),     color: '#059669', filtro: 'firmado' },
-              ].map(({ label, val, color, filtro }) => {
-                const activo = filtroEstado === filtro
-                return (
-                <button key={label}
-                  onClick={() => setFiltroEstado(activo ? '' : filtro)}
-                  title={label}
-                  className={clsx(
-                    'flex flex-col items-center px-3 py-1 rounded-lg border transition-colors min-w-[58px]',
-                    activo ? 'border-gray-400 bg-gray-50' : 'border-transparent hover:bg-gray-50'
-                  )}>
-                  <span className="text-sm font-bold leading-tight" style={{ color }}>{val}</span>
-                  <span className="text-[9px] text-gray-500 leading-tight whitespace-nowrap">{label}</span>
-                </button>
-                )
-              })}
-            </div>
-            <button onClick={async () => {
-              const token = localStorage.getItem('access_token')
-              try {
-                const res = await fetch(`${window.location.origin}/api/v1/documentos/export-emitidos`, {
-                  headers: { Authorization: `Bearer ${token}` },
-                })
-                if (!res.ok) throw new Error('Error al exportar')
-                const blob = await res.blob()
-                const a = document.createElement('a')
-                a.href = URL.createObjectURL(blob)
-                a.download = `emitidos_${localToday()}.xlsx`
-                a.click()
-              } catch { window.alert('Error al exportar a Excel') }
-            }}
-              className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[10px] rounded-lg font-medium border border-green-300 text-green-700 hover:bg-green-50 transition-colors">
-              <Download size={10} /> Exportar a Excel
-            </button>
-          </div>
-        )}
 
         {/* Alertas por rol */}
         {tab === 'recibidos' && (
@@ -5528,6 +5508,25 @@ export default function GestionDocumental() {
                 </button>
               )}
             </div>
+            {tab === 'emitidos' && (
+              <button onClick={async () => {
+                const token = localStorage.getItem('access_token')
+                try {
+                  const res = await fetch(`${window.location.origin}/api/v1/documentos/export-emitidos`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                  })
+                  if (!res.ok) throw new Error('Error al exportar')
+                  const blob = await res.blob()
+                  const a = document.createElement('a')
+                  a.href = URL.createObjectURL(blob)
+                  a.download = `emitidos_${localToday()}.xlsx`
+                  a.click()
+                } catch { window.alert('Error al exportar a Excel') }
+              }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg font-medium border border-green-300 text-green-700 hover:bg-green-50 transition-colors whitespace-nowrap">
+                <Download size={12} /> Exportar Excel
+              </button>
+            )}
             <select className="px-2 py-1.5 text-xs border border-gray-300 rounded-lg bg-white"
               value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}>
               <option value="">Estado</option>
