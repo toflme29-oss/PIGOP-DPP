@@ -5874,15 +5874,21 @@ export default function GestionDocumental() {
                                 doc.upp_solicitante,
                                 doc.remitente_dependencia,
                               )
-                              // Fallback: mostrar la dependencia remitente si no hay match en catálogo
                               const fallback = doc.remitente_dependencia || doc.upp_solicitante || ''
+                              const oficina = doc.remitente_dependencia || ''
+                              // Mostrar oficina solo si el uppLabel la identifica diferente (evitar duplicar)
+                              const mostrarOficina = uppLabel && oficina && !uppLabel.toLowerCase().includes(oficina.toLowerCase().slice(0, 15))
                               return (
-                                <p
-                                  className="text-[10px] text-gray-500 truncate max-w-[180px]"
-                                  title={uppLabel || fallback}
-                                >
-                                  {uppLabel || fallback || '—'}
-                                </p>
+                                <div className="max-w-[180px]">
+                                  <p className="text-[10px] text-gray-500 truncate" title={uppLabel || fallback}>
+                                    {uppLabel || fallback || '—'}
+                                  </p>
+                                  {mostrarOficina && (
+                                    <p className="text-[9px] text-gray-400 truncate leading-tight mt-0.5" title={oficina}>
+                                      {oficina}
+                                    </p>
+                                  )}
+                                </div>
                               )
                             })()}
                           </td>
