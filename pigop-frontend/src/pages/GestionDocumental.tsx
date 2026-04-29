@@ -1711,7 +1711,17 @@ function PanelRecibido({
   const cambiarTurnoMutation = useMutation({
     mutationFn: ({ cod, nom }: { cod: string; nom: string }) =>
       documentosApi.cambiarTurno(doc.id, cod, nom, instruccionesCambioTurno || undefined),
-    onSuccess: () => { invalidate(); setCambiarTurnoOpen(false); setInstruccionesCambioTurno('') },
+    onSuccess: (updatedDoc) => {
+      // Actualizar cache directamente con datos frescos del POST (evita 403 en GET posterior
+      // cuando el usuario redirige fuera de su área y ya no tiene visibilidad del doc)
+      qc.setQueryData(['documento', doc.id], updatedDoc)
+      qc.invalidateQueries({ queryKey: ['documentos'] })
+      setCambiarTurnoOpen(false)
+      setInstruccionesCambioTurno('')
+      onRefetch()
+      // Cerrar el panel: el documento ya no pertenece al área de este usuario
+      setTimeout(() => onClose(), 1200)
+    },
     onError: (e: any) => {
       window.alert(e?.response?.data?.detail || 'No se pudo cambiar el turno. Intenta de nuevo.')
     },
