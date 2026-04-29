@@ -5875,18 +5875,10 @@ export default function GestionDocumental() {
                                 doc.remitente_dependencia,
                               )
                               const fallback = doc.remitente_dependencia || doc.upp_solicitante || ''
-                              const oficina = doc.remitente_dependencia || doc.remitente_cargo || ''
                               return (
-                                <div className="max-w-[180px]">
-                                  <p className="text-[10px] text-gray-500 truncate" title={uppLabel || fallback}>
-                                    {uppLabel || fallback || '—'}
-                                  </p>
-                                  {oficina && (
-                                    <p className="text-[9px] text-gray-400 truncate leading-tight mt-0.5" title={oficina}>
-                                      {oficina}
-                                    </p>
-                                  )}
-                                </div>
+                                <p className="text-[10px] text-gray-500 truncate max-w-[180px]" title={uppLabel || fallback}>
+                                  {uppLabel || fallback || '—'}
+                                </p>
                               )
                             })()}
                           </td>
