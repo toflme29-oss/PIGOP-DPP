@@ -324,7 +324,7 @@ export default function Layout() {
   }, [location.pathname])
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-100">
+    <div className="h-screen flex flex-col bg-gray-100 overflow-hidden">
       {/* ── Barra superior institucional (fila única) ────────────────────────── */}
       <header className="flex-shrink-0 shadow-md z-30 sticky top-0" style={{ backgroundColor: GUINDA_DARK }}>
         <div className="grid items-center px-4 lg:px-6 h-[62px] gap-2" style={{ gridTemplateColumns: 'auto 1fr auto' }}>
@@ -561,8 +561,8 @@ export default function Layout() {
       )}
 
       {/* ── Contenido principal ────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-auto">
-        <div className="max-w-screen-2xl mx-auto">
+      <main className="flex-1 overflow-hidden min-h-0">
+        <div className="h-full max-w-screen-2xl mx-auto">
           <Outlet />
         </div>
       </main>

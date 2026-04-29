@@ -13,9 +13,17 @@ export function formatCurrency(amount: number | string | null | undefined): stri
   }).format(n)
 }
 
+// Devuelve YYYY-MM-DD en hora local de México (no UTC)
+export function localToday(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('es-MX', {
+  // Parsear como fecha local para evitar el desfase UTC → México (UTC-6)
+  const [year, month, day] = iso.slice(0, 10).split('-').map(Number)
+  return new Date(year, month - 1, day).toLocaleDateString('es-MX', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -30,6 +38,7 @@ export function formatDateTime(iso: string | null | undefined): string {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: 'America/Mexico_City',
   })
 }
 
