@@ -4719,6 +4719,9 @@ export default function GestionDocumental() {
   const [showColFiltros, setShowColFiltros] = useState(false)
   const [colFiltros, setColFiltros] = useState({ fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' })
   const setColFiltro = (k: keyof typeof colFiltros, v: string) => setColFiltros(p => ({ ...p, [k]: v }))
+  const [showColFiltrosEmitidos, setShowColFiltrosEmitidos] = useState(false)
+  const [colFiltrosEmitidos, setColFiltrosEmitidos] = useState({ oficio: '', upp: '', destinatario: '', asunto: '' })
+  const setColFiltroEmitidos = (k: keyof typeof colFiltrosEmitidos, v: string) => setColFiltrosEmitidos(p => ({ ...p, [k]: v }))
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
   const [fechaDesdeDebounced, setFechaDesdeDebounced] = useState('')
@@ -5340,17 +5343,28 @@ export default function GestionDocumental() {
         {/* Métricas emitidos */}
         {tab !== 'recibidos' && (
           <div className="px-4 py-2 bg-white border-b border-gray-100 space-y-2">
-            <div className="grid grid-cols-3 gap-2">
+            <div className="flex items-center gap-1.5 flex-1 justify-center px-4">
               {[
-                { label: 'Borradores',  val: porEstado('borrador'),    color: '#d97706' },
-                { label: 'En revisión', val: porEstado('en_revision'), color: '#a855f7' },
-                { label: 'Vigentes',    val: porEstado('vigente'),     color: '#10b981' },
-              ].map(({ label, val, color }) => (
-                <div key={label} className="text-center">
-                  <p className="text-lg font-bold" style={{ color }}>{val}</p>
-                  <p className="text-[9px] text-gray-500 leading-tight">{label}</p>
-                </div>
-              ))}
+                { label: 'Borradores',  val: porEstado('borrador'),    color: '#d97706', filtro: 'borrador' },
+                { label: 'En revisión', val: porEstado('en_revision'), color: '#a855f7', filtro: 'en_revision' },
+                { label: 'Vigentes',    val: porEstado('vigente'),     color: '#10b981', filtro: 'vigente' },
+                { label: 'Respondidos', val: porEstado('respondido'),  color: '#3b82f6', filtro: 'respondido' },
+                { label: 'Firmados',    val: porEstado('firmado'),     color: '#059669', filtro: 'firmado' },
+              ].map(({ label, val, color, filtro }) => {
+                const activo = filtroEstado === filtro
+                return (
+                <button key={label}
+                  onClick={() => setFiltroEstado(activo ? '' : filtro)}
+                  title={label}
+                  className={clsx(
+                    'flex flex-col items-center px-3 py-1 rounded-lg border transition-colors min-w-[58px]',
+                    activo ? 'border-gray-400 bg-gray-50' : 'border-transparent hover:bg-gray-50'
+                  )}>
+                  <span className="text-sm font-bold leading-tight" style={{ color }}>{val}</span>
+                  <span className="text-[9px] text-gray-500 leading-tight whitespace-nowrap">{label}</span>
+                </button>
+                )
+              })}
             </div>
             <button onClick={async () => {
               const token = localStorage.getItem('access_token')
@@ -5521,9 +5535,12 @@ export default function GestionDocumental() {
                 ? ['recibido','turnado','en_atencion','devuelto','respondido','firmado','de_conocimiento'].map(e => (
                     <option key={e} value={e}>{ESTADO_RECIBIDO_CONFIG[e as keyof typeof ESTADO_RECIBIDO_CONFIG]?.label ?? e}</option>
                   ))
-                : ['borrador','en_revision','vigente'].map(e => (
-                    <option key={e} value={e}>{ESTADO_EMITIDO_CONFIG[e as keyof typeof ESTADO_EMITIDO_CONFIG]?.label ?? e}</option>
-                  ))
+                : ['borrador','en_revision','vigente','respondido','firmado'].map(e => {
+                    const label = ESTADO_EMITIDO_CONFIG[e as keyof typeof ESTADO_EMITIDO_CONFIG]?.label
+                      ?? ESTADO_RECIBIDO_CONFIG[e as keyof typeof ESTADO_RECIBIDO_CONFIG]?.label
+                      ?? e
+                    return <option key={e} value={e}>{label}</option>
+                  })
               }
             </select>
             {tab === 'recibidos' && (
@@ -5549,6 +5566,16 @@ export default function GestionDocumental() {
                   : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50')}>
               <Clock size={12} />
             </button>
+            {tab === 'emitidos' && (
+              <button onClick={() => { setShowColFiltrosEmitidos(p => !p); if (showColFiltrosEmitidos) setColFiltrosEmitidos({ oficio: '', upp: '', destinatario: '', asunto: '' }) }}
+                title="Filtros por columna"
+                className={clsx('px-2 py-1.5 text-xs border rounded-lg transition-colors',
+                  showColFiltrosEmitidos || Object.values(colFiltrosEmitidos).some(Boolean)
+                    ? 'border-[#911A3A]/30 bg-[#FDF2F4] text-[#911A3A]'
+                    : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50')}>
+                <SlidersHorizontal size={12} />
+              </button>
+            )}
             {tab === 'recibidos' && (
               <button onClick={() => { setShowColFiltros(p => !p); if (showColFiltros) setColFiltros({ fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' }) }}
                 title="Filtros por columna"
@@ -6008,36 +6035,76 @@ export default function GestionDocumental() {
             /* Tabla completa para emitidos */
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
-                <thead>
+                <thead className="sticky top-0 z-10">
                   <tr className="text-white" style={{ backgroundColor: '#911A3A' }}>
-                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 80 }}>Tipo</th>
-                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 130 }}>No. Oficio</th>
-                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 190 }}>Asunto</th>
-                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 130 }}>Destinatario</th>
-                    <th className="px-3 py-2.5 text-center text-xs font-semibold" style={{ width: 90 }}>Estado</th>
-                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 80 }}>Fecha</th>
-                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 160 }}>UPP / Dependencia</th>
-                    <th className="px-3 py-2.5 text-center text-xs font-semibold" style={{ width: 80 }}>Acuse</th>
+                    <th className="px-3 py-2.5 text-center text-xs font-semibold" style={{ width: 52, backgroundColor: '#911A3A' }}>No.</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 85, backgroundColor: '#911A3A' }}>Fecha</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 130, backgroundColor: '#911A3A' }}>No. Oficio</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 175, backgroundColor: '#911A3A' }}>UPP / Dependencia</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 140, backgroundColor: '#911A3A' }}>Destinatario</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 160, backgroundColor: '#911A3A' }}>Asunto</th>
+                    <th className="px-3 py-2.5 text-center text-xs font-semibold" style={{ width: 80, backgroundColor: '#911A3A' }}>Tipo</th>
+                    <th className="px-3 py-2.5 text-center text-xs font-semibold" style={{ width: 90, backgroundColor: '#911A3A' }}>Estado</th>
+                    <th className="px-3 py-2.5 text-center text-xs font-semibold" style={{ width: 80, backgroundColor: '#911A3A' }}>Acuse</th>
+                  </tr>
+                  <tr className={showColFiltrosEmitidos ? 'bg-[#7a1530]' : 'hidden'}>
+                    <th style={{ backgroundColor: '#7a1530' }} />
+                    <th style={{ backgroundColor: '#7a1530' }} />
+                    <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
+                      <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.oficio}
+                        onChange={e => setColFiltroEmitidos('oficio', e.target.value)}
+                        className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                    </th>
+                    <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
+                      <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.upp}
+                        onChange={e => setColFiltroEmitidos('upp', e.target.value)}
+                        className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                    </th>
+                    <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
+                      <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.destinatario}
+                        onChange={e => setColFiltroEmitidos('destinatario', e.target.value)}
+                        className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                    </th>
+                    <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
+                      <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.asunto}
+                        onChange={e => setColFiltroEmitidos('asunto', e.target.value)}
+                        className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                    </th>
+                    <th style={{ backgroundColor: '#7a1530' }} />
+                    <th style={{ backgroundColor: '#7a1530' }} />
+                    <th style={{ backgroundColor: '#7a1530' }} />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {docs?.map(doc => {
+                  {docs?.filter(doc => {
+                    const esR = doc.flujo === 'recibido'
+                    const noOf = esR ? doc.folio_respuesta : doc.numero_control
+                    const upp = doc.upp_solicitante_codigo
+                      ? `${doc.upp_solicitante_codigo}-${esR ? doc.remitente_dependencia : (doc.dependencia_destino || doc.upp_solicitante)}`
+                      : (esR ? doc.remitente_dependencia : (doc.dependencia_destino || doc.upp_solicitante))
+                    const dest = esR ? doc.remitente_nombre : doc.destinatario_nombre
+                    const { oficio: fOf, upp: fUpp, destinatario: fDest, asunto: fAs } = colFiltrosEmitidos
+                    if (fOf  && !(noOf  || '').toLowerCase().includes(fOf.toLowerCase()))  return false
+                    if (fUpp && !(upp   || '').toLowerCase().includes(fUpp.toLowerCase()))  return false
+                    if (fDest && !(dest || '').toLowerCase().includes(fDest.toLowerCase())) return false
+                    if (fAs  && !doc.asunto.toLowerCase().includes(fAs.toLowerCase()))      return false
+                    return true
+                  }).map(doc => {
                     const esRespuesta = doc.flujo === 'recibido'
                     const cfg = esRespuesta
                       ? ESTADO_RECIBIDO_CONFIG[doc.estado as keyof typeof ESTADO_RECIBIDO_CONFIG]
                       : ESTADO_EMITIDO_CONFIG[doc.estado as keyof typeof ESTADO_EMITIDO_CONFIG]
-                    // fecha_respuesta puede ser texto libre ("16 de marzo de 2026") o ISO
                     const fechaDocRaw = esRespuesta
-                      ? (doc.fecha_respuesta || doc.fecha_documento || null)
+                      ? (doc.fecha_respuesta || null)
                       : (doc.fecha_documento || null)
                     const isIsoFecha = fechaDocRaw ? /^\d{4}-\d{2}-\d{2}/.test(fechaDocRaw) : false
                     const noOficio = esRespuesta ? doc.folio_respuesta : doc.numero_control
-                    const destinatario = esRespuesta
-                      ? (doc.remitente_nombre || doc.remitente_dependencia)
-                      : (doc.destinatario_nombre || doc.dependencia_destino)
-                    const uppDest = esRespuesta
-                      ? (doc.remitente_dependencia || doc.upp_solicitante)
-                      : (doc.dependencia_destino || doc.upp_solicitante)
+                    const destNombre = esRespuesta ? doc.remitente_nombre : doc.destinatario_nombre
+                    const destCargo  = esRespuesta ? doc.remitente_cargo  : doc.destinatario_cargo
+                    const uppCodigo  = doc.upp_solicitante_codigo
+                    const uppNombre  = esRespuesta ? doc.remitente_dependencia : (doc.dependencia_destino || doc.upp_solicitante)
+                    // Extraer solo el número del folio: "SFA/SF/DPP/0002/2026" → "0002"
+                    const numFolio = noOficio ? (noOficio.split('/').slice(-2, -1)[0] ?? '—') : '—'
                     return (
                       <tr key={doc.id}
                         onClick={() => {
@@ -6048,7 +6115,49 @@ export default function GestionDocumental() {
                           }
                         }}
                         className={clsx('cursor-pointer transition-colors', doc.id === selectedId ? 'bg-[#FDF8F9]' : 'hover:bg-gray-50')}>
+                        {/* No. (número extraído del folio) */}
+                        <td className="px-3 py-2.5 text-center">
+                          <span className="font-mono text-xs font-bold text-gray-700">{numFolio}</span>
+                        </td>
+                        {/* Fecha */}
                         <td className="px-3 py-2.5">
+                          <span className="text-[10px] text-gray-500 whitespace-nowrap">
+                            {fechaDocRaw
+                              ? (isIsoFecha ? formatDate(fechaDocRaw) : fechaDocRaw.slice(0, 20))
+                              : doc.creado_en ? formatDate(doc.creado_en) : '—'}
+                          </span>
+                        </td>
+                        {/* No. Oficio */}
+                        <td className="px-3 py-2.5">
+                          <span className="font-mono text-[10px] text-gray-600 truncate block" title={noOficio || ''}>
+                            {noOficio || '—'}
+                          </span>
+                        </td>
+                        {/* UPP / Dependencia — "007-Secretaría de Finanzas..." */}
+                        <td className="px-3 py-2.5">
+                          <p className="text-[10px] text-gray-600 truncate"
+                            title={uppCodigo && uppNombre ? `${uppCodigo}-${uppNombre}` : (uppNombre || '')}>
+                            {uppCodigo && uppNombre
+                              ? `${uppCodigo}-${uppNombre}`
+                              : uppNombre || '—'}
+                          </p>
+                        </td>
+                        {/* Destinatario — nombre + cargo */}
+                        <td className="px-3 py-2.5">
+                          <p className="text-[10px] text-gray-700 font-medium truncate" title={destNombre || ''}>{destNombre || '—'}</p>
+                          {destCargo && (
+                            <p className="text-[9px] text-gray-400 truncate mt-0.5">{destCargo}</p>
+                          )}
+                        </td>
+                        {/* Asunto */}
+                        <td className="px-3 py-2.5">
+                          <p className="text-xs font-medium text-gray-900 truncate leading-tight">{doc.asunto}</p>
+                          {esRespuesta && doc.numero_oficio_origen && (
+                            <p className="text-[9px] text-gray-400 truncate mt-0.5">Resp. a: {doc.numero_oficio_origen}</p>
+                          )}
+                        </td>
+                        {/* Tipo */}
+                        <td className="px-3 py-2.5 text-center">
                           {esRespuesta ? (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
                               <CornerUpLeft size={9} /> Respuesta
@@ -6059,20 +6168,7 @@ export default function GestionDocumental() {
                             </span>
                           )}
                         </td>
-                        <td className="px-3 py-2.5">
-                          <span className="font-mono text-[10px] text-gray-600 truncate block max-w-[120px]" title={noOficio || ''}>
-                            {noOficio || '—'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <p className="text-xs font-medium text-gray-900 truncate leading-tight">{doc.asunto}</p>
-                          {esRespuesta && doc.numero_oficio_origen && (
-                            <p className="text-[9px] text-gray-400 truncate mt-0.5">En resp. a: {doc.numero_oficio_origen}</p>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <p className="text-[10px] text-gray-600 truncate" title={destinatario || ''}>{destinatario || '—'}</p>
-                        </td>
+                        {/* Estado */}
                         <td className="px-3 py-2.5 text-center">
                           {cfg && (
                             <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap"
@@ -6082,18 +6178,7 @@ export default function GestionDocumental() {
                             </span>
                           )}
                         </td>
-                        <td className="px-3 py-2.5">
-                          <span className="text-[10px] text-gray-400 whitespace-nowrap">
-                            {fechaDocRaw
-                              ? (isIsoFecha ? formatDate(fechaDocRaw) : fechaDocRaw.slice(0, 20))
-                              : doc.creado_en ? formatDate(doc.creado_en) : '—'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <p className="text-[10px] text-gray-500 truncate max-w-[160px]" title={uppDest || ''}>
-                            {uppDest || '—'}
-                          </p>
-                        </td>
+                        {/* Acuse */}
                         <td className="px-3 py-2.5 text-center">
                           {doc.acuse_recibido_url ? (
                             <button onClick={(e) => { e.stopPropagation(); window.open(`/api/v1/documentos/${doc.id}/acuse-recibido/archivo`, '_blank') }}
