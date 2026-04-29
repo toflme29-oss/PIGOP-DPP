@@ -5875,15 +5875,13 @@ export default function GestionDocumental() {
                                 doc.remitente_dependencia,
                               )
                               const fallback = doc.remitente_dependencia || doc.upp_solicitante || ''
-                              const oficina = doc.remitente_dependencia || ''
-                              // Mostrar oficina solo si el uppLabel la identifica diferente (evitar duplicar)
-                              const mostrarOficina = uppLabel && oficina && !uppLabel.toLowerCase().includes(oficina.toLowerCase().slice(0, 15))
+                              const oficina = doc.remitente_dependencia || doc.remitente_cargo || ''
                               return (
                                 <div className="max-w-[180px]">
                                   <p className="text-[10px] text-gray-500 truncate" title={uppLabel || fallback}>
                                     {uppLabel || fallback || '—'}
                                   </p>
-                                  {mostrarOficina && (
+                                  {oficina && (
                                     <p className="text-[9px] text-gray-400 truncate leading-tight mt-0.5" title={oficina}>
                                       {oficina}
                                     </p>
