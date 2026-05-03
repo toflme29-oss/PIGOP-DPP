@@ -273,9 +273,22 @@ async def siguiente_folio(
         result = await db.execute(query, {"pattern": pattern})
         rows = result.fetchall()
 
+        # El folio correcto para este prefijo tiene exactamente:
+        #   len(prefijo.split('/')) partes del prefijo + número + año = len+2 segmentos
+        # Ejemplo DIR: "SFA/SF/DPP" → 3 segmentos → folio esperado "SFA/SF/DPP/NNNN/YYYY" = 5 segs
+        # Esto excluye folios de otras áreas como "SFA/SF/DPP/SCEG/NNNN/YYYY" (6 segs)
+        expected_segs = len(prefijo.split("/")) + 2
+
         next_num = 1
         if rows:
-            max_num = max((_extraer_numero(r[0]) for r in rows if r[0]), default=0)
+            max_num = max(
+                (
+                    _extraer_numero(r[0])
+                    for r in rows
+                    if r[0] and len(r[0].split("/")) == expected_segs
+                ),
+                default=0,
+            )
             next_num = max_num + 1
 
         folio = f"{prefijo}/{str(next_num).zfill(4)}/{anio}"
