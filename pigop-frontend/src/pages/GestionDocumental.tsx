@@ -3135,8 +3135,10 @@ function PanelRecibido({
                 <div className="flex gap-2 mt-8">
                   {canGenerarRespuestaEfectivo && doc.borrador_respuesta && (
                     <button onClick={() => { setEditBorrador(prev => !prev); setBorradorText(doc.borrador_respuesta ?? '') }}
+                      disabled={bloqueadoPorFirma}
+                      title={bloqueadoPorFirma ? 'No se puede editar mientras el oficio está en proceso de firma' : undefined}
                       className={clsx(
-                        'flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium border transition-colors',
+                        'flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
                         editBorrador
                           ? 'bg-gray-100 border-gray-400 text-gray-700'
                           : 'border-gray-300 text-gray-600 hover:bg-gray-50',
@@ -3147,8 +3149,9 @@ function PanelRecibido({
                   {canGenerarRespuestaEfectivo && doc.borrador_respuesta && (
                     <button
                       onClick={handleDescargarOficio}
-                      disabled={descargando}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium border border-blue-400 text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50">
+                      disabled={descargando || bloqueadoPorFirma}
+                      title={bloqueadoPorFirma ? 'No se puede editar mientras el oficio está en proceso de firma' : undefined}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium border border-blue-400 text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                       {descargando
                         ? <><RotateCcw size={11} className="animate-spin" /> Descargando…</>
                         : <><FileEdit size={11} /> Editar en Word</>}
