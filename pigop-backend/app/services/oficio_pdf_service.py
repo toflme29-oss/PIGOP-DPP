@@ -45,12 +45,12 @@ def _get_membrete_activo() -> Optional[str]:
 # Coordenadas en puntos (1 pt = 1/72 pulgada). Origen = esquina inferior izquierda.
 # Página carta: 612 × 792 pts
 MEMBRETE_CAMPOS = [
-    {"key": "dependencia",   "x": 400, "y": 755},
-    {"key": "subdep",        "x": 420, "y": 722},
-    {"key": "oficina",       "x": 400, "y": 705},
-    {"key": "nooficio",      "x": 400, "y": 689},
-    {"key": "expediente",    "x": 400, "y": 672},
-    {"key": "asunto",        "x": 400, "y": 656},
+    {"key": "dependencia",   "x": 400, "y": 753},
+    {"key": "subdep",        "x": 420, "y": 720},
+    {"key": "oficina",       "x": 400, "y": 703},
+    {"key": "nooficio",      "x": 400, "y": 687},
+    {"key": "expediente",    "x": 400, "y": 670},
+    {"key": "asunto",        "x": 400, "y": 654},
 ]
 MEMBRETE_FECHA_Y  = 630   # Y de la línea de lugar y fecha
 MEMBRETE_FONT     = "Helvetica"
