@@ -165,6 +165,7 @@ class OficioGeneratorService:
     def _add_membrete_background_docx(self, doc: Document, image_path: str) -> None:
         """Inserta el membrete PNG como imagen de fondo de página completa (detrás del texto)."""
         from docx.opc.part import Part as _OpcPart
+        from docx.opc.packuri import PackURI as _PackURI
 
         # 1. Leer imagen y registrar como relación del documento
         ext = Path(image_path).suffix.lower()
@@ -173,7 +174,7 @@ class OficioGeneratorService:
             img_bytes = f.read()
 
         image_part = _OpcPart(
-            partname=f"/word/media/membrete_bg{ext}",
+            partname=_PackURI(f"/word/media/membrete_bg{ext}"),
             content_type=ct,
             blob=img_bytes,
         )
