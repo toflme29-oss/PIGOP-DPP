@@ -50,12 +50,13 @@ MEMBRETE_CAMPOS = [
     {"key": "oficina",       "x": 400, "y": 703},
     {"key": "nooficio",      "x": 400, "y": 687},
     {"key": "expediente",    "x": 400, "y": 670},
-    {"key": "asunto",        "x": 400, "y": 654},
+    {"key": "asunto",        "x": 400, "y": 654, "multiline": True, "max_width": 185},
 ]
-MEMBRETE_FECHA_Y  = 630   # Y de la línea de lugar y fecha
-MEMBRETE_FONT     = "Helvetica"
-MEMBRETE_FONTSIZE = 7
-MEMBRETE_MAX_CHARS = 55   # truncar si el valor es muy largo
+MEMBRETE_FECHA_Y      = 620   # Y de la línea de lugar y fecha (bajado para dejar espacio al asunto multilínea)
+MEMBRETE_FONT         = "Helvetica"
+MEMBRETE_FONTSIZE     = 7
+MEMBRETE_MAX_CHARS    = 55   # truncar campos de una sola línea
+MEMBRETE_LINE_HEIGHT  = 9    # interlineado para campo Asunto multilínea
 
 # Colores institucionales
 GUINDA = colors.HexColor("#911A3A")
@@ -171,7 +172,7 @@ class OficioPdfService:
             # Calculamos el espacio a reservar desde el top hasta debajo del
             # último campo (Asunto) + fecha, para que el cuerpo empiece ahí.
             y_mas_alto = max(c["y"] for c in MEMBRETE_CAMPOS)  # y=753
-            y_mas_bajo = min(c["y"] for c in MEMBRETE_CAMPOS)  # y=653
+            # El asunto puede ocupar hasta 3 líneas × MEMBRETE_LINE_HEIGHT
             espacio_header = (792 - y_mas_alto) + (y_mas_alto - MEMBRETE_FECHA_Y) + 20
             elements.append(Spacer(1, espacio_header))
 
@@ -365,7 +366,7 @@ class OficioPdfService:
                 "oficina":     "Dirección de Programación y Presupuesto",
                 "nooficio":    folio_respuesta or "—",
                 "expediente":  "General",
-                "asunto":      asunto_corto,
+                "asunto":      asunto or "El que se indica",  # texto completo, sin truncar
             }
             _fecha_txt = f"{lugar}, {fecha_respuesta}"
 
@@ -382,12 +383,34 @@ class OficioPdfService:
                     mask="auto",
                 )
                 # 2) Valores en coordenadas exactas por campo
+                from reportlab.pdfbase.pdfmetrics import stringWidth as _sw
                 canvas.setFont(MEMBRETE_FONT, MEMBRETE_FONTSIZE)
                 canvas.setFillColor(colors.HexColor("#1a1a1a"))
                 for campo in MEMBRETE_CAMPOS:
                     val = _vals.get(campo["key"], "")
-                    canvas.drawString(campo["x"], campo["y"],
-                                      val[:MEMBRETE_MAX_CHARS])
+                    if not val:
+                        continue
+                    if campo.get("multiline"):
+                        # Partir el texto en líneas según el ancho máximo disponible
+                        max_w = campo.get("max_width", 185)
+                        cx, cy = campo["x"], campo["y"]
+                        words = val.split()
+                        lines, current = [], ""
+                        for word in words:
+                            test = (current + " " + word).strip()
+                            if _sw(test, MEMBRETE_FONT, MEMBRETE_FONTSIZE) <= max_w:
+                                current = test
+                            else:
+                                if current:
+                                    lines.append(current)
+                                current = word
+                        if current:
+                            lines.append(current)
+                        for i, line in enumerate(lines[:3]):  # máx 3 líneas
+                            canvas.drawString(cx, cy - i * MEMBRETE_LINE_HEIGHT, line)
+                    else:
+                        canvas.drawString(campo["x"], campo["y"],
+                                          val[:MEMBRETE_MAX_CHARS])
                 # 3) Fecha (alineada a la derecha)
                 canvas.setFont("Helvetica", 9)
                 canvas.drawRightString(
