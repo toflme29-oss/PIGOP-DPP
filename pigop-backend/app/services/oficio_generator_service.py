@@ -13,6 +13,8 @@ from docx import Document
 from docx.shared import Inches, Pt, Cm, RGBColor, Emu
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+from lxml import etree as _lxml_etree
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 LOGOS_DIR = STATIC_DIR / "logos"
@@ -63,18 +65,39 @@ class OficioGeneratorService:
         self._set_page_margins(doc)
         self._set_default_font(doc)
 
-        # ── Encabezado institucional: Escudo + Gobierno del Estado ──
-        # Formato oficial: escudo arriba izquierda + recuadro arriba derecha
-        self._add_identidad_institucional(doc)
+        # ── Detectar membrete activo ────────────────────────────────────────
+        from app.services.oficio_pdf_service import _get_membrete_activo, _get_membrete_config
+        membrete_path = _get_membrete_activo()
+        membrete_activo = membrete_path is not None
 
-        # ── Recuadro institucional (datos del oficio) ──
-        self._add_recuadro_institucional(
-            doc,
-            folio=folio_respuesta,
-            asunto_corto=self._truncar_asunto(asunto or "El que se indica"),
-        )
-        # Lema del año
-        self._add_lema(doc)
+        if membrete_activo:
+            # ── Con membrete: fondo PNG de página completa ──────────────────
+            self._add_membrete_background_docx(doc, membrete_path)
+            # Espacio para dejar libre la zona del encabezado del membrete
+            # (aproximadamente la misma altura que ocupa el recuadro + fecha en PDF)
+            cfg = _get_membrete_config()
+            fecha_y  = cfg.get("fecha_y", 620)
+            y_top    = cfg.get("campos", [{}])[0].get("y", 753)
+            # Convertir pts PDF (origin=bottom) a cm desde arriba
+            # Página carta = 792 pt; fecha_y≈620 → desde arriba = 792-620 ≈ 172 pt ≈ 6.1 cm
+            height_header_pt = 792 - fecha_y
+            header_cm = height_header_pt / 28.35  # 1 cm ≈ 28.35 pt
+            p_space = doc.add_paragraph()
+            p_space.paragraph_format.space_before = Pt(0)
+            p_space.paragraph_format.space_after = Pt(0)
+            # Usamos un run vacío con fuente ajustada para crear el espacio vertical
+            run_space = p_space.add_run()
+            run_space.font.size = Pt(height_header_pt * 0.85)
+        else:
+            # ── Sin membrete: encabezado institucional estándar ─────────────
+            self._add_identidad_institucional(doc)
+            self._add_recuadro_institucional(
+                doc,
+                folio=folio_respuesta,
+                asunto_corto=self._truncar_asunto(asunto or "El que se indica"),
+            )
+            self._add_lema(doc)
+
         # Fecha
         self._add_fecha(doc, lugar, fecha_respuesta)
         self._add_empty_lines(doc, 1)
@@ -138,6 +161,82 @@ class OficioGeneratorService:
         return buffer.getvalue()
 
     # ------- Internos -------
+
+    def _add_membrete_background_docx(self, doc: Document, image_path: str) -> None:
+        """Inserta el membrete PNG como imagen de fondo de página completa (detrás del texto)."""
+        from docx.opc.part import Part as _OpcPart
+
+        # 1. Leer imagen y registrar como relación del documento
+        ext = Path(image_path).suffix.lower()
+        ct  = "image/png" if ext == ".png" else "image/jpeg"
+        with open(image_path, "rb") as f:
+            img_bytes = f.read()
+
+        image_part = _OpcPart(
+            partname=f"/word/media/membrete_bg{ext}",
+            content_type=ct,
+            blob=img_bytes,
+        )
+        rId = doc.part.relate_to(
+            image_part,
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+        )
+
+        # 2. Dimensiones en EMU (página carta: 8.5" × 11" = 7772400 × 10058400 EMU)
+        cx, cy = 7772400, 10058400
+
+        # 3. XML del anchor (imagen detrás del texto, posición absoluta 0,0 desde la página)
+        NS = {
+            "w":   "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+            "wp":  "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+            "a":   "http://schemas.openxmlformats.org/drawingml/2006/main",
+            "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
+            "r":   "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        }
+        ns_decl = " ".join(f'xmlns:{k}="{v}"' for k, v in NS.items())
+
+        xml_str = f"""<w:p {ns_decl}>
+  <w:r>
+    <w:drawing>
+      <wp:anchor distT="0" distB="0" distL="0" distR="0"
+                 simplePos="0" relativeHeight="251658240" behindDoc="1"
+                 locked="0" layoutInCell="1" allowOverlap="1">
+        <wp:simplePos x="0" y="0"/>
+        <wp:positionH relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionH>
+        <wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionV>
+        <wp:extent cx="{cx}" cy="{cy}"/>
+        <wp:effectExtent l="0" t="0" r="0" b="0"/>
+        <wp:wrapNone/>
+        <wp:docPr id="900" name="MembreteFondo"/>
+        <wp:cNvGraphicFramePr>
+          <a:graphicFrameLocks noChangeAspect="1"/>
+        </wp:cNvGraphicFramePr>
+        <a:graphic>
+          <a:graphicData uri="{NS['pic']}">
+            <pic:pic>
+              <pic:nvPicPr>
+                <pic:cNvPr id="900" name="MembreteFondo"/>
+                <pic:cNvPicPr/>
+              </pic:nvPicPr>
+              <pic:blipFill>
+                <a:blip r:embed="{rId}"/>
+                <a:stretch><a:fillRect/></a:stretch>
+              </pic:blipFill>
+              <pic:spPr>
+                <a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>
+                <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+              </pic:spPr>
+            </pic:pic>
+          </a:graphicData>
+        </a:graphic>
+      </wp:anchor>
+    </w:drawing>
+  </w:r>
+</w:p>"""
+
+        # 4. Insertar al inicio del body
+        p_elem = _lxml_etree.fromstring(xml_str.encode("utf-8"))
+        doc.element.body.insert(0, p_elem)
 
     def _set_page_margins(self, doc: Document) -> None:
         """Pagina carta con margenes del modelo oficial."""
