@@ -1632,6 +1632,7 @@ function PanelRecibido({
   const [mostrarApoyo, setMostrarApoyo] = useState(false)
   const [mostrarUploadWord, setMostrarUploadWord] = useState(false)
   const [subiendoWord, setSubiendoWord] = useState(false)
+  const [alertasExterno, setAlertasExterno] = useState<string[]>([])
   const refFileRef = useRef<HTMLInputElement>(null)
   const externoFileRef = useRef<HTMLInputElement>(null)
   const wordEditRef = useRef<HTMLInputElement>(null)
@@ -1698,6 +1699,30 @@ function PanelRecibido({
       cargarOriginal()
     }
   }, [doc.id, doc.url_storage, cargarOriginal, originalUrl, loadingOriginal])
+
+  // Verificar discrepancias cuando ya existe un oficio externo cargado
+  useEffect(() => {
+    if (!doc.oficio_externo_nombre) { setAlertasExterno([]); return }
+    documentosApi.extraerDatosOficioExterno(doc.id).then(datos => {
+      const alertas: string[] = []
+      if (datos.no_oficio_extraido) {
+        const norm = (s: string) => s.replace(/\s+/g, '').toUpperCase()
+        const folioActual = norm(doc.folio_respuesta || '')
+        const folioDoc   = norm(datos.no_oficio_extraido)
+        if (folioActual && folioDoc && folioDoc !== folioActual)
+          alertas.push(`El No. de oficio del documento (${datos.no_oficio_extraido}) no coincide con el folio de respuesta registrado (${doc.folio_respuesta || '—'}).`)
+      }
+      if (datos.fecha_extraida) {
+        const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
+        const fechaActual = norm(doc.fecha_respuesta || '')
+        const fechaDoc   = norm(datos.fecha_extraida)
+        if (fechaActual && fechaDoc && fechaDoc !== fechaActual)
+          alertas.push(`La fecha del documento (${datos.fecha_extraida}) no coincide con la fecha del oficio registrada (${doc.fecha_respuesta || '—'}).`)
+      }
+      setAlertasExterno(alertas)
+    }).catch(() => { /* extracción opcional */ })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.id, doc.oficio_externo_nombre, doc.folio_respuesta, doc.fecha_respuesta])
 
   const handleSubirArchivoOriginal = async (file: File) => {
     setSubiendoArchivo(true)
@@ -1801,12 +1826,41 @@ function PanelRecibido({
   const handleSubirOficioExterno = async (file: File) => {
     setSubiendoExterno(true)
     setPdfUrl(null)
+    setAlertasExterno([])
     try {
       await documentosApi.subirOficioExterno(doc.id, file)
       invalidate()
+      // Recarga PDF tras un breve delay (espera conversión DOCX→PDF)
       setTimeout(async () => {
         try { const url = await documentosApi.obtenerOficioPdfUrl(doc.id); setPdfUrl(url) } catch { /* */ }
       }, 800)
+      // Extraer datos del documento subido y comparar con el formulario
+      try {
+        const datos = await documentosApi.extraerDatosOficioExterno(doc.id)
+        const alertas: string[] = []
+
+        // Comparar No. de oficio con folio de respuesta
+        if (datos.no_oficio_extraido) {
+          const normalizar = (s: string) => s.replace(/\s+/g, '').toUpperCase()
+          const folioActual = normalizar(folioLocal || doc.folio_respuesta || '')
+          const folioDoc   = normalizar(datos.no_oficio_extraido)
+          if (folioActual && folioDoc && folioDoc !== folioActual) {
+            alertas.push(`El No. de oficio del documento (${datos.no_oficio_extraido}) no coincide con el folio de respuesta registrado (${folioLocal || doc.folio_respuesta || '—'}).`)
+          }
+        }
+
+        // Comparar fecha
+        if (datos.fecha_extraida) {
+          const normalizar = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
+          const fechaActual = normalizar(fechaRespLocal || doc.fecha_respuesta || '')
+          const fechaDoc   = normalizar(datos.fecha_extraida)
+          if (fechaActual && fechaDoc && fechaDoc !== fechaActual) {
+            alertas.push(`La fecha del documento (${datos.fecha_extraida}) no coincide con la fecha del oficio registrada (${fechaRespLocal || doc.fecha_respuesta || '—'}).`)
+          }
+        }
+
+        setAlertasExterno(alertas)
+      } catch { /* La extracción es opcional; no bloquear si falla */ }
     }
     catch (e) { window.alert('Error al subir oficio: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo')) }
     finally { setSubiendoExterno(false) }
@@ -2696,6 +2750,22 @@ function PanelRecibido({
                       onBlur={() => revisoLocal !== (doc.referencia_reviso ?? '') && guardarFolioRef('reviso', revisoLocal)} />
                   </div>
                 </div>
+
+                {/* ── Alertas de discrepancia entre oficio externo y datos del formulario ── */}
+                {alertasExterno.length > 0 && (
+                  <div className="mt-2 space-y-1.5">
+                    {alertasExterno.map((alerta, i) => (
+                      <div key={i} className="flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2">
+                        <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                        <p className="text-[10px] text-amber-800 leading-snug">{alerta}</p>
+                        <button onClick={() => setAlertasExterno(prev => prev.filter((_, j) => j !== i))}
+                          className="ml-auto text-amber-400 hover:text-amber-600 flex-shrink-0" title="Cerrar">
+                          <X size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -2890,6 +2960,7 @@ function PanelRecibido({
                                   await documentosApi.eliminarOficioExterno(doc.id)
                                   invalidate()
                                   setPdfUrl(null)
+                                  setAlertasExterno([])
                                 } catch { window.alert('Error al eliminar el oficio externo.') }
                               }}
                               className="p-0.5 rounded hover:bg-red-100 text-red-400 flex-shrink-0" title="Eliminar oficio externo">

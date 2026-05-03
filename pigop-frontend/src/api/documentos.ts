@@ -577,6 +577,11 @@ export const documentosApi = {
     return res.data
   },
 
+  extraerDatosOficioExterno: async (id: string): Promise<{ no_oficio_extraido: string | null; fecha_extraida: string | null }> => {
+    const res = await apiClient.get(`/documentos/${id}/extraer-datos-oficio-externo`)
+    return res.data
+  },
+
   uploadArchivo: async (id: string, file: File): Promise<Documento> => {
     const form = new FormData()
     form.append('file', file)

@@ -1739,6 +1739,88 @@ async def subir_oficio_externo(
     return await crud_documento.get_with_relations(db, doc.id)
 
 
+# ---------- Extraer datos del oficio externo (no. oficio y fecha) ----------------
+
+def _extraer_texto_pdf(pdf_path: str, max_pages: int = 3) -> str:
+    """Extrae texto plano de un PDF usando pdfplumber (preferido) o pypdf como fallback."""
+    text = ""
+    ext = os.path.splitext(pdf_path)[1].lower()
+    if ext not in (".pdf",):
+        return text
+    try:
+        import pdfplumber
+        with pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages[:max_pages]:
+                text += (page.extract_text() or "") + "\n"
+        return text
+    except Exception:
+        pass
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(pdf_path)
+        for page in reader.pages[:max_pages]:
+            text += (page.extract_text() or "") + "\n"
+    except Exception:
+        pass
+    return text
+
+
+@router.get(
+    "/{doc_id}/extraer-datos-oficio-externo",
+    summary="Extraer no. de oficio y fecha del PDF externo subido",
+)
+async def extraer_datos_oficio_externo(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """
+    Lee el PDF del oficio externo guardado, extrae texto y devuelve el número de oficio
+    y la fecha detectados mediante expresiones regulares.
+    Útil para que el frontend alerte al usuario si difieren de los datos del formulario.
+    """
+    import re
+
+    doc = await crud_documento.get_with_relations(db, doc_id)
+    if not doc:
+        raise NotFoundError("Documento no encontrado.")
+    _assert_acceso(current_user, str(doc.cliente_id))
+
+    result = {"no_oficio_extraido": None, "fecha_extraida": None}
+
+    if not doc.oficio_externo_url or not os.path.exists(doc.oficio_externo_url):
+        return result
+
+    texto = _extraer_texto_pdf(doc.oficio_externo_url)
+    if not texto.strip():
+        return result
+
+    # ── Detectar número de oficio ─────────────────────────────────────────────
+    # Patrones comunes: SFA/DPP/1260/2026, SFA/SF/DPP/SCG/0001/2026, etc.
+    folio_match = re.search(
+        r'\b(?:SFA|GEM|DPP|SEFOA|SF)[/A-Z]*(?:/\w+)*?/\d{3,5}/20\d{2}\b',
+        texto,
+        re.IGNORECASE,
+    )
+    if folio_match:
+        result["no_oficio_extraido"] = folio_match.group(0).upper()
+
+    # ── Detectar fecha en español ─────────────────────────────────────────────
+    meses = (
+        "enero|febrero|marzo|abril|mayo|junio|julio|agosto|"
+        "septiembre|octubre|noviembre|diciembre"
+    )
+    fecha_match = re.search(
+        rf'\b(\d{{1,2}})\s+de\s+({meses})\s+de\s+(20\d{{2}})\b',
+        texto,
+        re.IGNORECASE,
+    )
+    if fecha_match:
+        result["fecha_extraida"] = fecha_match.group(0)
+
+    return result
+
+
 @router.delete(
     "/{doc_id}/oficio-externo",
     response_model=DocumentoResponse,
