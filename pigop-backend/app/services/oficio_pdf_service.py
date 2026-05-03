@@ -55,7 +55,7 @@ MEMBRETE_CAMPOS = [
 MEMBRETE_FECHA_Y  = 630   # Y de la línea de lugar y fecha
 MEMBRETE_FONT     = "Helvetica"
 MEMBRETE_FONTSIZE = 7
-MEMBRETE_MAX_CHARS = 38   # truncar si el valor es muy largo
+MEMBRETE_MAX_CHARS = 55   # truncar si el valor es muy largo
 
 # Colores institucionales
 GUINDA = colors.HexColor("#911A3A")
