@@ -293,12 +293,18 @@ class OficioGeneratorService:
 
             # Convertir a EMU (1 pt = 12700 EMU)
             # PDF origin = bottom-left → Word origin = top-left
+            # PDF drawString usa la LÍNEA BASE del texto.
+            # En DOCX el text box se posiciona por su borde SUPERIOR.
+            # El ascenso de Arial ≈ 72% del cuerpo de fuente.
+            # Restar el ascenso para que la línea base coincida con el PNG.
+            ascent_pt = fontsize_pt * 0.72
             x_emu = int(x_pt * 12700)
-            y_emu = int((PAGE_H_PT - y_pt) * 12700)
+            y_emu = int(max(0.0, (PAGE_H_PT - y_pt - ascent_pt)) * 12700)
             w_emu = int(max_w_pt * 12700)
-            # Alto: si multiline, hasta 3 líneas; si no, 1 línea
+            # Alto: suficiente para que el texto no quede recortado
             line_h_pt = float(cfg.get("line_height", 9))
-            h_emu = int(line_h_pt * (3 if multiline else 1) * 12700)
+            lines = 3 if multiline else 1
+            h_emu = int(max(fontsize_pt * 1.6 * lines + 6, line_h_pt * lines) * 12700)
 
             self._insert_floating_label_value(
                 doc, valor, x_emu, y_emu, w_emu, h_emu,
