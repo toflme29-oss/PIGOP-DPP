@@ -2118,10 +2118,11 @@ async def descargar_oficio(
     current_user: Usuario = Depends(get_current_active_user),
 ):
     """Genera un documento DOCX con formato institucional y lo retorna para descarga.
-    Solo admin_cliente (Director) y superadmin pueden descargar en DOCX.
-    Los demás roles solo pueden descargar PDF."""
-    if current_user.rol not in ("admin_cliente", "superadmin"):
-        raise ForbiddenError("Solo Director o Administrador pueden descargar en formato Word. Use la descarga en PDF.")
+    Roles con permiso de edición de respuesta pueden descargar en DOCX para editar en Word."""
+    _ROLES_DOCX = {"superadmin", "admin_cliente", "secretaria", "analista",
+                   "subdirector", "jefe_depto", "asesor"}
+    if current_user.rol not in _ROLES_DOCX:
+        raise ForbiddenError("No tiene permisos para descargar en formato Word.")
     doc = await crud_documento.get_with_relations(db, doc_id)
     if not doc:
         raise NotFoundError("Documento no encontrado.")
