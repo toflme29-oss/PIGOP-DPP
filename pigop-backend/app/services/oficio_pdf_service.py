@@ -144,66 +144,99 @@ class OficioPdfService:
             leading=9,
         )
 
-        # ── Identidad institucional: Escudo + Gobierno del Estado ──
-        # Formato oficial: escudo izquierda + texto del Gobierno del Estado
-        # NO incluir SFA/Subsecretaría/DPP como encabezado
-        s_left = ParagraphStyle("Left", parent=s_normal, alignment=0)  # 0 = LEFT
-        escudo_path = LOGOS_DIR / "escudo_mich.png"
-        if escudo_path.exists():
-            esc_img = Image(str(escudo_path), width=0.6 * inch, height=0.6 * inch)
-            esc_img.hAlign = "LEFT"
-            elements.append(esc_img)
-            elements.append(Spacer(1, 2))
+        # ── Detectar si hay membrete activo ────────────────────────────────
+        membrete_activo = _get_membrete_activo() is not None
 
-        elements.append(Paragraph(
-            '<b>Gobierno del Estado<br/>de Michoacán de Ocampo</b>',
-            ParagraphStyle("H1", parent=s_left, fontSize=8, textColor=colors.HexColor("#333333")),
-        ))
-        elements.append(Spacer(1, 6))
-
-        # ── Recuadro institucional (tabla derecha) ──────────────────────────
         asunto_corto = self._truncar_asunto(asunto or "El que se indica")
-        s_recuadro_label = ParagraphStyle(
-            "RecLabel", fontSize=7, fontName="Helvetica-Bold",
-            leading=9, textColor=colors.HexColor("#333333"),
-        )
         s_recuadro_value = ParagraphStyle(
             "RecValue", fontSize=7, fontName="Helvetica",
             leading=9, textColor=colors.HexColor("#333333"),
         )
-        recuadro_data = [
-            ["Dependencia:", "Secretaría de Finanzas y Administración"],
-            ["Sub-dependencia:", "Subsecretaría de Finanzas"],
-            ["Oficina:", "Dirección de Programación y Presupuesto"],
-            ["No. de oficio:", folio_respuesta or "—"],
-            ["Expediente:", "General"],
-            ["Asunto:", asunto_corto],
-        ]
-        recuadro_rows = [
-            [
-                Paragraph(f'<b>{row[0]}</b>', s_recuadro_label),
-                Paragraph(row[1], s_recuadro_value),
-            ]
-            for row in recuadro_data
-        ]
-        recuadro_table = Table(
-            recuadro_rows,
-            colWidths=[1.0 * inch, 2.2 * inch],
-            hAlign="RIGHT",
-        )
-        recuadro_table.setStyle(TableStyle([
-            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
-            ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 3),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-            ("TOPPADDING", (0, 0), (-1, -1), 1),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-        ]))
-        elements.append(recuadro_table)
-        elements.append(Spacer(1, 8))
 
-        # Fecha debajo del recuadro
+        if membrete_activo:
+            # ── Con membrete: solo valores sin bordes ni etiquetas ──────────
+            # El membrete ya imprime el escudo, "Gobierno del Estado" y los
+            # títulos de los campos. Solo colocamos los valores alineados.
+            valores_data = [
+                ["Secretaría de Finanzas y Administración"],
+                ["Subsecretaría de Finanzas"],
+                ["Dirección de Programación y Presupuesto"],
+                [folio_respuesta or "—"],
+                ["General"],
+                [asunto_corto],
+            ]
+            valores_rows = [
+                [Paragraph(row[0], s_recuadro_value)]
+                for row in valores_data
+            ]
+            valores_table = Table(
+                valores_rows,
+                colWidths=[2.5 * inch],
+                hAlign="RIGHT",
+            )
+            valores_table.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING", (0, 0), (-1, -1), 1),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ]))
+            elements.append(valores_table)
+            elements.append(Spacer(1, 8))
+
+        else:
+            # ── Sin membrete: encabezado completo con escudo y recuadro ────
+            s_left = ParagraphStyle("Left", parent=s_normal, alignment=0)
+            escudo_path = LOGOS_DIR / "escudo_mich.png"
+            if escudo_path.exists():
+                esc_img = Image(str(escudo_path), width=0.6 * inch, height=0.6 * inch)
+                esc_img.hAlign = "LEFT"
+                elements.append(esc_img)
+                elements.append(Spacer(1, 2))
+
+            elements.append(Paragraph(
+                '<b>Gobierno del Estado<br/>de Michoacán de Ocampo</b>',
+                ParagraphStyle("H1", parent=s_left, fontSize=8, textColor=colors.HexColor("#333333")),
+            ))
+            elements.append(Spacer(1, 6))
+
+            s_recuadro_label = ParagraphStyle(
+                "RecLabel", fontSize=7, fontName="Helvetica-Bold",
+                leading=9, textColor=colors.HexColor("#333333"),
+            )
+            recuadro_data = [
+                ["Dependencia:", "Secretaría de Finanzas y Administración"],
+                ["Sub-dependencia:", "Subsecretaría de Finanzas"],
+                ["Oficina:", "Dirección de Programación y Presupuesto"],
+                ["No. de oficio:", folio_respuesta or "—"],
+                ["Expediente:", "General"],
+                ["Asunto:", asunto_corto],
+            ]
+            recuadro_rows = [
+                [
+                    Paragraph(f'<b>{row[0]}</b>', s_recuadro_label),
+                    Paragraph(row[1], s_recuadro_value),
+                ]
+                for row in recuadro_data
+            ]
+            recuadro_table = Table(
+                recuadro_rows,
+                colWidths=[1.0 * inch, 2.2 * inch],
+                hAlign="RIGHT",
+            )
+            recuadro_table.setStyle(TableStyle([
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 1),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ]))
+            elements.append(recuadro_table)
+            elements.append(Spacer(1, 8))
+
+        # Fecha (siempre a la derecha)
         elements.append(Paragraph(
             f'{lugar}, {fecha_respuesta}',
             s_right,
