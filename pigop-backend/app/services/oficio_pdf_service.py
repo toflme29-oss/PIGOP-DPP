@@ -41,6 +41,18 @@ def _get_membrete_activo() -> Optional[str]:
             return str(p)
     return None
 
+# ── Configuración de posición del recuadro (ajustar según membrete) ────────────
+# Coordenadas en puntos (1 pulgada = 72 pts). Origen = esquina inferior izquierda.
+# Página carta: 612 × 792 pts
+MEMBRETE_RECUADRO = {
+    "x_valor": 390,       # X donde inicia el valor (columna derecha del recuadro)
+    "y_dependencia": 727, # Y de la fila "Dependencia"
+    "alto_fila": 13.5,    # Altura de cada fila en puntos
+    "font_size": 7,
+    "font": "Helvetica",
+    "max_chars": 38,      # Truncar valores largos para que quepan en la celda
+}
+
 # Colores institucionales
 GUINDA = colors.HexColor("#911A3A")
 GUINDA_LIGHT = colors.HexColor("#FDF0F3")
@@ -145,51 +157,30 @@ class OficioPdfService:
         )
 
         # ── Detectar si hay membrete activo ────────────────────────────────
-        membrete_activo = _get_membrete_activo() is not None
+        membrete_path = _get_membrete_activo()
+        membrete_activo = membrete_path is not None
 
         asunto_corto = self._truncar_asunto(asunto or "El que se indica")
-        s_recuadro_value = ParagraphStyle(
-            "RecValue", fontSize=7, fontName="Helvetica",
-            leading=9, textColor=colors.HexColor("#333333"),
-        )
 
         if membrete_activo:
-            # ── Con membrete: solo valores sin bordes ni etiquetas ──────────
-            # El membrete ya imprime el escudo, "Gobierno del Estado" y los
-            # títulos de los campos. Solo colocamos los valores alineados.
-            valores_data = [
-                ["Secretaría de Finanzas y Administración"],
-                ["Subsecretaría de Finanzas"],
-                ["Dirección de Programación y Presupuesto"],
-                [folio_respuesta or "—"],
-                ["General"],
-                [asunto_corto],
-            ]
-            valores_rows = [
-                [Paragraph(row[0], s_recuadro_value)]
-                for row in valores_data
-            ]
-            valores_table = Table(
-                valores_rows,
-                colWidths=[2.5 * inch],
-                hAlign="RIGHT",
-            )
-            valores_table.setStyle(TableStyle([
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-                ("TOPPADDING", (0, 0), (-1, -1), 1),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-            ]))
-            elements.append(valores_table)
-            elements.append(Spacer(1, 8))
+            # ── Con membrete: el encabezado se dibuja vía canvas (absoluto) ─
+            # Reservamos espacio equivalente al alto del recuadro del membrete
+            # para que el cuerpo del oficio comience en la posición correcta.
+            cfg = MEMBRETE_RECUADRO
+            num_filas = 6  # Dependencia, Sub-dep., Oficina, Folio, Expediente, Asunto
+            alto_recuadro = num_filas * cfg["alto_fila"]
+            # Convertir Y superior a espacio desde el topMargin
+            # y_dependencia está en coords absolutas desde la base de la página
+            y_top_recuadro = cfg["y_dependencia"] + cfg["font_size"]
+            espacio_header = (792 - y_top_recuadro) + alto_recuadro + 20
+            elements.append(Spacer(1, espacio_header))
 
         else:
             # ── Sin membrete: encabezado completo con escudo y recuadro ────
             s_left = ParagraphStyle("Left", parent=s_normal, alignment=0)
-            escudo_path = LOGOS_DIR / "escudo_mich.png"
-            if escudo_path.exists():
-                esc_img = Image(str(escudo_path), width=0.6 * inch, height=0.6 * inch)
+            escudo_path_logo = LOGOS_DIR / "escudo_mich.png"
+            if escudo_path_logo.exists():
+                esc_img = Image(str(escudo_path_logo), width=0.6 * inch, height=0.6 * inch)
                 esc_img.hAlign = "LEFT"
                 elements.append(esc_img)
                 elements.append(Spacer(1, 2))
@@ -202,6 +193,10 @@ class OficioPdfService:
 
             s_recuadro_label = ParagraphStyle(
                 "RecLabel", fontSize=7, fontName="Helvetica-Bold",
+                leading=9, textColor=colors.HexColor("#333333"),
+            )
+            s_recuadro_value = ParagraphStyle(
+                "RecValue", fontSize=7, fontName="Helvetica",
                 leading=9, textColor=colors.HexColor("#333333"),
             )
             recuadro_data = [
@@ -236,12 +231,9 @@ class OficioPdfService:
             elements.append(recuadro_table)
             elements.append(Spacer(1, 8))
 
-        # Fecha (siempre a la derecha)
-        elements.append(Paragraph(
-            f'{lugar}, {fecha_respuesta}',
-            s_right,
-        ))
-        elements.append(Spacer(1, 14))
+            # Fecha solo en modo sin membrete (con membrete va en canvas)
+            elements.append(Paragraph(f'{lugar}, {fecha_respuesta}', s_right))
+            elements.append(Spacer(1, 14))
 
         # ── Destinatario ────────────────────────────────────────────────────
         # Estructura: nombre / cargo / dependencia / PRESENTE.
@@ -363,23 +355,48 @@ class OficioPdfService:
             ref = generar_referencia_oficio("DIR", referencia_elaboro, referencia_reviso)
             elements.append(Paragraph(ref, s_small))
 
-        # ── Build con membrete de fondo ─────────────────────────────────────
-        membrete_path = _get_membrete_activo()
-
+        # ── Build con membrete de fondo y valores absolutos ──────────────
         if membrete_path:
             from reportlab.lib.pagesizes import letter as _letter
 
-            def _draw_membrete(canvas, _doc, _path=membrete_path):
+            cfg = MEMBRETE_RECUADRO
+            _valores = [
+                "Secretaría de Finanzas y Administración",
+                "Subsecretaría de Finanzas",
+                "Dirección de Programación y Presupuesto",
+                folio_respuesta or "—",
+                "General",
+                asunto_corto,
+            ]
+            _fecha_txt = f"{lugar}, {fecha_respuesta}"
+
+            def _draw_page(canvas, _doc,
+                           _path=membrete_path,
+                           _vals=_valores,
+                           _cfg=cfg,
+                           _fecha=_fecha_txt):
                 canvas.saveState()
+                # 1) Fondo membrete
                 canvas.drawImage(
                     _path, 0, 0,
                     width=_letter[0], height=_letter[1],
                     preserveAspectRatio=False,
                     mask="auto",
                 )
+                # 2) Valores del recuadro en posición absoluta
+                canvas.setFont(_cfg["font"], _cfg["font_size"])
+                canvas.setFillColor(colors.HexColor("#1a1a1a"))
+                for i, val in enumerate(_vals):
+                    y = _cfg["y_dependencia"] - i * _cfg["alto_fila"]
+                    texto = val[: _cfg["max_chars"]]
+                    canvas.drawString(_cfg["x_valor"], y, texto)
+                # 3) Fecha debajo del último campo (Asunto)
+                y_fecha = _cfg["y_dependencia"] - len(_vals) * _cfg["alto_fila"] - 4
+                canvas.setFont("Helvetica", 9)
+                canvas.drawRightString(_letter[0] - 0.87 * 72, y_fecha, _fecha)
                 canvas.restoreState()
 
-            doc.build(elements, onFirstPage=_draw_membrete, onLaterPages=_draw_membrete)
+            doc.build(elements, onFirstPage=_draw_page, onLaterPages=_draw_page)
         else:
             doc.build(elements)
 
