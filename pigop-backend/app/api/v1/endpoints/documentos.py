@@ -296,6 +296,76 @@ async def preview_membrete(
     raise NotFoundError("No hay membrete activo configurado.")
 
 
+@router.get("/membrete/calibrar", summary="PDF de calibración de coordenadas del membrete")
+async def calibrar_membrete(
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """
+    Genera un PDF con el membrete de fondo + cuadrícula de coordenadas.
+    Úsalo para identificar las coordenadas exactas (x, y) de cada campo del recuadro.
+    """
+    import io as _io
+    from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.lib.pagesizes import letter as _letter
+    from reportlab.lib import colors as rl_colors
+    from app.services.oficio_pdf_service import _get_membrete_activo, MEMBRETE_RECUADRO
+
+    membrete_path = _get_membrete_activo()
+    if not membrete_path:
+        raise NotFoundError("No hay membrete activo configurado.")
+
+    buf = _io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=_letter)
+    pw, ph = _letter  # 612 × 792 pts
+
+    # 1) Fondo membrete
+    c.drawImage(membrete_path, 0, 0, width=pw, height=ph,
+                preserveAspectRatio=False, mask="auto")
+
+    # 2) Cuadrícula cada 50 pts (líneas grises semitransparentes)
+    c.setStrokeColor(rl_colors.HexColor("#AAAAAA"))
+    c.setLineWidth(0.3)
+    for x in range(0, int(pw) + 1, 50):
+        c.line(x, 0, x, ph)
+        c.setFont("Helvetica", 5)
+        c.setFillColor(rl_colors.HexColor("#666666"))
+        c.drawString(x + 1, 2, str(x))
+    for y in range(0, int(ph) + 1, 50):
+        c.line(0, y, pw, y)
+        c.setFont("Helvetica", 5)
+        c.setFillColor(rl_colors.HexColor("#666666"))
+        c.drawString(2, y + 1, str(y))
+
+    # 3) Marcar posición actual de cada campo (punto rojo + etiqueta)
+    cfg = MEMBRETE_RECUADRO
+    campos = ["Dependencia", "Sub-dep.", "Oficina", "No.oficio", "Expediente", "Asunto"]
+    c.setFont("Helvetica-Bold", 7)
+    for i, nombre in enumerate(campos):
+        x = cfg["x_valor"]
+        y = cfg["y_dependencia"] - i * cfg["alto_fila"]
+        # Cruz roja
+        c.setStrokeColor(rl_colors.red)
+        c.setLineWidth(1)
+        c.line(x - 4, y, x + 4, y)
+        c.line(x, y - 4, x, y + 4)
+        # Etiqueta azul con coordenadas
+        c.setFillColor(rl_colors.HexColor("#0000CC"))
+        c.drawString(x + 6, y - 2, f"{nombre} → x={x}, y={int(y)}")
+
+    # 4) Fecha posición
+    y_fecha = cfg["y_dependencia"] - len(campos) * cfg["alto_fila"] - 4
+    c.setStrokeColor(rl_colors.blue)
+    c.line(pw - 0.87*72 - 4, y_fecha, pw - 0.87*72 + 4, y_fecha)
+    c.setFillColor(rl_colors.HexColor("#006600"))
+    c.drawString(pw - 0.87*72 - 100, y_fecha - 8, f"Fecha → y={int(y_fecha)}")
+
+    c.save()
+    buf.seek(0)
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(buf, media_type="application/pdf",
+        headers={"Content-Disposition": "inline; filename=calibracion_membrete.pdf"})
+
+
 # ---------- Siguiente folio consecutivo -------------------------------------
 
 @router.get("/siguiente-folio", summary="Obtener siguiente folio consecutivo")
