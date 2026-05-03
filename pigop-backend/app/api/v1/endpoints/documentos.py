@@ -308,7 +308,9 @@ async def calibrar_membrete(
     from reportlab.pdfgen import canvas as rl_canvas
     from reportlab.lib.pagesizes import letter as _letter
     from reportlab.lib import colors as rl_colors
-    from app.services.oficio_pdf_service import _get_membrete_activo, MEMBRETE_RECUADRO
+    from app.services.oficio_pdf_service import (
+        _get_membrete_activo, MEMBRETE_CAMPOS, MEMBRETE_FECHA_Y
+    )
 
     membrete_path = _get_membrete_activo()
     if not membrete_path:
@@ -322,7 +324,7 @@ async def calibrar_membrete(
     c.drawImage(membrete_path, 0, 0, width=pw, height=ph,
                 preserveAspectRatio=False, mask="auto")
 
-    # 2) Cuadrícula cada 50 pts (líneas grises semitransparentes)
+    # 2) Cuadrícula cada 50 pts
     c.setStrokeColor(rl_colors.HexColor("#AAAAAA"))
     c.setLineWidth(0.3)
     for x in range(0, int(pw) + 1, 50):
@@ -336,28 +338,23 @@ async def calibrar_membrete(
         c.setFillColor(rl_colors.HexColor("#666666"))
         c.drawString(2, y + 1, str(y))
 
-    # 3) Marcar posición actual de cada campo (punto rojo + etiqueta)
-    cfg = MEMBRETE_RECUADRO
-    campos = ["Dependencia", "Sub-dep.", "Oficina", "No.oficio", "Expediente", "Asunto"]
+    # 3) Marcar posición de cada campo con cruz roja + etiqueta
+    nombres = ["Dependencia", "Sub-dep.", "Oficina", "No.oficio", "Expediente", "Asunto"]
     c.setFont("Helvetica-Bold", 7)
-    for i, nombre in enumerate(campos):
-        x = cfg["x_valor"]
-        y = cfg["y_dependencia"] - i * cfg["alto_fila"]
-        # Cruz roja
+    for campo, nombre in zip(MEMBRETE_CAMPOS, nombres):
+        x, y = campo["x"], campo["y"]
         c.setStrokeColor(rl_colors.red)
         c.setLineWidth(1)
         c.line(x - 4, y, x + 4, y)
         c.line(x, y - 4, x, y + 4)
-        # Etiqueta azul con coordenadas
         c.setFillColor(rl_colors.HexColor("#0000CC"))
-        c.drawString(x + 6, y - 2, f"{nombre} → x={x}, y={int(y)}")
+        c.drawString(x + 6, y - 2, f"{nombre} → x={x}, y={y}")
 
-    # 4) Fecha posición
-    y_fecha = cfg["y_dependencia"] - len(campos) * cfg["alto_fila"] - 4
+    # 4) Fecha
     c.setStrokeColor(rl_colors.blue)
-    c.line(pw - 0.87*72 - 4, y_fecha, pw - 0.87*72 + 4, y_fecha)
+    c.line(pw - 0.87*72 - 4, MEMBRETE_FECHA_Y, pw - 0.87*72 + 4, MEMBRETE_FECHA_Y)
     c.setFillColor(rl_colors.HexColor("#006600"))
-    c.drawString(pw - 0.87*72 - 100, y_fecha - 8, f"Fecha → y={int(y_fecha)}")
+    c.drawString(pw - 0.87*72 - 100, MEMBRETE_FECHA_Y - 8, f"Fecha → y={MEMBRETE_FECHA_Y}")
 
     c.save()
     buf.seek(0)

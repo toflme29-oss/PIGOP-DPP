@@ -41,17 +41,21 @@ def _get_membrete_activo() -> Optional[str]:
             return str(p)
     return None
 
-# ── Configuración de posición del recuadro (ajustar según membrete) ────────────
-# Coordenadas en puntos (1 pulgada = 72 pts). Origen = esquina inferior izquierda.
+# ── Configuración de posición del recuadro (coordenadas exactas por campo) ─────
+# Coordenadas en puntos (1 pt = 1/72 pulgada). Origen = esquina inferior izquierda.
 # Página carta: 612 × 792 pts
-MEMBRETE_RECUADRO = {
-    "x_valor": 390,       # X donde inicia el valor (columna derecha del recuadro)
-    "y_dependencia": 727, # Y de la fila "Dependencia"
-    "alto_fila": 13.5,    # Altura de cada fila en puntos
-    "font_size": 7,
-    "font": "Helvetica",
-    "max_chars": 38,      # Truncar valores largos para que quepan en la celda
-}
+MEMBRETE_CAMPOS = [
+    {"key": "dependencia",   "x": 400, "y": 753},
+    {"key": "subdep",        "x": 430, "y": 720},
+    {"key": "oficina",       "x": 400, "y": 703},
+    {"key": "nooficio",      "x": 400, "y": 688},
+    {"key": "expediente",    "x": 400, "y": 672},
+    {"key": "asunto",        "x": 400, "y": 653},
+]
+MEMBRETE_FECHA_Y  = 630   # Y de la línea de lugar y fecha
+MEMBRETE_FONT     = "Helvetica"
+MEMBRETE_FONTSIZE = 7
+MEMBRETE_MAX_CHARS = 38   # truncar si el valor es muy largo
 
 # Colores institucionales
 GUINDA = colors.HexColor("#911A3A")
@@ -164,15 +168,11 @@ class OficioPdfService:
 
         if membrete_activo:
             # ── Con membrete: el encabezado se dibuja vía canvas (absoluto) ─
-            # Reservamos espacio equivalente al alto del recuadro del membrete
-            # para que el cuerpo del oficio comience en la posición correcta.
-            cfg = MEMBRETE_RECUADRO
-            num_filas = 6  # Dependencia, Sub-dep., Oficina, Folio, Expediente, Asunto
-            alto_recuadro = num_filas * cfg["alto_fila"]
-            # Convertir Y superior a espacio desde el topMargin
-            # y_dependencia está en coords absolutas desde la base de la página
-            y_top_recuadro = cfg["y_dependencia"] + cfg["font_size"]
-            espacio_header = (792 - y_top_recuadro) + alto_recuadro + 20
+            # Calculamos el espacio a reservar desde el top hasta debajo del
+            # último campo (Asunto) + fecha, para que el cuerpo empiece ahí.
+            y_mas_alto = max(c["y"] for c in MEMBRETE_CAMPOS)  # y=753
+            y_mas_bajo = min(c["y"] for c in MEMBRETE_CAMPOS)  # y=653
+            espacio_header = (792 - y_mas_alto) + (y_mas_alto - MEMBRETE_FECHA_Y) + 20
             elements.append(Spacer(1, espacio_header))
 
         else:
@@ -359,21 +359,19 @@ class OficioPdfService:
         if membrete_path:
             from reportlab.lib.pagesizes import letter as _letter
 
-            cfg = MEMBRETE_RECUADRO
-            _valores = [
-                "Secretaría de Finanzas y Administración",
-                "Subsecretaría de Finanzas",
-                "Dirección de Programación y Presupuesto",
-                folio_respuesta or "—",
-                "General",
-                asunto_corto,
-            ]
+            _valores_map = {
+                "dependencia": "Secretaría de Finanzas y Administración",
+                "subdep":      "Subsecretaría de Finanzas",
+                "oficina":     "Dirección de Programación y Presupuesto",
+                "nooficio":    folio_respuesta or "—",
+                "expediente":  "General",
+                "asunto":      asunto_corto,
+            }
             _fecha_txt = f"{lugar}, {fecha_respuesta}"
 
             def _draw_page(canvas, _doc,
                            _path=membrete_path,
-                           _vals=_valores,
-                           _cfg=cfg,
+                           _vals=_valores_map,
                            _fecha=_fecha_txt):
                 canvas.saveState()
                 # 1) Fondo membrete
@@ -383,17 +381,20 @@ class OficioPdfService:
                     preserveAspectRatio=False,
                     mask="auto",
                 )
-                # 2) Valores del recuadro en posición absoluta
-                canvas.setFont(_cfg["font"], _cfg["font_size"])
+                # 2) Valores en coordenadas exactas por campo
+                canvas.setFont(MEMBRETE_FONT, MEMBRETE_FONTSIZE)
                 canvas.setFillColor(colors.HexColor("#1a1a1a"))
-                for i, val in enumerate(_vals):
-                    y = _cfg["y_dependencia"] - i * _cfg["alto_fila"]
-                    texto = val[: _cfg["max_chars"]]
-                    canvas.drawString(_cfg["x_valor"], y, texto)
-                # 3) Fecha debajo del último campo (Asunto)
-                y_fecha = _cfg["y_dependencia"] - len(_vals) * _cfg["alto_fila"] - 4
+                for campo in MEMBRETE_CAMPOS:
+                    val = _vals.get(campo["key"], "")
+                    canvas.drawString(campo["x"], campo["y"],
+                                      val[:MEMBRETE_MAX_CHARS])
+                # 3) Fecha (alineada a la derecha)
                 canvas.setFont("Helvetica", 9)
-                canvas.drawRightString(_letter[0] - 0.87 * 72, y_fecha, _fecha)
+                canvas.drawRightString(
+                    _letter[0] - 0.87 * 72,
+                    MEMBRETE_FECHA_Y,
+                    _fecha,
+                )
                 canvas.restoreState()
 
             doc.build(elements, onFirstPage=_draw_page, onLaterPages=_draw_page)
