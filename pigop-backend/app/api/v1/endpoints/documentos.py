@@ -1741,28 +1741,60 @@ async def subir_oficio_externo(
 
 # ---------- Extraer datos del oficio externo (no. oficio y fecha) ----------------
 
-def _extraer_texto_pdf(pdf_path: str, max_pages: int = 3) -> str:
-    """Extrae texto plano de un PDF usando pdfplumber (preferido) o pypdf como fallback."""
+def _extraer_texto_archivo(file_path: str, max_pages: int = 3) -> str:
+    """Extrae texto plano de un PDF o DOCX.
+
+    Orden de intentos:
+      PDF  → pdfplumber → pypdf
+      DOCX → python-docx
+    Devuelve cadena vacía si ningún método funciona.
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+
+    # ── DOCX / DOC ────────────────────────────────────────────────────────────
+    if ext in (".docx", ".doc"):
+        try:
+            from docx import Document as DocxDocument
+            doc_obj = DocxDocument(file_path)
+            parrafos = [p.text for p in doc_obj.paragraphs if p.text.strip()]
+            # Incluir texto de tablas
+            for tabla in doc_obj.tables:
+                for fila in tabla.rows:
+                    for celda in fila.cells:
+                        if celda.text.strip():
+                            parrafos.append(celda.text.strip())
+            return "\n".join(parrafos[:300])
+        except Exception as exc:
+            logger.warning("python-docx no pudo leer %s: %s", file_path, exc)
+        return ""
+
+    # ── PDF ───────────────────────────────────────────────────────────────────
+    if ext != ".pdf":
+        return ""
+
     text = ""
-    ext = os.path.splitext(pdf_path)[1].lower()
-    if ext not in (".pdf",):
-        return text
     try:
         import pdfplumber
-        with pdfplumber.open(pdf_path) as pdf:
+        with pdfplumber.open(file_path) as pdf:
             for page in pdf.pages[:max_pages]:
                 text += (page.extract_text() or "") + "\n"
-        return text
+        if text.strip():
+            return text
     except Exception:
         pass
     try:
         from pypdf import PdfReader
-        reader = PdfReader(pdf_path)
+        reader = PdfReader(file_path)
         for page in reader.pages[:max_pages]:
             text += (page.extract_text() or "") + "\n"
     except Exception:
         pass
     return text
+
+
+# Alias para compatibilidad
+def _extraer_texto_pdf(pdf_path: str, max_pages: int = 3) -> str:
+    return _extraer_texto_archivo(pdf_path, max_pages)
 
 
 @router.get(
@@ -1791,7 +1823,19 @@ async def extraer_datos_oficio_externo(
     if not doc.oficio_externo_url or not os.path.exists(doc.oficio_externo_url):
         return result
 
-    texto = _extraer_texto_pdf(doc.oficio_externo_url)
+    # Intentar extracción del archivo guardado (PDF convertido o DOCX original)
+    texto = _extraer_texto_archivo(doc.oficio_externo_url)
+
+    # Si el archivo guardado no dio texto (p.ej. PDF escaneado sin OCR), intentar
+    # con el DOCX original en caso de que exista en la misma carpeta
+    if not texto.strip():
+        upload_dir = os.path.dirname(doc.oficio_externo_url)
+        for _ext in (".docx", ".doc"):
+            _docx_path = os.path.join(upload_dir, f"oficio_externo_{doc_id}{_ext}")
+            if os.path.exists(_docx_path):
+                texto = _extraer_texto_archivo(_docx_path)
+                break
+
     if not texto.strip():
         return result
 

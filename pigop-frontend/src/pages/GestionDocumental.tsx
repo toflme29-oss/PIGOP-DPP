@@ -1666,6 +1666,8 @@ function PanelRecibido({
   const canEliminar         = can('eliminar')
   const canSubirArchivo     = can('subir_archivo')
   const canCambiarEstado    = can('cambiar_estado')
+  // Documentos en espera de firma, firmados o archivados no permiten eliminar adjuntos
+  const bloqueadoPorFirma   = ['respondido', 'firmado', 'archivado'].includes(doc.estado ?? '')
 
   // Estado de error del archivo original (si url_storage existe pero la
   // descarga falla — archivo perdido en el servidor, permisos, etc.)
@@ -2832,14 +2834,15 @@ function PanelRecibido({
                               {doc.contenido_referencia ? `${doc.contenido_referencia.length.toLocaleString()} chars` : 'Procesando…'}
                             </p>
                           </div>
-                          <button onClick={handleEliminarReferencia} className="p-0.5 rounded hover:bg-red-100 text-red-400" title="Eliminar">
+                          <button onClick={handleEliminarReferencia} disabled={bloqueadoPorFirma}
+                            className="p-0.5 rounded hover:bg-red-100 text-red-400 disabled:opacity-30 disabled:cursor-not-allowed" title={bloqueadoPorFirma ? 'No se puede eliminar mientras el oficio está en proceso de firma' : 'Eliminar'}>
                             <X size={11} />
                           </button>
                         </div>
                         <input ref={refFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp,.doc,.docx,.xlsx,.xls,.csv,.txt" className="hidden"
                           onChange={e => { const f = e.target.files?.[0]; if (f) { handleEliminarReferencia().then(() => handleCargarReferencia(f)) }; if (e.target) e.target.value = '' }} />
-                        <button onClick={() => refFileRef.current?.click()} disabled={cargandoReferencia}
-                          className="w-full flex items-center justify-center gap-1 py-1.5 text-[9px] rounded-lg font-medium border border-blue-300 text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+                        <button onClick={() => refFileRef.current?.click()} disabled={cargandoReferencia || bloqueadoPorFirma}
+                          className="w-full flex items-center justify-center gap-1 py-1.5 text-[9px] rounded-lg font-medium border border-blue-300 text-blue-700 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed">
                           {cargandoReferencia ? <><RotateCcw size={9} className="animate-spin" /> Procesando…</> : <><Upload size={9} /> Cambiar</>}
                         </button>
                       </div>
@@ -2873,12 +2876,17 @@ function PanelRecibido({
                             {doc.tabla_datos_json && <p className="text-[8px] text-green-600">{doc.tabla_datos_json.length} filas × {doc.tabla_datos_json[0]?.length || 0} cols</p>}
                           </div>
                           <button onClick={async () => { try { await documentosApi.eliminarTablaImagen(doc.id); invalidate(); recargarPdf() } catch {} }}
-                            className="p-0.5 rounded hover:bg-red-100 text-red-400" title="Eliminar tabla"><X size={11} /></button>
+                            disabled={bloqueadoPorFirma}
+                            className="p-0.5 rounded hover:bg-red-100 text-red-400 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title={bloqueadoPorFirma ? 'No se puede eliminar mientras el oficio está en proceso de firma' : 'Eliminar tabla'}>
+                            <X size={11} />
+                          </button>
                         </div>
                         <input id={`tabla-change-${doc.id}`} type="file" accept="image/png,image/jpeg,image/webp,.xlsx,.xls" className="hidden"
                           onChange={async e => { const f = e.target.files?.[0]; if (f) { try { await documentosApi.cargarTablaImagen(doc.id, f); invalidate(); recargarPdf() } catch {} }; if (e.target) e.target.value = '' }} />
                         <button onClick={() => document.getElementById(`tabla-change-${doc.id}`)?.click()}
-                          className="w-full flex items-center justify-center gap-1 py-1.5 text-[9px] rounded-lg font-medium border border-amber-400 text-amber-700 hover:bg-amber-100">
+                          disabled={bloqueadoPorFirma}
+                          className="w-full flex items-center justify-center gap-1 py-1.5 text-[9px] rounded-lg font-medium border border-amber-400 text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed">
                           <Upload size={9} /> Cambiar tabla
                         </button>
                       </div>
@@ -2963,14 +2971,16 @@ function PanelRecibido({
                                   setAlertasExterno([])
                                 } catch { window.alert('Error al eliminar el oficio externo.') }
                               }}
-                              className="p-0.5 rounded hover:bg-red-100 text-red-400 flex-shrink-0" title="Eliminar oficio externo">
+                              disabled={bloqueadoPorFirma}
+                              className="p-0.5 rounded hover:bg-red-100 text-red-400 flex-shrink-0 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title={bloqueadoPorFirma ? 'No se puede eliminar mientras el oficio está en proceso de firma' : 'Eliminar oficio externo'}>
                               <X size={11} />
                             </button>
                           </div>
                           <input ref={externoFileRef} type="file" accept=".pdf,.doc,.docx" className="hidden"
                             onChange={e => { const f = e.target.files?.[0]; if (f) handleSubirOficioExterno(f); if (e.target) e.target.value = '' }} />
-                          <button onClick={() => externoFileRef.current?.click()} disabled={subiendoExterno}
-                            className="w-full flex items-center justify-center gap-1 py-1.5 text-[9px] rounded-lg font-medium border border-green-400 text-green-700 hover:bg-green-100 disabled:opacity-50">
+                          <button onClick={() => externoFileRef.current?.click()} disabled={subiendoExterno || bloqueadoPorFirma}
+                            className="w-full flex items-center justify-center gap-1 py-1.5 text-[9px] rounded-lg font-medium border border-green-400 text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed">
                             <Upload size={9} /> Cambiar archivo
                           </button>
                         </div>
@@ -2978,8 +2988,8 @@ function PanelRecibido({
                         <>
                           <input ref={externoFileRef} type="file" accept=".pdf,.doc,.docx" className="hidden"
                             onChange={e => { const f = e.target.files?.[0]; if (f) handleSubirOficioExterno(f); if (e.target) e.target.value = '' }} />
-                          <button onClick={() => externoFileRef.current?.click()} disabled={subiendoExterno}
-                            className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium border-2 border-dashed border-green-400 text-green-700 hover:bg-green-100 disabled:opacity-50 transition-colors">
+                          <button onClick={() => externoFileRef.current?.click()} disabled={subiendoExterno || bloqueadoPorFirma}
+                            className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium border-2 border-dashed border-green-400 text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                             {subiendoExterno
                               ? <><RotateCcw size={11} className="animate-spin" /> Subiendo...</>
                               : <><Upload size={11} /> Subir oficio (PDF / Word)</>}
