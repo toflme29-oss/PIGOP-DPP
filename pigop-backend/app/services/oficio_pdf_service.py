@@ -46,11 +46,11 @@ def _get_membrete_activo() -> Optional[str]:
 # Página carta: 612 × 792 pts
 MEMBRETE_CAMPOS = [
     {"key": "dependencia",   "x": 400, "y": 755},
-    {"key": "subdep",        "x": 420, "y": 723},
+    {"key": "subdep",        "x": 420, "y": 722},
     {"key": "oficina",       "x": 400, "y": 705},
     {"key": "nooficio",      "x": 400, "y": 689},
     {"key": "expediente",    "x": 400, "y": 672},
-    {"key": "asunto",        "x": 400, "y": 655},
+    {"key": "asunto",        "x": 400, "y": 656},
 ]
 MEMBRETE_FECHA_Y  = 630   # Y de la línea de lugar y fecha
 MEMBRETE_FONT     = "Helvetica"
