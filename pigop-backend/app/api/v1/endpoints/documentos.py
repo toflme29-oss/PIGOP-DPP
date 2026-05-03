@@ -551,30 +551,32 @@ async def verificar_folio(
                 "folio_existente": row[1], "folio": folio_limpio}
 
     # ── 2. Coincidencia por consecutivo + año (sin importar prefijo ni ceros) ──
-    # Extrae el número consecutivo y el año del final del folio.
-    # Ej: "SFA/SF/DPP-SCEG/1221/2026"  →  consecutivo="1221", anio="2026"
-    # Usa regex PostgreSQL (~) para detectar /0*<consecutivo>/<anio> al final,
-    # lo que captura tanto "1221" como "01221", "001221", etc.
+    # Extrae el número consecutivo (sin ceros) y el año del final del folio.
+    # Ej: "SFA/SF/DPP/01221/2026" → consecutivo="1221", anio="2026"
+    # Ej: "SFA/SF/DPP/1221/2026"  → consecutivo="1221", anio="2026"
+    # Regex PostgreSQL /0*1221/2026$ detecta ambos como duplicados.
     m = _re.search(r'/0*(\d{1,5})/(20\d{2})$', folio_limpio)
     if m:
-        consecutivo_raw = m.group(1).lstrip('0') or '0'   # sin ceros a la izquierda
+        # Quitar todos los ceros a la izquierda del consecutivo capturado
+        consecutivo_raw = m.group(1).lstrip('0') or '0'
         anio = m.group(2)
-        # Patrón regex PostgreSQL: termina en /0*{consecutivo}/{anio}
+        # Patrón: termina en /0*<consecutivo>/<año>  (cualquier cantidad de ceros de padding)
         patron_regex = f"/0*{consecutivo_raw}/{anio}$"
 
+        # Revisar tanto folio_respuesta como numero_control (igual que en paso 1)
         result2 = await db.execute(
             sql_text(
-                f"SELECT id, folio_respuesta FROM documentos_oficiales "
-                f"WHERE folio_respuesta IS NOT NULL "
-                f"AND folio_respuesta ~ :patron "
+                f"SELECT id, folio_respuesta, numero_control FROM documentos_oficiales "
+                f"WHERE (folio_respuesta ~ :patron OR numero_control ~ :patron) "
                 f"{excl_clause} LIMIT 1"
             ),
             {"patron": patron_regex, **({"excl": exclude} if exclude else {})},
         )
         row2 = result2.first()
         if row2:
+            folio_dup = row2[1] or row2[2]  # folio_respuesta o numero_control
             return {"disponible": False, "documento_id": str(row2[0]),
-                    "folio_existente": row2[1], "folio": folio_limpio,
+                    "folio_existente": folio_dup, "folio": folio_limpio,
                     "conflicto": "consecutivo_duplicado"}
 
     return {"disponible": True, "folio": folio_limpio}
