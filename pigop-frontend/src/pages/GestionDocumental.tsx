@@ -9,7 +9,7 @@ import {
   ArrowRight, InboxIcon, SendIcon, Building2,
   Download, Shield, BookOpen, FileSignature,
   History, CornerUpLeft, RefreshCw, Lock, Hash, Mail, ChevronLeft, ChevronRight,
-  ClipboardCheck, ArrowLeftRight, FileSearch,
+  ClipboardCheck, ArrowLeftRight, FileSearch, FileEdit, FileUp,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
@@ -1630,8 +1630,11 @@ function PanelRecibido({
   const [cargandoReferencia, setCargandoReferencia] = useState(false)
   const [subiendoExterno, setSubiendoExterno] = useState(false)
   const [mostrarApoyo, setMostrarApoyo] = useState(false)
+  const [mostrarUploadWord, setMostrarUploadWord] = useState(false)
+  const [subiendoWord, setSubiendoWord] = useState(false)
   const refFileRef = useRef<HTMLInputElement>(null)
   const externoFileRef = useRef<HTMLInputElement>(null)
+  const wordEditRef = useRef<HTMLInputElement>(null)
   // ── Roles reales de la DPP ──
   // Director = admin_cliente (firma, revisa, devuelve)
   // Roles del módulo de Gestión Documental (v4)
@@ -2990,7 +2993,7 @@ function PanelRecibido({
                 )}
 
 
-                {/* ── Fila horizontal: Editar borrador | Descargar oficio | Firmar documento ── */}
+                {/* ── Fila horizontal: Editar borrador | Editar en Word | Firmar documento ── */}
                 <div className="flex gap-2 mt-8">
                   {canGenerarRespuestaEfectivo && doc.borrador_respuesta && (
                     <button onClick={() => { setEditBorrador(prev => !prev); setBorradorText(doc.borrador_respuesta ?? '') }}
@@ -3004,11 +3007,21 @@ function PanelRecibido({
                     </button>
                   )}
                   {canDescargarDocx && (
-                    <button onClick={handleDescargarOficio} disabled={descargando}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                    <button
+                      onClick={async () => {
+                        await handleDescargarOficio()
+                        setMostrarUploadWord(true)
+                      }}
+                      disabled={descargando}
+                      className={clsx(
+                        'flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium border transition-colors disabled:opacity-50',
+                        mostrarUploadWord
+                          ? 'bg-blue-50 border-blue-400 text-blue-700'
+                          : 'border-blue-400 text-blue-600 hover:bg-blue-50',
+                      )}>
                       {descargando
-                        ? <><RotateCcw size={11} className="animate-spin" /> Generando…</>
-                        : <><Download size={11} /> Descargar oficio</>}
+                        ? <><RotateCcw size={11} className="animate-spin" /> Descargando…</>
+                        : <><FileEdit size={11} /> Editar en Word</>}
                     </button>
                   )}
                   {doc.firmado_digitalmente ? (
@@ -3065,6 +3078,52 @@ function PanelRecibido({
                     </button>
                   ) : null}
                 </div>
+
+                {/* ── Zona de carga versión editada en Word ── */}
+                {mostrarUploadWord && canDescargarDocx && (
+                  <div className="mt-2 border border-blue-200 rounded-xl bg-blue-50 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-semibold text-blue-700 flex items-center gap-1.5">
+                        <FileUp size={12} /> Cargar versión editada en Word
+                      </p>
+                      <button onClick={() => setMostrarUploadWord(false)}
+                        className="text-blue-400 hover:text-blue-600 transition-colors">
+                        <X size={13} />
+                      </button>
+                    </div>
+                    <p className="text-[9px] text-blue-600 leading-relaxed">
+                      Abre el archivo DOCX descargado, realiza tus cambios en Word, guárdalo y luego selecciónalo aquí para actualizar el oficio.
+                    </p>
+                    <input
+                      ref={wordEditRef}
+                      type="file"
+                      accept=".doc,.docx,.pdf"
+                      className="hidden"
+                      onChange={async e => {
+                        const f = e.target.files?.[0]
+                        if (!f) return
+                        if (e.target) e.target.value = ''
+                        setSubiendoWord(true)
+                        try {
+                          await documentosApi.subirOficioExterno(doc.id, f)
+                          invalidate()
+                          setMostrarUploadWord(false)
+                          recargarPdf()
+                        } catch (err: any) {
+                          window.alert('Error al subir archivo: ' + (err?.response?.data?.detail || 'Intente de nuevo'))
+                        } finally { setSubiendoWord(false) }
+                      }}
+                    />
+                    <button
+                      onClick={() => wordEditRef.current?.click()}
+                      disabled={subiendoWord}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-semibold border-2 border-dashed border-blue-400 text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors">
+                      {subiendoWord
+                        ? <><RotateCcw size={11} className="animate-spin" /> Guardando cambios…</>
+                        : <><Upload size={11} /> Seleccionar archivo editado (.docx / .pdf)</>}
+                    </button>
+                  </div>
+                )}
 
                 {/* Editor expandible — aparece bajo la fila de botones */}
                 {editBorrador && canGenerarRespuestaEfectivo && (
@@ -3814,6 +3873,9 @@ function PanelEmitido({
   const qc = useQueryClient()
   const fileRefEmitido = useRef<HTMLInputElement>(null)
   const refFileRefEmitido = useRef<HTMLInputElement>(null)
+  const wordEditRefEmitido = useRef<HTMLInputElement>(null)
+  const [mostrarUploadWordEmitido, setMostrarUploadWordEmitido] = useState(false)
+  const [subiendoWordEmitido, setSubiendoWordEmitido] = useState(false)
   const [tab, setTab] = useState<'datos' | 'contenido' | 'documento' | 'historial'>('datos')
   const [editBorrador, setEditBorrador] = useState(false)
   const [borradorText, setBorradorText] = useState(doc.borrador_respuesta ?? '')
@@ -4452,9 +4514,21 @@ function PanelEmitido({
                 </div>
                 <div className="flex gap-2">
                   {canDescargarDocx && (
-                    <button onClick={handleDescargarOficio} disabled={descargando}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-                      <Download size={12} /> DOCX
+                    <button
+                      onClick={async () => {
+                        await handleDescargarOficio()
+                        setMostrarUploadWordEmitido(true)
+                      }}
+                      disabled={descargando}
+                      className={clsx(
+                        'flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium border transition-colors disabled:opacity-50',
+                        mostrarUploadWordEmitido
+                          ? 'bg-blue-50 border-blue-400 text-blue-700'
+                          : 'border-blue-400 text-blue-600 hover:bg-blue-50',
+                      )}>
+                      {descargando
+                        ? <><RotateCcw size={11} className="animate-spin" /> Descargando…</>
+                        : <><FileEdit size={12} /> Editar en Word</>}
                     </button>
                   )}
                   <button onClick={async () => { await documentosApi.descargarOficioPdf(doc.id) }}
@@ -4462,6 +4536,55 @@ function PanelEmitido({
                     <Download size={12} /> PDF
                   </button>
                 </div>
+
+                {/* Zona de carga versión editada en Word — emitido */}
+                {mostrarUploadWordEmitido && canDescargarDocx && (
+                  <div className="border border-blue-200 rounded-xl bg-blue-50 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-semibold text-blue-700 flex items-center gap-1.5">
+                        <FileUp size={12} /> Cargar versión editada en Word
+                      </p>
+                      <button onClick={() => setMostrarUploadWordEmitido(false)}
+                        className="text-blue-400 hover:text-blue-600 transition-colors">
+                        <X size={13} />
+                      </button>
+                    </div>
+                    <p className="text-[9px] text-blue-600 leading-relaxed">
+                      Abre el archivo DOCX descargado, realiza tus cambios en Word, guárdalo y luego selecciónalo aquí para actualizar el oficio.
+                    </p>
+                    <input
+                      ref={wordEditRefEmitido}
+                      type="file"
+                      accept=".doc,.docx,.pdf"
+                      className="hidden"
+                      onChange={async e => {
+                        const f = e.target.files?.[0]
+                        if (!f) return
+                        if (e.target) e.target.value = ''
+                        setSubiendoWordEmitido(true)
+                        try {
+                          await documentosApi.subirOficioExterno(doc.id, f)
+                          invalidate()
+                          setMostrarUploadWordEmitido(false)
+                          setPdfUrl(null)
+                          setTimeout(async () => {
+                            try { const url = await documentosApi.obtenerOficioPdfUrl(doc.id); setPdfUrl(url) } catch { /* */ }
+                          }, 800)
+                        } catch (err: any) {
+                          window.alert('Error al subir archivo: ' + (err?.response?.data?.detail || 'Intente de nuevo'))
+                        } finally { setSubiendoWordEmitido(false) }
+                      }}
+                    />
+                    <button
+                      onClick={() => wordEditRefEmitido.current?.click()}
+                      disabled={subiendoWordEmitido}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-semibold border-2 border-dashed border-blue-400 text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors">
+                      {subiendoWordEmitido
+                        ? <><RotateCcw size={11} className="animate-spin" /> Guardando cambios…</>
+                        : <><Upload size={11} /> Seleccionar archivo editado (.docx / .pdf)</>}
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-gray-400">
