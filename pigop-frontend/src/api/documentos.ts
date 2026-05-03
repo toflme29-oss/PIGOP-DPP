@@ -592,7 +592,7 @@ export const documentosApi = {
     return res.data
   },
 
-  descargarOficio: async (id: string): Promise<void> => {
+  descargarOficio: async (id: string, folioRespuesta?: string | null): Promise<void> => {
     const res = await apiClient.post(`/documentos/${id}/descargar-oficio`, null, {
       responseType: 'blob',
     })
@@ -602,15 +602,29 @@ export const documentosApi = {
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    const disposition = res.headers['content-disposition'] || ''
-    // Preferir filename* (RFC 5987 UTF-8) → decodificar; si no, usar filename="..."
-    const matchStar  = disposition.match(/filename\*=UTF-8''([^;\s]+)/i)
-    const matchPlain = disposition.match(/filename="([^"]+)"/)
-    a.download = matchStar
-      ? decodeURIComponent(matchStar[1])
-      : matchPlain
-        ? matchPlain[1]
-        : `OF. RESP. ${id}.docx`
+
+    // Construir nombre desde folio (cliente-side, sin depender del header CORS).
+    // Formato folio: "SFA/SF/DPP/1260/2026" → "OF. RESP. 1260-2026.docx"
+    let nombreArchivo = `OF. RESP. ${id.slice(0, 8)}.docx` // fallback con parte del UUID
+    if (folioRespuesta) {
+      const partes = folioRespuesta.split('/').map(p => p.trim()).filter(Boolean)
+      if (partes.length >= 2) {
+        const consecutivo = partes[partes.length - 2]
+        const anio        = partes[partes.length - 1]
+        nombreArchivo = `OF. RESP. ${consecutivo}-${anio}.docx`
+      } else if (folioRespuesta.trim()) {
+        nombreArchivo = `OF. RESP. ${folioRespuesta.trim()}.docx`
+      }
+    } else {
+      // Intentar leer del header CORS si está disponible
+      const disposition = res.headers['content-disposition'] || ''
+      const matchStar  = disposition.match(/filename\*=UTF-8''([^;\s]+)/i)
+      const matchPlain = disposition.match(/filename="([^"]+)"/)
+      if (matchStar)       nombreArchivo = decodeURIComponent(matchStar[1])
+      else if (matchPlain) nombreArchivo = matchPlain[1]
+    }
+
+    a.download = nombreArchivo
     document.body.appendChild(a)
     a.click()
     window.URL.revokeObjectURL(url)

@@ -1824,7 +1824,7 @@ function PanelRecibido({
 
   const handleDescargarOficio = async () => {
     setDescargando(true)
-    try { await documentosApi.descargarOficio(doc.id) }
+    try { await documentosApi.descargarOficio(doc.id, doc.folio_respuesta) }
     catch (e) { window.alert('Error al descargar oficio: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo')) }
     finally { setDescargando(false) }
   }
@@ -4012,7 +4012,7 @@ function PanelEmitido({
 
   const handleDescargarOficio = async () => {
     setDescargando(true)
-    try { await documentosApi.descargarOficio(doc.id) }
+    try { await documentosApi.descargarOficio(doc.id, doc.folio_respuesta) }
     catch (e) { window.alert('Error al descargar oficio: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo')) }
     finally { setDescargando(false) }
   }
