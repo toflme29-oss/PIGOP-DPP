@@ -1634,6 +1634,7 @@ function PanelRecibido({
   const [subiendoWord, setSubiendoWord] = useState(false)
   const [alertasExterno, setAlertasExterno] = useState<string[]>([])
   const [fechaError, setFechaError] = useState('')
+  const [folioErrorMsg, setFolioErrorMsg] = useState('')
   const [destinatarioRespLocal, setDestinatarioRespLocal] = useState(doc.remitente_nombre ?? '')
   const [cargoRespLocal, setCargoRespLocal] = useState(doc.remitente_cargo ?? '')
   const refFileRef = useRef<HTMLInputElement>(null)
@@ -2713,10 +2714,23 @@ function PanelRecibido({
                     <div className="flex gap-1">
                       <input type="text" placeholder="SFA/SF/DPP/0001/2026"
                         disabled={bloqueadoPorFirma}
-                        className="flex-1 min-w-0 border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none font-mono disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                        className={`flex-1 min-w-0 border rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none font-mono disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed ${folioErrorMsg ? 'border-red-400' : 'border-gray-300'}`}
                         style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                        value={folioLocal} onChange={e => setFolioLocal(e.target.value)}
-                        onBlur={() => folioLocal !== (doc.folio_respuesta ?? '') && guardarFolioRef('folio', folioLocal)} />
+                        value={folioLocal}
+                        onChange={e => { setFolioLocal(e.target.value); setFolioErrorMsg('') }}
+                        onBlur={async () => {
+                          if (!folioLocal || folioLocal === (doc.folio_respuesta ?? '')) return
+                          // Verificar duplicado por consecutivo+año antes de guardar
+                          try {
+                            const { disponible, folio_existente } = await documentosApi.verificarFolio(folioLocal, doc.id)
+                            if (!disponible) {
+                              setFolioErrorMsg(`Consecutivo duplicado — ya existe el folio "${folio_existente || folioLocal}"`)
+                              return
+                            }
+                          } catch { /* si falla la verificación, dejar guardar */ }
+                          setFolioErrorMsg('')
+                          guardarFolioRef('folio', folioLocal)
+                        }} />
                       {!folioLocal && !bloqueadoPorFirma && (
                         <button
                           onClick={async () => {
@@ -2734,6 +2748,7 @@ function PanelRecibido({
                         </button>
                       )}
                     </div>
+                    {folioErrorMsg && <p className="text-[9px] text-red-500 mt-0.5">{folioErrorMsg}</p>}
                   </div>
                   {/* Fecha */}
                   <div>
@@ -3203,15 +3218,21 @@ function PanelRecibido({
                           return
                         }
                       }
-                      // Validar que el folio no esté duplicado
+                      // Validar que el folio no esté duplicado (usando exclude_id para ignorar el propio doc)
                       if (folioLocal) {
                         try {
-                          const { disponible, documento_id } = await documentosApi.verificarFolio(folioLocal)
-                          if (!disponible && documento_id !== doc.id) {
-                            window.alert(`⚠️ El folio "${folioLocal}" ya está registrado en otro documento.\nVerifica el número consecutivo antes de enviar a firma.`)
+                          const { disponible, folio_existente } = await documentosApi.verificarFolio(folioLocal, doc.id)
+                          if (!disponible) {
+                            setFolioErrorMsg(`Consecutivo duplicado — ya existe el folio "${folio_existente || folioLocal}"`)
+                            window.alert(`⚠️ El consecutivo del folio "${folioLocal}" ya está registrado (${folio_existente || folioLocal}).\nCorrige el número antes de enviar a firma.`)
                             return
                           }
                         } catch { /* Si falla la verificación, dejar pasar */ }
+                      }
+                      // Bloquear si hay error de folio pendiente
+                      if (folioErrorMsg) {
+                        window.alert(`⚠️ Corrige el folio antes de enviar a firma:\n${folioErrorMsg}`)
+                        return
                       }
                       try {
                         setEnviandoFirma(true)
@@ -3222,7 +3243,7 @@ function PanelRecibido({
                       } catch (e) { window.alert('Error al enviar para firma: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo'))
                       } finally { setEnviandoFirma(false) }
                     }}
-                      disabled={doc.estado === 'respondido' || enviandoFirma || !!fechaError}
+                      disabled={doc.estado === 'respondido' || enviandoFirma || !!fechaError || !!folioErrorMsg}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium text-white disabled:opacity-50 transition-colors"
                       style={{ backgroundColor: GUINDA }}>
                       {enviandoFirma

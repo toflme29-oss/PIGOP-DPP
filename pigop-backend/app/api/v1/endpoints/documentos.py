@@ -514,25 +514,73 @@ async def siguiente_folio(
 @router.get("/verificar-folio", summary="Verificar si un folio/No. de oficio ya existe")
 async def verificar_folio(
     folio: str = Query(..., description="Folio a verificar, ej: SFA/SF/DPP-SCEG/0001/2026"),
+    exclude_id: str = Query(None, description="ID del documento actual (para excluirlo de la búsqueda)"),
     db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
     """
     Verifica si un número de oficio/folio ya está registrado en el sistema.
-    Retorna { disponible: true } si el folio está libre, { disponible: false, documento_id } si ya existe.
+
+    Hace dos verificaciones:
+    1. Coincidencia exacta de folio_respuesta o numero_control.
+    2. Coincidencia por consecutivo+año: extrae el número de 3-5 dígitos y el
+       año del folio (p.ej. "1221" y "2026" de "SFA/SF/DPP/1221/2026") y busca
+       cualquier documento cuyo folio_respuesta o numero_control contenga
+       ese consecutivo y año — sin importar el prefijo institucional.
+
+    Retorna { disponible: false, documento_id, folio_existente } si hay conflicto.
     """
+    import re as _re
     from sqlalchemy import text as sql_text
+
     folio_limpio = folio.strip()
+    exclude = exclude_id.strip() if exclude_id else None
+
+    # ── 1. Coincidencia exacta ────────────────────────────────────────────────
+    excl_clause = "AND id != :excl" if exclude else ""
     result = await db.execute(
         sql_text(
-            "SELECT id FROM documentos_oficiales "
-            "WHERE folio_respuesta = :f OR numero_control = :f LIMIT 1"
+            f"SELECT id, folio_respuesta FROM documentos_oficiales "
+            f"WHERE (folio_respuesta = :f OR numero_control = :f) {excl_clause} LIMIT 1"
         ),
-        {"f": folio_limpio},
+        {"f": folio_limpio, **({"excl": exclude} if exclude else {})},
     )
     row = result.first()
     if row:
-        return {"disponible": False, "documento_id": str(row[0]), "folio": folio_limpio}
+        return {"disponible": False, "documento_id": str(row[0]),
+                "folio_existente": row[1], "folio": folio_limpio}
+
+    # ── 2. Coincidencia por consecutivo + año ────────────────────────────────
+    # Extraer consecutivo (3-5 dígitos) y año (20XX) del final del folio
+    m = _re.search(r'/0*(\d{1,5})/(20\d{2})$', folio_limpio)
+    if m:
+        consecutivo_raw = m.group(1).lstrip('0') or '0'   # sin ceros a la izquierda
+        anio = m.group(2)
+
+        # Buscar en folio_respuesta cualquier documento que termine en
+        # /NNN/ANIO o /0NNN/ANIO (con o sin padding de ceros)
+        result2 = await db.execute(
+            sql_text(
+                f"SELECT id, folio_respuesta FROM documentos_oficiales "
+                f"WHERE folio_respuesta IS NOT NULL "
+                f"AND (folio_respuesta LIKE :p1 OR folio_respuesta LIKE :p2 "
+                f"     OR folio_respuesta LIKE :p3 OR folio_respuesta LIKE :p4) "
+                f"{excl_clause} LIMIT 1"
+            ),
+            {
+                "p1": f"%/{consecutivo_raw}/{anio}",
+                "p2": f"%/0{consecutivo_raw.zfill(3)}/{anio}",
+                "p3": f"%/0{consecutivo_raw.zfill(4)}/{anio}",
+                "p4": f"%/{consecutivo_raw.zfill(5)}/{anio}",
+                **({"excl": exclude} if exclude else {}),
+            },
+        )
+        row2 = result2.first()
+        if row2:
+            return {"disponible": False, "documento_id": str(row2[0]),
+                    "folio_existente": row2[1], "folio": folio_limpio,
+                    "conflicto": "consecutivo_duplicado"}
+
     return {"disponible": True, "folio": folio_limpio}
 
 

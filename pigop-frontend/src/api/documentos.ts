@@ -716,8 +716,11 @@ export const documentosApi = {
   /** Verificar si un folio ya existe en el sistema */
   verificarFolio: async (
     folio: string,
-  ): Promise<{ disponible: boolean; documento_id?: string; folio: string }> => {
-    const res = await apiClient.get('/documentos/verificar-folio', { params: { folio } })
+    excludeId?: string,
+  ): Promise<{ disponible: boolean; documento_id?: string; folio: string; folio_existente?: string; conflicto?: string }> => {
+    const res = await apiClient.get('/documentos/verificar-folio', {
+      params: { folio, ...(excludeId ? { exclude_id: excludeId } : {}) },
+    })
     return res.data
   },
 
