@@ -7,13 +7,13 @@
  *
  * Acceso: superadmin y admin_cliente
  */
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Users, Building2, Plus, ToggleLeft, ToggleRight,
   Shield, UserCheck, Eye, Loader2, X, AlertCircle,
   KeyRound, RefreshCw, Search, ChevronDown, Lock,
-  Upload, CheckCircle2, FileImage, Trash2,
+  Upload, CheckCircle2, FileImage, Trash2, Settings2, Save,
 } from 'lucide-react'
 import {
   usuariosApi, clientesAdminApi,
@@ -21,7 +21,7 @@ import {
   type UsuarioAdmin, type ClienteAdmin,
   type UsuarioCreate, type ClienteCreate,
 } from '../api/usuarios'
-import { documentosApi } from '../api/documentos'
+import { documentosApi, type MembreteConfig, type MembreteCampo } from '../api/documentos'
 import { useAuth } from '../hooks/useAuth'
 import { formatDate } from '../utils'
 import { TablaPermisos } from './AdminPermisos'
@@ -1193,6 +1193,193 @@ function ModalImportarDependencias({
 
 // ── Panel Membrete ─────────────────────────────────────────────────────────────
 
+// ── Panel de configuración de coordenadas del membrete ────────────────────────
+function PanelConfigMembrete() {
+  const queryClient = useQueryClient()
+  const [abierto, setAbierto] = useState(false)
+  const [cfg, setCfg] = useState<MembreteConfig | null>(null)
+  const [guardando, setGuardando] = useState(false)
+  const [msg, setMsg] = useState<{ tipo: 'ok' | 'err'; texto: string } | null>(null)
+
+  const { data: cfgRemota, isLoading } = useQuery({
+    queryKey: ['membrete-config'],
+    queryFn: () => documentosApi.getMembreteConfig(),
+  })
+
+  useEffect(() => {
+    if (cfgRemota && !cfg) setCfg(structuredClone(cfgRemota))
+  }, [cfgRemota])
+
+  const setCampo = (idx: number, field: keyof MembreteCampo, value: unknown) => {
+    if (!cfg) return
+    const next = structuredClone(cfg)
+    ;(next.campos[idx] as any)[field] = value
+    setCfg(next)
+  }
+
+  const setGlobal = (field: keyof Omit<MembreteConfig, 'campos'>, value: number) => {
+    if (!cfg) return
+    setCfg({ ...cfg, [field]: value })
+  }
+
+  const guardar = async () => {
+    if (!cfg) return
+    setGuardando(true)
+    setMsg(null)
+    try {
+      const res = await documentosApi.saveMembreteConfig(cfg)
+      setMsg({ tipo: 'ok', texto: res.mensaje })
+      queryClient.invalidateQueries({ queryKey: ['membrete-config'] })
+    } catch (e: any) {
+      setMsg({ tipo: 'err', texto: e?.response?.data?.detail || 'Error al guardar.' })
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      {/* Cabecera colapsable */}
+      <button
+        onClick={() => setAbierto(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700"
+      >
+        <span className="flex items-center gap-2">
+          <Settings2 size={15} style={{ color: GUINDA }} />
+          Configuración avanzada — coordenadas y tipografía
+        </span>
+        <ChevronDown size={15} className={`transition-transform ${abierto ? 'rotate-180' : ''}`} />
+      </button>
+
+      {abierto && (
+        <div className="p-4 space-y-5 bg-white">
+          {isLoading || !cfg ? (
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <Loader2 size={13} className="animate-spin" /> Cargando configuración...
+            </div>
+          ) : (
+            <>
+              {/* Parámetros globales */}
+              <div>
+                <p className="text-xs font-semibold text-gray-600 mb-2">Parámetros globales</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {(
+                    [
+                      { field: 'fontsize'   as const, label: 'Tamaño fuente (pt)' },
+                      { field: 'max_chars'  as const, label: 'Máx. caracteres (línea)' },
+                      { field: 'line_height'as const, label: 'Interlineado (pt)' },
+                      { field: 'fecha_y'   as const, label: 'Fecha — posición Y' },
+                    ] as { field: keyof Omit<MembreteConfig,'campos'>; label: string }[]
+                  ).map(({ field, label }) => (
+                    <label key={field} className="flex flex-col gap-1">
+                      <span className="text-[10px] text-gray-500">{label}</span>
+                      <input
+                        type="number"
+                        value={cfg[field]}
+                        onChange={e => setGlobal(field, Number(e.target.value))}
+                        className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs text-center w-full focus:outline-none focus:ring-1"
+                        style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tabla de campos */}
+              <div>
+                <p className="text-xs font-semibold text-gray-600 mb-2">Campos del recuadro</p>
+                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        <th className="text-left px-3 py-2 font-semibold text-gray-600 w-36">Campo</th>
+                        <th className="text-center px-2 py-2 font-semibold text-gray-600 w-20">X</th>
+                        <th className="text-center px-2 py-2 font-semibold text-gray-600 w-20">Y</th>
+                        <th className="text-center px-2 py-2 font-semibold text-gray-600 w-24">Ancho máx.</th>
+                        <th className="text-center px-2 py-2 font-semibold text-gray-600 w-24">Multilínea</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cfg.campos.map((campo, idx) => (
+                        <tr key={campo.key} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-3 py-2 font-medium text-gray-700">{campo.label}</td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="number"
+                              value={campo.x}
+                              onChange={e => setCampo(idx, 'x', Number(e.target.value))}
+                              className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-center w-full focus:outline-none focus:ring-1"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="number"
+                              value={campo.y}
+                              onChange={e => setCampo(idx, 'y', Number(e.target.value))}
+                              className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-center w-full focus:outline-none focus:ring-1"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="number"
+                              value={campo.max_width}
+                              onChange={e => setCampo(idx, 'max_width', Number(e.target.value))}
+                              className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-center w-full focus:outline-none focus:ring-1"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5 text-center">
+                            <input
+                              type="checkbox"
+                              checked={campo.multiline}
+                              onChange={e => setCampo(idx, 'multiline', e.target.checked)}
+                              className="w-4 h-4 rounded cursor-pointer"
+                              style={{ accentColor: GUINDA }}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1.5">
+                  Coordenadas en puntos (pt). Origen = esquina inferior izquierda. Página carta: 612 × 792 pt.
+                </p>
+              </div>
+
+              {/* Mensaje */}
+              {msg && (
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs border ${
+                  msg.tipo === 'ok'
+                    ? 'bg-green-50 border-green-200 text-green-700'
+                    : 'bg-red-50 border-red-200 text-red-700'
+                }`}>
+                  {msg.tipo === 'ok' ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}
+                  {msg.texto}
+                </div>
+              )}
+
+              {/* Guardar */}
+              <div className="flex justify-end">
+                <button
+                  onClick={guardar}
+                  disabled={guardando}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: GUINDA }}
+                >
+                  {guardando
+                    ? <><Loader2 size={14} className="animate-spin" /> Guardando...</>
+                    : <><Save size={14} /> Guardar configuración</>
+                  }
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PanelMembrete() {
   const fileRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
@@ -1343,6 +1530,9 @@ function PanelMembrete() {
             </button>
           )}
         </div>
+
+        {/* Configuración avanzada */}
+        <PanelConfigMembrete />
 
         {/* Instrucciones */}
         <div className="bg-gray-50 rounded-xl p-4 text-xs text-gray-500 space-y-1">

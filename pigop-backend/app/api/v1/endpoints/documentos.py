@@ -296,6 +296,32 @@ async def preview_membrete(
     raise NotFoundError("No hay membrete activo configurado.")
 
 
+@router.get("/membrete/config", summary="Obtener configuración de coordenadas del membrete")
+async def get_membrete_config(
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Devuelve la configuración actual de coordenadas y tipografía del membrete."""
+    from app.services.oficio_pdf_service import _get_membrete_config
+    return _get_membrete_config()
+
+
+@router.put("/membrete/config", summary="Guardar configuración de coordenadas del membrete")
+async def save_membrete_config(
+    payload: dict = Body(...),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Persiste la configuración de coordenadas y tipografía del membrete."""
+    if current_user.rol not in ("superadmin", "admin_cliente"):
+        raise ForbiddenError("Solo administradores pueden modificar la configuración del membrete.")
+    from app.services.oficio_pdf_service import _save_membrete_config, _MEMBRETE_CONFIG_DEFAULT
+    # Validar que las claves requeridas existan
+    required = {"fontsize", "max_chars", "line_height", "fecha_y", "campos"}
+    if not required.issubset(payload.keys()):
+        raise BusinessError(f"Faltan campos requeridos: {required - payload.keys()}")
+    _save_membrete_config(payload)
+    return {"ok": True, "mensaje": "Configuración de membrete guardada correctamente."}
+
+
 @router.get("/membrete/calibrar", summary="PDF de calibración de coordenadas del membrete")
 async def calibrar_membrete(
     current_user: Usuario = Depends(get_current_active_user),
@@ -309,12 +335,16 @@ async def calibrar_membrete(
     from reportlab.lib.pagesizes import letter as _letter
     from reportlab.lib import colors as rl_colors
     from app.services.oficio_pdf_service import (
-        _get_membrete_activo, MEMBRETE_CAMPOS, MEMBRETE_FECHA_Y
+        _get_membrete_activo, _get_membrete_config
     )
 
     membrete_path = _get_membrete_activo()
     if not membrete_path:
         raise NotFoundError("No hay membrete activo configurado.")
+
+    _cfg = _get_membrete_config()
+    MEMBRETE_CAMPOS = _cfg["campos"]
+    MEMBRETE_FECHA_Y = _cfg["fecha_y"]
 
     buf = _io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=_letter)

@@ -9,6 +9,7 @@ Dependencias:
   - reportlab==4.0.7+
 """
 import io
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -41,22 +42,60 @@ def _get_membrete_activo() -> Optional[str]:
             return str(p)
     return None
 
-# ── Configuración de posición del recuadro (coordenadas exactas por campo) ─────
+# ── Configuración de posición del recuadro (defaults; se sobreescriben con JSON) ─
 # Coordenadas en puntos (1 pt = 1/72 pulgada). Origen = esquina inferior izquierda.
 # Página carta: 612 × 792 pts
-MEMBRETE_CAMPOS = [
-    {"key": "dependencia",   "x": 400, "y": 753},
-    {"key": "subdep",        "x": 420, "y": 720},
-    {"key": "oficina",       "x": 400, "y": 703},
-    {"key": "nooficio",      "x": 400, "y": 687},
-    {"key": "expediente",    "x": 400, "y": 670},
-    {"key": "asunto",        "x": 400, "y": 654, "multiline": True, "max_width": 185},
-]
-MEMBRETE_FECHA_Y      = 620   # Y de la línea de lugar y fecha (bajado para dejar espacio al asunto multilínea)
-MEMBRETE_FONT         = "Helvetica"
-MEMBRETE_FONTSIZE     = 7
-MEMBRETE_MAX_CHARS    = 55   # truncar campos de una sola línea
-MEMBRETE_LINE_HEIGHT  = 9    # interlineado para campo Asunto multilínea
+_MEMBRETE_CONFIG_PATH = LOGOS_DIR / "membrete_config.json"
+
+_MEMBRETE_CONFIG_DEFAULT: dict = {
+    "fontsize":    7,
+    "max_chars":   55,
+    "line_height": 9,
+    "fecha_y":     620,
+    "campos": [
+        {"key": "dependencia", "label": "Dependencia",     "x": 400, "y": 753, "multiline": False, "max_width": 185},
+        {"key": "subdep",      "label": "Sub-dependencia", "x": 420, "y": 720, "multiline": False, "max_width": 185},
+        {"key": "oficina",     "label": "Oficina",         "x": 400, "y": 703, "multiline": False, "max_width": 185},
+        {"key": "nooficio",    "label": "No. de Oficio",   "x": 400, "y": 687, "multiline": False, "max_width": 185},
+        {"key": "expediente",  "label": "Expediente",      "x": 400, "y": 670, "multiline": False, "max_width": 185},
+        {"key": "asunto",      "label": "Asunto",          "x": 400, "y": 654, "multiline": True,  "max_width": 185},
+    ],
+}
+
+
+def _get_membrete_config() -> dict:
+    """Carga la configuración del membrete desde JSON (si existe) o devuelve los defaults."""
+    try:
+        if _MEMBRETE_CONFIG_PATH.exists():
+            with open(_MEMBRETE_CONFIG_PATH, "r", encoding="utf-8") as f:
+                stored = json.load(f)
+            cfg = dict(_MEMBRETE_CONFIG_DEFAULT)
+            cfg.update({k: v for k, v in stored.items() if k in cfg})
+            return cfg
+    except Exception:
+        pass
+    return dict(_MEMBRETE_CONFIG_DEFAULT)
+
+
+def _save_membrete_config(cfg: dict) -> None:
+    """Persiste la configuración en JSON."""
+    LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+    with open(_MEMBRETE_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
+# Alias de compatibilidad para el endpoint de calibración (usa los valores actuales)
+def _membrete_campos_actuales() -> list:
+    return _get_membrete_config()["campos"]
+
+
+# Constantes legacy (usadas en el endpoint de calibración existente)
+MEMBRETE_CAMPOS   = _MEMBRETE_CONFIG_DEFAULT["campos"]
+MEMBRETE_FECHA_Y  = _MEMBRETE_CONFIG_DEFAULT["fecha_y"]
+MEMBRETE_FONT     = "Helvetica"
+MEMBRETE_FONTSIZE = _MEMBRETE_CONFIG_DEFAULT["fontsize"]
+MEMBRETE_MAX_CHARS    = _MEMBRETE_CONFIG_DEFAULT["max_chars"]
+MEMBRETE_LINE_HEIGHT  = _MEMBRETE_CONFIG_DEFAULT["line_height"]
 
 # Colores institucionales
 GUINDA = colors.HexColor("#911A3A")
@@ -165,15 +204,20 @@ class OficioPdfService:
         membrete_path = _get_membrete_activo()
         membrete_activo = membrete_path is not None
 
+        # Cargar configuración dinámica (coordenadas, fuente, etc.)
+        _cfg = _get_membrete_config()
+        _cfg_campos     = _cfg["campos"]
+        _cfg_fontsize   = _cfg["fontsize"]
+        _cfg_max_chars  = _cfg["max_chars"]
+        _cfg_line_h     = _cfg["line_height"]
+        _cfg_fecha_y    = _cfg["fecha_y"]
+
         asunto_corto = self._truncar_asunto(asunto or "El que se indica")
 
         if membrete_activo:
             # ── Con membrete: el encabezado se dibuja vía canvas (absoluto) ─
-            # Calculamos el espacio a reservar desde el top hasta debajo del
-            # último campo (Asunto) + fecha, para que el cuerpo empiece ahí.
-            y_mas_alto = max(c["y"] for c in MEMBRETE_CAMPOS)  # y=753
-            # El asunto puede ocupar hasta 3 líneas × MEMBRETE_LINE_HEIGHT
-            espacio_header = (792 - y_mas_alto) + (y_mas_alto - MEMBRETE_FECHA_Y) + 20
+            y_mas_alto = max(c["y"] for c in _cfg_campos)
+            espacio_header = (792 - y_mas_alto) + (y_mas_alto - _cfg_fecha_y) + 20
             elements.append(Spacer(1, espacio_header))
 
         else:
@@ -373,7 +417,12 @@ class OficioPdfService:
             def _draw_page(canvas, _doc,
                            _path=membrete_path,
                            _vals=_valores_map,
-                           _fecha=_fecha_txt):
+                           _fecha=_fecha_txt,
+                           _campos=_cfg_campos,
+                           _fontsize=_cfg_fontsize,
+                           _max_chars=_cfg_max_chars,
+                           _line_h=_cfg_line_h,
+                           _fecha_y=_cfg_fecha_y):
                 canvas.saveState()
                 # 1) Fondo membrete
                 canvas.drawImage(
@@ -384,9 +433,9 @@ class OficioPdfService:
                 )
                 # 2) Valores en coordenadas exactas por campo
                 from reportlab.pdfbase.pdfmetrics import stringWidth as _sw
-                canvas.setFont(MEMBRETE_FONT, MEMBRETE_FONTSIZE)
+                canvas.setFont(MEMBRETE_FONT, _fontsize)
                 canvas.setFillColor(colors.HexColor("#1a1a1a"))
-                for campo in MEMBRETE_CAMPOS:
+                for campo in _campos:
                     val = _vals.get(campo["key"], "")
                     if not val:
                         continue
@@ -398,7 +447,7 @@ class OficioPdfService:
                         lines, current = [], ""
                         for word in words:
                             test = (current + " " + word).strip()
-                            if _sw(test, MEMBRETE_FONT, MEMBRETE_FONTSIZE) <= max_w:
+                            if _sw(test, MEMBRETE_FONT, _fontsize) <= max_w:
                                 current = test
                             else:
                                 if current:
@@ -407,15 +456,15 @@ class OficioPdfService:
                         if current:
                             lines.append(current)
                         for i, line in enumerate(lines[:3]):  # máx 3 líneas
-                            canvas.drawString(cx, cy - i * MEMBRETE_LINE_HEIGHT, line)
+                            canvas.drawString(cx, cy - i * _line_h, line)
                     else:
                         canvas.drawString(campo["x"], campo["y"],
-                                          val[:MEMBRETE_MAX_CHARS])
+                                          val[:_max_chars])
                 # 3) Fecha (alineada a la derecha)
                 canvas.setFont("Helvetica", 9)
                 canvas.drawRightString(
                     _letter[0] - 0.87 * 72,
-                    MEMBRETE_FECHA_Y,
+                    _fecha_y,
                     _fecha,
                 )
                 canvas.restoreState()

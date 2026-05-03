@@ -2,6 +2,23 @@ import apiClient from './client'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
+export interface MembreteCampo {
+  key: string
+  label: string
+  x: number
+  y: number
+  multiline: boolean
+  max_width: number
+}
+
+export interface MembreteConfig {
+  fontsize: number
+  max_chars: number
+  line_height: number
+  fecha_y: number
+  campos: MembreteCampo[]
+}
+
 export type TipoDocumento =
   | 'oficio' | 'circular' | 'memorandum' | 'acuerdo'
   | 'convenio' | 'resolucion' | 'informe' | 'otro'
@@ -737,6 +754,18 @@ export const documentosApi = {
   membretePreviewUrl: (): string => {
     const base = (import.meta.env.VITE_API_URL as string) || '/api/v1'
     return `${base}/documentos/membrete/preview`
+  },
+
+  /** Obtener configuración de coordenadas del membrete */
+  getMembreteConfig: async (): Promise<MembreteConfig> => {
+    const res = await apiClient.get('/documentos/membrete/config')
+    return res.data
+  },
+
+  /** Guardar configuración de coordenadas del membrete */
+  saveMembreteConfig: async (cfg: MembreteConfig): Promise<{ ok: boolean; mensaje: string }> => {
+    const res = await apiClient.put('/documentos/membrete/config', cfg)
+    return res.data
   },
 }
 
