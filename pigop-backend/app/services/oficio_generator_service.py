@@ -71,15 +71,13 @@ class OficioGeneratorService:
         membrete_activo = membrete_path is not None
 
         if membrete_activo:
-            # ── Con membrete: fondo PNG de página completa ──────────────────
-            self._add_membrete_background_docx(doc, membrete_path)
             cfg = _get_membrete_config()
 
-            # ── Valores del recuadro como texto flotante sobre el membrete ──
-            self._add_valores_sobre_membrete_docx(
-                doc, cfg,
+            # ── Membrete + valores en el ENCABEZADO (se repite en cada página)
+            self._setup_membrete_header(
+                doc, membrete_path, cfg,
                 folio=folio_respuesta,
-                asunto=self._truncar_asunto(asunto or "El que se indica"),
+                asunto=asunto or "El que se indica",   # sin truncar; cabe en multiline
             )
 
             # ── Número de página en pie de página ───────────────────────────
@@ -248,7 +246,208 @@ class OficioGeneratorService:
         doc.element.body.insert(0, p_elem)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # MEMBRETE: valores flotantes sobre el PNG de fondo
+    # MEMBRETE: encabezado con fondo PNG + valores (se repite en cada página)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _setup_membrete_header(
+        self,
+        doc: Document,
+        image_path: str,
+        cfg: dict,
+        folio: str,
+        asunto: str,
+        dependencia: str = "Secretaría de Finanzas y Administración",
+        subdep: str      = "Subsecretaría de Finanzas",
+        oficina: str     = "Dirección de Programación y Presupuesto",
+        expediente: str  = "General",
+    ) -> None:
+        """
+        Inserta el membrete PNG como fondo de página completa Y los valores del
+        recuadro como cuadros de texto flotantes en el ENCABEZADO del documento.
+        Al estar en el encabezado se repiten en todas las páginas del oficio.
+        Los anclas usan relativeFrom="page" para posicionarse en coordenadas
+        absolutas respecto a la página, independientemente del área de encabezado.
+        """
+        from docx.opc.part import Part as _OpcPart
+        from docx.opc.packuri import PackURI as _PackURI
+        import html as _html
+
+        NS_W   = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        NS_WP  = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+        NS_A   = "http://schemas.openxmlformats.org/drawingml/2006/main"
+        NS_PIC = "http://schemas.openxmlformats.org/drawingml/2006/picture"
+        NS_R   = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+        NS_WPS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+
+        # ── Preparar sección / encabezado ────────────────────────────────────
+        section = doc.sections[0]
+        # Sin distancia de encabezado para que no empuje el contenido
+        section.header_distance = Pt(0)
+        header = section.header
+
+        # Limpiar cualquier contenido previo del encabezado
+        for p in header.paragraphs:
+            p.clear()
+
+        # Párrafo contenedor de las anclas flotantes — altura mínima
+        hdr_p = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+        hdr_p.paragraph_format.space_before = Pt(0)
+        hdr_p.paragraph_format.space_after  = Pt(0)
+        hdr_p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        hdr_p.paragraph_format.line_spacing  = Pt(1)
+
+        # ── 1. Fondo PNG (detrás del texto, toda la página) ──────────────────
+        ext = Path(image_path).suffix.lower()
+        ct  = "image/png" if ext == ".png" else "image/jpeg"
+        with open(image_path, "rb") as fh:
+            img_bytes = fh.read()
+
+        image_part = _OpcPart(
+            partname=_PackURI(f"/word/media/membrete_hdr{ext}"),
+            content_type=ct,
+            blob=img_bytes,
+        )
+        rId = doc.part.relate_to(
+            image_part,
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+        )
+        cx, cy = 7772400, 10058400   # EMU de página carta completa
+
+        bg_xml = (
+            f'<w:r xmlns:w="{NS_W}" xmlns:wp="{NS_WP}"'
+            f' xmlns:a="{NS_A}" xmlns:pic="{NS_PIC}" xmlns:r="{NS_R}">'
+            f'<w:drawing>'
+            f'<wp:anchor distT="0" distB="0" distL="0" distR="0"'
+            f' simplePos="0" relativeHeight="251658240" behindDoc="1"'
+            f' locked="0" layoutInCell="1" allowOverlap="1">'
+            f'<wp:simplePos x="0" y="0"/>'
+            f'<wp:positionH relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionH>'
+            f'<wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionV>'
+            f'<wp:extent cx="{cx}" cy="{cy}"/>'
+            f'<wp:effectExtent l="0" t="0" r="0" b="0"/>'
+            f'<wp:wrapNone/>'
+            f'<wp:docPr id="900" name="MembreteFondo"/>'
+            f'<wp:cNvGraphicFramePr>'
+            f'<a:graphicFrameLocks noChangeAspect="1"/>'
+            f'</wp:cNvGraphicFramePr>'
+            f'<a:graphic>'
+            f'<a:graphicData uri="{NS_PIC}">'
+            f'<pic:pic>'
+            f'<pic:nvPicPr>'
+            f'<pic:cNvPr id="900" name="MembreteFondo"/>'
+            f'<pic:cNvPicPr/>'
+            f'</pic:nvPicPr>'
+            f'<pic:blipFill>'
+            f'<a:blip r:embed="{rId}"/>'
+            f'<a:stretch><a:fillRect/></a:stretch>'
+            f'</pic:blipFill>'
+            f'<pic:spPr>'
+            f'<a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+            f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+            f'</pic:spPr>'
+            f'</pic:pic>'
+            f'</a:graphicData>'
+            f'</a:graphic>'
+            f'</wp:anchor>'
+            f'</w:drawing>'
+            f'</w:r>'
+        )
+        hdr_p._p.append(_lxml_etree.fromstring(bg_xml.encode("utf-8")))
+
+        # ── 2. Valores del recuadro como cuadros de texto flotantes ──────────
+        campos_valores: dict[str, str] = {
+            "dependencia": dependencia,
+            "subdep":       subdep,
+            "oficina":      oficina,
+            "nooficio":     folio or "—",
+            "expediente":   expediente,
+            "asunto":       asunto or "El que se indica",
+        }
+
+        fontsize_pt = float(cfg.get("fontsize", 7))
+        PAGE_H_PT   = 792.0
+        # Corrección de ascenso: PDF dibuja desde la línea BASE; Word posiciona
+        # el text box desde el BORDE SUPERIOR.  Arial: ascenso ≈ 78% del cuerpo.
+        # Se suma margen interno de Word (~2pt extra) para afinar alineación.
+        ascent_pt = fontsize_pt * 0.78 + 2.0
+
+        for idx, campo in enumerate(cfg.get("campos", []), start=901):
+            key      = campo.get("key", "")
+            valor    = campos_valores.get(key, "")
+            if not valor:
+                continue
+
+            x_pt      = float(campo.get("x", 400))
+            y_pt      = float(campo.get("y", 700))
+            max_w_pt  = float(campo.get("max_width", 180))
+            multiline = campo.get("multiline", False)
+
+            x_emu = int(x_pt * 12700)
+            y_emu = int(max(0.0, (PAGE_H_PT - y_pt - ascent_pt)) * 12700)
+            w_emu = int(max_w_pt * 12700)
+
+            line_h_pt = float(cfg.get("line_height", 9))
+            lines  = 3 if multiline else 1
+            h_emu  = int(max(fontsize_pt * 1.8 * lines + 6, line_h_pt * lines + 4) * 12700)
+
+            sz_half   = int(fontsize_pt * 2)
+            safe_text = _html.escape(valor)
+
+            val_xml = (
+                f'<w:r xmlns:w="{NS_W}" xmlns:wp="{NS_WP}"'
+                f' xmlns:a="{NS_A}" xmlns:wps="{NS_WPS}">'
+                f'<w:drawing>'
+                f'<wp:anchor distT="0" distB="0" distL="0" distR="0"'
+                f' simplePos="0" relativeHeight="251658242" behindDoc="0"'
+                f' locked="0" layoutInCell="1" allowOverlap="1">'
+                f'<wp:simplePos x="0" y="0"/>'
+                f'<wp:positionH relativeFrom="page"><wp:posOffset>{x_emu}</wp:posOffset></wp:positionH>'
+                f'<wp:positionV relativeFrom="page"><wp:posOffset>{y_emu}</wp:posOffset></wp:positionV>'
+                f'<wp:extent cx="{w_emu}" cy="{h_emu}"/>'
+                f'<wp:effectExtent l="0" t="0" r="0" b="0"/>'
+                f'<wp:wrapNone/>'
+                f'<wp:docPr id="{idx}" name="ValMbr_{idx}"/>'
+                f'<wp:cNvGraphicFramePr/>'
+                f'<a:graphic>'
+                f'<a:graphicData uri="{NS_WPS}">'
+                f'<wps:wsp>'
+                f'<wps:cNvSpPr txBx="1"/>'
+                f'<wps:spPr>'
+                f'<a:xfrm><a:off x="0" y="0"/><a:ext cx="{w_emu}" cy="{h_emu}"/></a:xfrm>'
+                f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+                f'<a:noFill/>'
+                f'<a:ln><a:noFill/></a:ln>'
+                f'</wps:spPr>'
+                f'<wps:txbx>'
+                f'<w:txbxContent>'
+                f'<w:p>'
+                f'<w:pPr>'
+                f'<w:spacing w:before="0" w:after="0"/>'
+                f'<w:jc w:val="left"/>'
+                f'</w:pPr>'
+                f'<w:r>'
+                f'<w:rPr>'
+                f'<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>'
+                f'<w:sz w:val="{sz_half}"/>'
+                f'<w:szCs w:val="{sz_half}"/>'
+                f'</w:rPr>'
+                f'<w:t xml:space="preserve">{safe_text}</w:t>'
+                f'</w:r>'
+                f'</w:p>'
+                f'</w:txbxContent>'
+                f'</wps:txbx>'
+                f'<wps:bodyPr lIns="0" rIns="0" tIns="0" bIns="0" anchor="t" wrap="square"/>'
+                f'</wps:wsp>'
+                f'</a:graphicData>'
+                f'</a:graphic>'
+                f'</wp:anchor>'
+                f'</w:drawing>'
+                f'</w:r>'
+            )
+            hdr_p._p.append(_lxml_etree.fromstring(val_xml.encode("utf-8")))
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # MEMBRETE (legacy body): conservados pero ya no se invocan directamente
     # ─────────────────────────────────────────────────────────────────────────
 
     def _add_valores_sobre_membrete_docx(
