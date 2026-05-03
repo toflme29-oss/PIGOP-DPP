@@ -550,30 +550,26 @@ async def verificar_folio(
         return {"disponible": False, "documento_id": str(row[0]),
                 "folio_existente": row[1], "folio": folio_limpio}
 
-    # ── 2. Coincidencia por consecutivo + año ────────────────────────────────
-    # Extraer consecutivo (3-5 dígitos) y año (20XX) del final del folio
+    # ── 2. Coincidencia por consecutivo + año (sin importar prefijo ni ceros) ──
+    # Extrae el número consecutivo y el año del final del folio.
+    # Ej: "SFA/SF/DPP-SCEG/1221/2026"  →  consecutivo="1221", anio="2026"
+    # Usa regex PostgreSQL (~) para detectar /0*<consecutivo>/<anio> al final,
+    # lo que captura tanto "1221" como "01221", "001221", etc.
     m = _re.search(r'/0*(\d{1,5})/(20\d{2})$', folio_limpio)
     if m:
         consecutivo_raw = m.group(1).lstrip('0') or '0'   # sin ceros a la izquierda
         anio = m.group(2)
+        # Patrón regex PostgreSQL: termina en /0*{consecutivo}/{anio}
+        patron_regex = f"/0*{consecutivo_raw}/{anio}$"
 
-        # Buscar en folio_respuesta cualquier documento que termine en
-        # /NNN/ANIO o /0NNN/ANIO (con o sin padding de ceros)
         result2 = await db.execute(
             sql_text(
                 f"SELECT id, folio_respuesta FROM documentos_oficiales "
                 f"WHERE folio_respuesta IS NOT NULL "
-                f"AND (folio_respuesta LIKE :p1 OR folio_respuesta LIKE :p2 "
-                f"     OR folio_respuesta LIKE :p3 OR folio_respuesta LIKE :p4) "
+                f"AND folio_respuesta ~ :patron "
                 f"{excl_clause} LIMIT 1"
             ),
-            {
-                "p1": f"%/{consecutivo_raw}/{anio}",
-                "p2": f"%/0{consecutivo_raw.zfill(3)}/{anio}",
-                "p3": f"%/0{consecutivo_raw.zfill(4)}/{anio}",
-                "p4": f"%/{consecutivo_raw.zfill(5)}/{anio}",
-                **({"excl": exclude} if exclude else {}),
-            },
+            {"patron": patron_regex, **({"excl": exclude} if exclude else {})},
         )
         row2 = result2.first()
         if row2:
