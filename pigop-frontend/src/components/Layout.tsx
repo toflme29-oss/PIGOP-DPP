@@ -561,8 +561,8 @@ export default function Layout() {
       )}
 
       {/* ── Contenido principal ────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-hidden min-h-0">
-        <div className="h-full max-w-screen-2xl mx-auto">
+      <main className="flex-1 overflow-y-auto min-h-0">
+        <div className="max-w-screen-2xl mx-auto">
           <Outlet />
         </div>
       </main>
