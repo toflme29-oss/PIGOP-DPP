@@ -11,7 +11,7 @@ from typing import Optional
 
 from docx import Document
 from docx.shared import Inches, Pt, Cm, RGBColor, Emu
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from lxml import etree as _lxml_etree
@@ -73,21 +73,20 @@ class OficioGeneratorService:
         if membrete_activo:
             # ── Con membrete: fondo PNG de página completa ──────────────────
             self._add_membrete_background_docx(doc, membrete_path)
-            # Espacio para dejar libre la zona del encabezado del membrete
-            # (aproximadamente la misma altura que ocupa el recuadro + fecha en PDF)
+            # ── Espaciador preciso para que la fecha quede justo debajo ─────
+            # Página carta = 792 pt; fecha_y (desde abajo) → desde arriba = 792 - fecha_y
+            # Margen superior DOCX = 1.5 cm = 42.52 pt
+            # Espacio en área de contenido = (792 - fecha_y) - 42.52
             cfg = _get_membrete_config()
-            fecha_y  = cfg.get("fecha_y", 620)
-            y_top    = cfg.get("campos", [{}])[0].get("y", 753)
-            # Convertir pts PDF (origin=bottom) a cm desde arriba
-            # Página carta = 792 pt; fecha_y≈620 → desde arriba = 792-620 ≈ 172 pt ≈ 6.1 cm
-            height_header_pt = 792 - fecha_y
-            header_cm = height_header_pt / 28.35  # 1 cm ≈ 28.35 pt
+            fecha_y     = cfg.get("fecha_y", 620)
+            _TOP_MARGIN = 1.5 * 28.3465          # ≈ 42.52 pt
+            space_pt    = max((792 - fecha_y) - _TOP_MARGIN, 1.0)
             p_space = doc.add_paragraph()
             p_space.paragraph_format.space_before = Pt(0)
-            p_space.paragraph_format.space_after = Pt(0)
-            # Usamos un run vacío con fuente ajustada para crear el espacio vertical
-            run_space = p_space.add_run()
-            run_space.font.size = Pt(height_header_pt * 0.85)
+            p_space.paragraph_format.space_after  = Pt(0)
+            p_space.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+            p_space.paragraph_format.line_spacing  = Pt(space_pt)
+            p_space.add_run().font.size = Pt(1)   # run mínimo para anclar la altura
         else:
             # ── Sin membrete: encabezado institucional estándar ─────────────
             self._add_identidad_institucional(doc)
@@ -98,8 +97,9 @@ class OficioGeneratorService:
             )
             self._add_lema(doc)
 
-        # Fecha
-        self._add_fecha(doc, lugar, fecha_respuesta)
+        # Fecha (sin space_before extra cuando membrete ya gestionó el espaciado)
+        self._add_fecha(doc, lugar, fecha_respuesta,
+                        space_before_pt=0 if membrete_activo else 8)
         self._add_empty_lines(doc, 1)
         self._add_destinatario(doc, destinatario_nombre, destinatario_cargo, destinatario_dependencia)
         self._add_empty_lines(doc, 1)
@@ -417,11 +417,12 @@ class OficioGeneratorService:
         run.font.size = Pt(10)
         run.italic = True
 
-    def _add_fecha(self, doc: Document, lugar: str, fecha: str) -> None:
+    def _add_fecha(self, doc: Document, lugar: str, fecha: str,
+                   space_before_pt: float = 8) -> None:
         """Solo la línea de fecha, alineada a la derecha."""
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        p.paragraph_format.space_before = Pt(8)
+        p.paragraph_format.space_before = Pt(space_before_pt)
         p.paragraph_format.space_after = Pt(0)
         run = p.add_run(f"{lugar}, a {fecha}.")
         run.font.size = Pt(11)
