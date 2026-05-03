@@ -1197,6 +1197,7 @@ function PanelMembrete() {
   const fileRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
   const [preview, setPreview] = useState<string | null>(null)
+  const [membreteBlob, setMembreteBlob] = useState<string | null>(null)
   const [subiendo, setSubiendo] = useState(false)
   const [msg, setMsg] = useState<{ tipo: 'ok' | 'err'; texto: string } | null>(null)
 
@@ -1205,20 +1206,35 @@ function PanelMembrete() {
     queryFn: () => documentosApi.infoMembrete(),
   })
 
+  // Cargar la imagen del membrete activo como blob (para enviar el token de auth)
+  useQuery({
+    queryKey: ['membrete-preview'],
+    queryFn: async () => {
+      const apiClient = (await import('../api/client')).default
+      const res = await apiClient.get('/documentos/membrete/preview', { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data as Blob)
+      setMembreteBlob(url)
+      return url
+    },
+    enabled: !!info?.activo && !preview,
+    staleTime: 0,
+  })
+
   const handleFile = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       setMsg({ tipo: 'err', texto: 'Solo se aceptan imágenes PNG o JPG.' })
       return
     }
-    // Previsualizar localmente
     const localUrl = URL.createObjectURL(file)
     setPreview(localUrl)
+    setMembreteBlob(null)
     setMsg(null)
     setSubiendo(true)
     try {
       const res = await documentosApi.subirMembrete(file)
       setMsg({ tipo: 'ok', texto: res.mensaje })
       queryClient.invalidateQueries({ queryKey: ['membrete-info'] })
+      queryClient.invalidateQueries({ queryKey: ['membrete-preview'] })
     } catch (e: any) {
       setMsg({ tipo: 'err', texto: e?.response?.data?.detail || 'Error al subir el membrete.' })
       setPreview(null)
@@ -1227,14 +1243,10 @@ function PanelMembrete() {
     }
   }
 
-  const membreteUrl = info?.activo
-    ? `${documentosApi.membretePreviewUrl()}?t=${Date.now()}`
-    : null
-
-  const imgSrc = preview || membreteUrl
+  const imgSrc = preview || membreteBlob
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-2xl overflow-y-auto">
       <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-5">
         {/* Encabezado */}
         <div className="flex items-start gap-3">
