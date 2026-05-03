@@ -307,10 +307,25 @@ class OficioGeneratorService:
             content_type=ct,
             blob=img_bytes,
         )
-        rId = doc.part.relate_to(
-            image_part,
-            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
-        )
+
+        # IMPORTANTE: la relación debe registrarse en la parte OPC del ENCABEZADO
+        # (word/_rels/header1.xml.rels), NO en la del documento principal.
+        # Word busca r:embed en el archivo de relaciones del XML que contiene el anchor.
+        _HEADER_RT = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header"
+        _IMAGE_RT  = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+
+        # Encontrar la parte OPC del encabezado dentro del paquete del documento
+        hdr_opc_part = None
+        for _rel in doc.part.rels.values():
+            if _rel.reltype == _HEADER_RT:
+                hdr_opc_part = _rel.target_part
+                break
+
+        if hdr_opc_part is None:
+            # Fallback: usar doc.part (la imagen no mostrará pero no crasheará)
+            hdr_opc_part = doc.part
+
+        rId = hdr_opc_part.relate_to(image_part, _IMAGE_RT)
         cx, cy = 7772400, 10058400   # EMU de página carta completa
 
         bg_xml = (
