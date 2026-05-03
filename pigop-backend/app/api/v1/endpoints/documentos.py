@@ -1642,6 +1642,57 @@ async def generar_borrador(
     return await crud_documento.get_with_relations(db, updated.id)
 
 
+# ---------- Helper: convertir DOCX a PDF usando LibreOffice -------------------
+
+def _convertir_docx_a_pdf_externo(docx_path: str, output_dir: str, doc_id: str) -> str:
+    """Convierte un archivo DOCX a PDF usando LibreOffice en modo headless.
+
+    Devuelve la ruta al PDF generado. Si la conversión falla (LibreOffice no
+    instalado, error de proceso, etc.) devuelve la ruta original del DOCX como
+    fallback para que el flujo no se interrumpa.
+    """
+    import shutil
+    import subprocess
+
+    pdf_target = os.path.join(output_dir, f"oficio_externo_{doc_id}.pdf")
+
+    # Buscar ejecutable de LibreOffice (nombre varía por SO)
+    lo_exec = shutil.which("libreoffice") or shutil.which("soffice")
+    if lo_exec is None:
+        logger.warning("LibreOffice no encontrado; no se puede convertir DOCX → PDF.")
+        return docx_path
+
+    try:
+        result = subprocess.run(
+            [lo_exec, "--headless", "--convert-to", "pdf", "--outdir", output_dir, docx_path],
+            capture_output=True,
+            timeout=90,
+        )
+        # LibreOffice genera el PDF con el mismo nombre base del DOCX
+        base_name = os.path.splitext(os.path.basename(docx_path))[0]
+        generated_pdf = os.path.join(output_dir, f"{base_name}.pdf")
+
+        if result.returncode == 0 and os.path.exists(generated_pdf):
+            # Renombrar al nombre canónico para evitar colisiones
+            if generated_pdf != pdf_target:
+                shutil.move(generated_pdf, pdf_target)
+            logger.info("DOCX convertido a PDF: %s → %s", docx_path, pdf_target)
+            return pdf_target
+        else:
+            logger.error(
+                "LibreOffice falló (rc=%s): %s",
+                result.returncode,
+                result.stderr.decode(errors="replace"),
+            )
+    except subprocess.TimeoutExpired:
+        logger.error("LibreOffice excedió el tiempo límite convirtiendo %s", docx_path)
+    except Exception as exc:
+        logger.error("Error convirtiendo DOCX a PDF: %s", exc)
+
+    # Fallback: devolver el DOCX original
+    return docx_path
+
+
 # ---------- Subir oficio elaborado externamente --------------------------------
 
 @router.post(
@@ -1671,15 +1722,16 @@ async def subir_oficio_externo(
     with open(file_path, "wb") as f:
         f.write(contents)
 
-    # Guardar referencia en el documento
-    doc.oficio_externo_url = file_path
+    # ── Si es DOCX, convertir a PDF para que la vista previa lo muestre tal cual
+    pdf_path = file_path  # por defecto apunta al mismo archivo si ya es PDF
+    if ext in (".docx", ".doc"):
+        pdf_path = _convertir_docx_a_pdf_externo(file_path, upload_dir, doc_id)
+
+    # Guardar referencia: oficio_externo_url apunta al PDF (o al original si ya era PDF)
+    doc.oficio_externo_url = pdf_path
     doc.oficio_externo_nombre = file.filename or safe_name
-    # Si es PDF, usarlo directamente como borrador visual
-    if ext == ".pdf":
-        doc.borrador_respuesta = f"[OFICIO EXTERNO: {file.filename}]"
-    else:
-        # Para DOCX, convertir a texto como borrador
-        doc.borrador_respuesta = f"[OFICIO EXTERNO: {file.filename}]"
+    # Mantener el marcador para compatibilidad con otros flujos
+    doc.borrador_respuesta = f"[OFICIO EXTERNO: {file.filename}]"
 
     db.add(doc)
     await db.commit()
@@ -1702,12 +1754,23 @@ async def eliminar_oficio_externo(
         raise NotFoundError("Documento no encontrado.")
     _assert_acceso(current_user, str(doc.cliente_id))
 
-    # Eliminar archivo físico si existe
+    # Eliminar archivo físico (PDF convertido) si existe
     if doc.oficio_externo_url and os.path.exists(doc.oficio_externo_url):
         try:
             os.remove(doc.oficio_externo_url)
         except OSError:
             pass
+
+    # Eliminar también el DOCX original si quedó en disco (su PDF ya se borró arriba)
+    if doc.oficio_externo_nombre:
+        upload_dir = os.path.join("uploads", str(doc.cliente_id), "oficios_externos")
+        for _ext in (".docx", ".doc"):
+            _orig = os.path.join(upload_dir, f"oficio_externo_{doc_id}{_ext}")
+            if os.path.exists(_orig):
+                try:
+                    os.remove(_orig)
+                except OSError:
+                    pass
 
     # Limpiar campos
     doc.oficio_externo_url = None
@@ -2747,6 +2810,21 @@ async def descargar_oficio_pdf(
     if not doc:
         raise NotFoundError("Documento no encontrado.")
     _assert_acceso(current_user, str(doc.cliente_id))
+
+    # ── Si hay un oficio externo ya subido, servirlo directamente sin regenerar ──
+    if doc.oficio_externo_url and os.path.exists(doc.oficio_externo_url):
+        import io as _io
+        with open(doc.oficio_externo_url, "rb") as _f:
+            _pdf_bytes = _f.read()
+        # Determinar media type: si es PDF sirve como tal; si es DOCX usar octet-stream
+        _ext = os.path.splitext(doc.oficio_externo_url)[1].lower()
+        _media = "application/pdf" if _ext == ".pdf" else "application/octet-stream"
+        _fname = doc.oficio_externo_nombre or os.path.basename(doc.oficio_externo_url)
+        return StreamingResponse(
+            _io.BytesIO(_pdf_bytes),
+            media_type=_media,
+            headers={"Content-Disposition": f'inline; filename="{_fname}"'},
+        )
 
     if not doc.borrador_respuesta:
         raise BusinessError("No hay borrador de respuesta. Genere uno primero.")
