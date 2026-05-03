@@ -1809,6 +1809,14 @@ function PanelRecibido({
     finally { setSubiendoExterno(false) }
   }
 
+  // Helper: limpia el PDF actual y lo recarga tras un delay para reflejar cambios
+  const recargarPdf = (delay = 900) => {
+    setPdfUrl(null)
+    setTimeout(async () => {
+      try { const url = await documentosApi.obtenerOficioPdfUrl(doc.id); setPdfUrl(url) } catch { /* */ }
+    }, delay)
+  }
+
   // handleOficioEstructurado eliminado — unificado en handleBorrador
 
   const handleDescargarOficio = async () => {
@@ -2625,11 +2633,12 @@ function PanelRecibido({
 
             {/* ── Datos del oficio de respuesta — al inicio en modo flotante ── */}
             {hideDocumentVisor && canGenerarRespuestaEfectivo && (
-              <div className="bg-gray-50 rounded-lg p-3 space-y-0.5">
+              <div className="bg-gray-50 rounded-lg p-3 space-y-1">
                 <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Datos del oficio de respuesta</p>
 
-                {/* Fila 1: Folio (izq) + Fecha (der) — mismo ancho */}
-                <div className="grid grid-cols-2 gap-2">
+                {/* Una sola fila: Folio | Fecha | Revisó | Elaboró */}
+                <div className="grid grid-cols-[3fr_3fr_1.2fr_1.2fr] gap-2 items-end">
+                  {/* Folio */}
                   <div>
                     <label className="text-[10px] text-gray-500">Folio de respuesta</label>
                     <div className="flex gap-1">
@@ -2656,6 +2665,7 @@ function PanelRecibido({
                       )}
                     </div>
                   </div>
+                  {/* Fecha */}
                   <div>
                     <label className="text-[10px] text-gray-500">Fecha del oficio</label>
                     <input type="text" placeholder="16 de marzo de 2026"
@@ -2663,13 +2673,9 @@ function PanelRecibido({
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
                       value={fechaRespLocal} onChange={e => setFechaRespLocal(e.target.value)}
                       onBlur={() => fechaRespLocal !== (doc.fecha_respuesta ?? '') && guardarFolioRef('fecha', fechaRespLocal)} />
-                    <p className="text-[9px] text-gray-400 mt-0.5">Vacío = fecha de descarga</p>
                   </div>
-                </div>
-
-                {/* Fila 2: Revisó y Elaboró — angostos, mismo tamaño */}
-                <div className="flex gap-2">
-                  <div className="w-32">
+                  {/* Revisó */}
+                  <div>
                     <label className="text-[10px] text-gray-500">Revisó</label>
                     <input type="text" placeholder="ECJ"
                       className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none uppercase"
@@ -2677,7 +2683,8 @@ function PanelRecibido({
                       value={elaboroLocal} onChange={e => setElaboro(e.target.value)}
                       onBlur={() => elaboroLocal !== (doc.referencia_elaboro ?? '') && guardarFolioRef('elaboro', elaboroLocal)} />
                   </div>
-                  <div className="w-32">
+                  {/* Elaboró */}
+                  <div>
                     <label className="text-[10px] text-gray-500">Elaboró</label>
                     <input type="text" placeholder="BHS"
                       className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none uppercase"
@@ -2721,7 +2728,7 @@ function PanelRecibido({
                   </div>
                   <div className="flex items-center gap-1">
                     <span className="text-[9px] text-gray-400 group-hover:text-gray-600">
-                      {mostrarApoyo ? 'Ocultar' : 'Configurar'}
+                      {mostrarApoyo ? 'Ocultar' : 'Doc. referencia y/o tabla'}
                     </span>
                     <ChevronRight
                       size={13}
@@ -2792,11 +2799,11 @@ function PanelRecibido({
                             <p className="text-[9px] font-medium text-green-800 truncate">{doc.tabla_imagen_nombre || 'Tabla cargada'}</p>
                             {doc.tabla_datos_json && <p className="text-[8px] text-green-600">{doc.tabla_datos_json.length} filas × {doc.tabla_datos_json[0]?.length || 0} cols</p>}
                           </div>
-                          <button onClick={async () => { try { await documentosApi.eliminarTablaImagen(doc.id); invalidate() } catch {} }}
+                          <button onClick={async () => { try { await documentosApi.eliminarTablaImagen(doc.id); invalidate(); recargarPdf() } catch {} }}
                             className="p-0.5 rounded hover:bg-red-100 text-red-400" title="Eliminar tabla"><X size={11} /></button>
                         </div>
                         <input id={`tabla-change-${doc.id}`} type="file" accept="image/png,image/jpeg,image/webp,.xlsx,.xls" className="hidden"
-                          onChange={async e => { const f = e.target.files?.[0]; if (f) { try { await documentosApi.cargarTablaImagen(doc.id, f); invalidate() } catch {} }; if (e.target) e.target.value = '' }} />
+                          onChange={async e => { const f = e.target.files?.[0]; if (f) { try { await documentosApi.cargarTablaImagen(doc.id, f); invalidate(); recargarPdf() } catch {} }; if (e.target) e.target.value = '' }} />
                         <button onClick={() => document.getElementById(`tabla-change-${doc.id}`)?.click()}
                           className="w-full flex items-center justify-center gap-1 py-1.5 text-[9px] rounded-lg font-medium border border-amber-400 text-amber-700 hover:bg-amber-100">
                           <Upload size={9} /> Cambiar tabla
@@ -2805,7 +2812,7 @@ function PanelRecibido({
                     ) : (
                       <>
                         <input id={`tabla-img-${doc.id}`} type="file" accept="image/png,image/jpeg,image/webp,.xlsx,.xls" className="hidden"
-                          onChange={async e => { const f = e.target.files?.[0]; if (f) { try { await documentosApi.cargarTablaImagen(doc.id, f); invalidate() } catch {} }; if (e.target) e.target.value = '' }} />
+                          onChange={async e => { const f = e.target.files?.[0]; if (f) { try { await documentosApi.cargarTablaImagen(doc.id, f); invalidate(); recargarPdf() } catch {} }; if (e.target) e.target.value = '' }} />
                         <button onClick={() => document.getElementById(`tabla-img-${doc.id}`)?.click()}
                           className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium border border-amber-400 text-amber-700 hover:bg-amber-100">
                           <Upload size={10} /> Subir imagen o Excel
@@ -2818,7 +2825,7 @@ function PanelRecibido({
                               if (item.type.startsWith('image/')) {
                                 e.preventDefault();
                                 const blob = item.getAsFile();
-                                if (blob) { const file = new File([blob], `tabla.${blob.type.split('/')[1] || 'png'}`, { type: blob.type }); try { await documentosApi.cargarTablaImagen(doc.id, file); invalidate() } catch {} }
+                                if (blob) { const file = new File([blob], `tabla.${blob.type.split('/')[1] || 'png'}`, { type: blob.type }); try { await documentosApi.cargarTablaImagen(doc.id, file); invalidate(); recargarPdf() } catch {} }
                                 return;
                               }
                             }
@@ -2843,10 +2850,11 @@ function PanelRecibido({
                       <p className="text-[10px] font-medium text-blue-800">Generar oficio con IA</p>
                     </div>
                     <textarea
+                      rows={6}
                       value={instruccionesIA}
                       onChange={e => setInstruccionesIA(e.target.value)}
                       placeholder="Instrucciones (ej: 'Contestar en sentido negativo', 'Usa el oficio adjunto como base')..."
-                      className="w-full border border-blue-200 rounded-lg px-2 py-2 text-[10px] h-16 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300 flex-1"
+                      className="w-full border border-blue-200 rounded-lg px-2 py-2 text-[10px] resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
                     />
                     <button onClick={() => handleBorrador(instruccionesIA)} disabled={generando}
                       className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium text-white transition-colors mt-auto"
@@ -3009,9 +3017,26 @@ function PanelRecibido({
                       <span className="text-[10px] font-medium text-emerald-700">Firmado</span>
                     </div>
                   ) : doc.estado === 'respondido' && !canFirmar ? (
-                    <div className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-amber-50 border border-amber-200 rounded-lg">
-                      <Clock size={12} className="text-amber-600" />
-                      <span className="text-[10px] font-medium text-amber-700">En espera de firma</span>
+                    <div className="flex-1 flex gap-1.5">
+                      <div className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+                        <Clock size={12} className="text-amber-600" />
+                        <span className="text-[10px] font-medium text-amber-700">En espera de firma</span>
+                      </div>
+                      {/* Revertir a En atención — solo si no está firmado ni con visto bueno */}
+                      {!doc.firmado_digitalmente && !doc.visto_bueno_subdirector && canEnviarParaFirma && (
+                        <button
+                          onClick={async () => {
+                            if (!window.confirm('¿Regresar el oficio a "En atención" para poder modificarlo?')) return
+                            try {
+                              await documentosApi.cambiarEstado(doc.id, 'en_atencion' as never)
+                              invalidate()
+                            } catch (e) { window.alert('Error: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo')) }
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-2 text-[10px] rounded-lg font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors whitespace-nowrap"
+                          title="Regresar a En atención para modificar">
+                          <RotateCcw size={11} /> Regresar
+                        </button>
+                      )}
                     </div>
                   ) : canFirmar ? (
                     <button onClick={() => setShowFirmaModal(true)}
@@ -5086,6 +5111,22 @@ export default function GestionDocumental() {
       loadFloatingPdf(floatingDocId, 'ocr')
     }
   }, [floatingDocBorrador])
+
+  // Recargar PDF flotante cuando cambia la tabla (imagen o datos Excel)
+  const floatingDocTabla = floatingDoc?.tabla_imagen_nombre ?? floatingDoc?.tabla_datos_json
+  useEffect(() => {
+    if (floatingDocId && floatingDocBorrador) {
+      loadFloatingPdf(floatingDocId, 'ocr')
+    }
+  }, [floatingDocTabla])
+
+  // Recargar PDF flotante cuando cambia el oficio externo
+  const floatingDocExterno = floatingDoc?.oficio_externo_nombre
+  useEffect(() => {
+    if (floatingDocId) {
+      loadFloatingPdf(floatingDocId, 'ocr')
+    }
+  }, [floatingDocExterno])
 
   const deleteMutation = useMutation({
     mutationFn: documentosApi.delete,

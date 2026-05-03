@@ -825,7 +825,7 @@ TRANSICIONES_RECIBIDO = {
     "recibido": ["turnado"],
     "turnado": ["en_atencion"],
     "en_atencion": ["respondido", "de_conocimiento"],
-    "respondido": ["firmado"],
+    "respondido": ["firmado", "en_atencion"],   # permite revertir si aún no está firmado
     "firmado": ["archivado"],
     "de_conocimiento": ["en_atencion", "respondido", "archivado"],
     "devuelto": ["en_atencion"],
