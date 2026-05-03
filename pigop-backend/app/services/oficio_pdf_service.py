@@ -28,10 +28,43 @@ from reportlab.platypus import (
     KeepTogether,
 )
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
+from reportlab.pdfgen import canvas as rl_canvas_mod
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 LOGOS_DIR = STATIC_DIR / "logos"
 FIRMAS_DIR = STATIC_DIR / "firmas"
+
+# ── Canvas con numeración de páginas (Página X de Y) ──────────────────────────
+class _NumberedCanvas(rl_canvas_mod.Canvas):
+    """Canvas que dibuja 'Página X de Y' en la esquina inferior derecha."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states: list = []
+
+    def showPage(self):  # type: ignore[override]
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):  # type: ignore[override]
+        total = len(self._saved_page_states)
+        for i, state in enumerate(self._saved_page_states, start=1):
+            self.__dict__.update(state)
+            self._draw_page_number(i, total)
+            rl_canvas_mod.Canvas.showPage(self)
+        rl_canvas_mod.Canvas.save(self)
+
+    def _draw_page_number(self, current: int, total: int) -> None:
+        pw, _ph = letter
+        self.saveState()
+        self.setFont("Helvetica", 7)
+        self.setFillColor(colors.HexColor("#555555"))
+        self.drawRightString(
+            pw - 0.87 * 72,   # margen derecho igual al del documento
+            0.40 * 72,        # 0.40 pulgadas desde el borde inferior
+            f"Página {current} de {total}",
+        )
+        self.restoreState()
 
 # ── Membrete activo ────────────────────────────────────────────────────────────
 def _get_membrete_activo() -> Optional[str]:
@@ -469,9 +502,14 @@ class OficioPdfService:
                 )
                 canvas.restoreState()
 
-            doc.build(elements, onFirstPage=_draw_page, onLaterPages=_draw_page)
+            doc.build(
+                elements,
+                onFirstPage=_draw_page,
+                onLaterPages=_draw_page,
+                canvasmaker=_NumberedCanvas,
+            )
         else:
-            doc.build(elements)
+            doc.build(elements, canvasmaker=_NumberedCanvas)
 
         return buffer.getvalue()
 
