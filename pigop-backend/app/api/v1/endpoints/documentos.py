@@ -248,31 +248,35 @@ async def siguiente_folio(
 
     anio = datetime.now().year
 
+    def _extraer_numero(folio: str) -> int:
+        """Extrae el número consecutivo del penúltimo segmento del folio."""
+        try:
+            parts = folio.split("/")
+            return int(parts[-2])
+        except (ValueError, IndexError):
+            return 0
+
     if area_codigo and area_codigo.upper() in PREFIJOS_FOLIO:
         # ── Formato institucional por área ──────────────────────────────
         area = area_codigo.upper()
         prefijo = PREFIJOS_FOLIO[area]
-        # Pattern: SFA/SF/DPP/%/2026  ó  SFA/SF/DPP/SPFP/%/2026
         pattern = f"{prefijo}/%/{anio}"
 
+        # Buscar en folio_respuesta Y en numero_control para cubrir emitidos y recibidos
         query = text(
             "SELECT folio_respuesta FROM documentos_oficiales "
             "WHERE folio_respuesta LIKE :pattern "
-            "ORDER BY folio_respuesta DESC LIMIT 1"
+            "UNION ALL "
+            "SELECT numero_control FROM documentos_oficiales "
+            "WHERE numero_control LIKE :pattern"
         )
         result = await db.execute(query, {"pattern": pattern})
-        row = result.first()
+        rows = result.fetchall()
 
         next_num = 1
-        if row and row[0]:
-            try:
-                parts = row[0].split("/")
-                # Número es el penúltimo segmento:
-                #   SFA/SF/DPP/0001/2026 → parts[-2] = "0001"
-                #   SFA/SF/DPP/SPFP/0001/2026 → parts[-2] = "0001"
-                next_num = int(parts[-2]) + 1
-            except (ValueError, IndexError):
-                pass
+        if rows:
+            max_num = max((_extraer_numero(r[0]) for r in rows if r[0]), default=0)
+            next_num = max_num + 1
 
         folio = f"{prefijo}/{str(next_num).zfill(4)}/{anio}"
         return {
@@ -287,22 +291,27 @@ async def siguiente_folio(
     tipo_upper = tipo.upper()[:8]
     prefix = f"DPP/{tipo_upper}/"
     suffix = f"/{anio}"
+    pattern_legacy = f"{prefix}%{suffix}"
 
     query = text(
         "SELECT folio_respuesta FROM documentos_oficiales "
-        "WHERE folio_respuesta LIKE :pattern ORDER BY folio_respuesta DESC LIMIT 1"
+        "WHERE folio_respuesta LIKE :pattern "
+        "UNION ALL "
+        "SELECT numero_control FROM documentos_oficiales "
+        "WHERE numero_control LIKE :pattern"
     )
-    result = await db.execute(query, {"pattern": f"{prefix}%{suffix}"})
-    row = result.first()
+    result = await db.execute(query, {"pattern": pattern_legacy})
+    rows = result.fetchall()
 
     next_num = 1
-    if row and row[0]:
-        try:
-            parts = row[0].split("/")
-            if len(parts) >= 3:
-                next_num = int(parts[2]) + 1
-        except (ValueError, IndexError):
-            pass
+    if rows:
+        def _num_legacy(folio: str) -> int:
+            try:
+                return int(folio.split("/")[2])
+            except (ValueError, IndexError):
+                return 0
+        max_num = max((_num_legacy(r[0]) for r in rows if r[0]), default=0)
+        next_num = max_num + 1
 
     folio = f"{prefix}{str(next_num).zfill(5)}{suffix}"
     return {"folio": folio, "numero": next_num, "tipo": tipo_upper, "anio": anio}
