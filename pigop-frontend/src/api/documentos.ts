@@ -555,6 +555,11 @@ export const documentosApi = {
     return res.data
   },
 
+  eliminarOficioExterno: async (id: string): Promise<Documento> => {
+    const res = await apiClient.delete(`/documentos/${id}/oficio-externo`)
+    return res.data
+  },
+
   uploadArchivo: async (id: string, file: File): Promise<Documento> => {
     const form = new FormData()
     form.append('file', file)

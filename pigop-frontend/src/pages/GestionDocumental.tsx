@@ -1629,6 +1629,7 @@ function PanelRecibido({
   const [instruccionesIA, setInstruccionesIA] = useState('')
   const [cargandoReferencia, setCargandoReferencia] = useState(false)
   const [subiendoExterno, setSubiendoExterno] = useState(false)
+  const [mostrarApoyo, setMostrarApoyo] = useState(false)
   const refFileRef = useRef<HTMLInputElement>(null)
   const externoFileRef = useRef<HTMLInputElement>(null)
   // ── Roles reales de la DPP ──
@@ -2624,56 +2625,62 @@ function PanelRecibido({
 
             {/* ── Datos del oficio de respuesta — al inicio en modo flotante ── */}
             {hideDocumentVisor && canGenerarRespuestaEfectivo && (
-              <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+              <div className="bg-gray-50 rounded-lg p-3 space-y-0.5">
                 <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Datos del oficio de respuesta</p>
-                <div>
-                  <label className="text-[10px] text-gray-500">Folio de respuesta</label>
-                  <div className="flex gap-1.5">
-                    <input type="text" placeholder="SFA/SF/DPP/SPFP/0001/2026"
-                      className="flex-1 border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none font-mono"
-                      style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                      value={folioLocal} onChange={e => setFolioLocal(e.target.value)}
-                      onBlur={() => folioLocal !== (doc.folio_respuesta ?? '') && guardarFolioRef('folio', folioLocal)} />
-                    {!folioLocal && (
-                      <button
-                        onClick={async () => {
-                          try {
-                            const { folio } = await documentosApi.siguienteFolio(doc.tipo?.toUpperCase() || 'OFICIO', doc.area_turno || undefined)
-                            setFolioLocal(folio)
-                            await documentosApi.update(doc.id, { folio_respuesta: folio })
-                            invalidate()
-                          } catch { /* */ }
-                        }}
-                        className="flex items-center gap-1 px-2 py-1 text-[9px] font-medium rounded-md border transition-colors whitespace-nowrap"
-                        style={{ borderColor: GUINDA, color: GUINDA }}
-                        title="Generar folio consecutivo automático">
-                        <Hash size={10} /> Auto
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[10px] text-gray-500">Fecha del oficio de respuesta</label>
-                  <input type="text" placeholder="16 de marzo de 2026 (dejar vacío = fecha actual)"
-                    className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none"
-                    style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                    value={fechaRespLocal} onChange={e => setFechaRespLocal(e.target.value)}
-                    onBlur={() => fechaRespLocal !== (doc.fecha_respuesta ?? '') && guardarFolioRef('fecha', fechaRespLocal)} />
-                  <p className="text-[9px] text-gray-400 mt-0.5">Si se deja vacío, se usa la fecha del día de descarga</p>
-                </div>
+
+                {/* Fila 1: Folio (izq) + Fecha (der) — mismo ancho */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-[10px] text-gray-500">Elaboró</label>
-                    <input type="text" placeholder="ECJ"
+                    <label className="text-[10px] text-gray-500">Folio de respuesta</label>
+                    <div className="flex gap-1">
+                      <input type="text" placeholder="SFA/SF/DPP/0001/2026"
+                        className="flex-1 min-w-0 border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none font-mono"
+                        style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
+                        value={folioLocal} onChange={e => setFolioLocal(e.target.value)}
+                        onBlur={() => folioLocal !== (doc.folio_respuesta ?? '') && guardarFolioRef('folio', folioLocal)} />
+                      {!folioLocal && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const { folio } = await documentosApi.siguienteFolio(doc.tipo?.toUpperCase() || 'OFICIO', doc.area_turno || undefined)
+                              setFolioLocal(folio)
+                              await documentosApi.update(doc.id, { folio_respuesta: folio })
+                              invalidate()
+                            } catch { /* */ }
+                          }}
+                          className="flex items-center gap-1 px-2 py-1 text-[9px] font-medium rounded-md border transition-colors whitespace-nowrap flex-shrink-0"
+                          style={{ borderColor: GUINDA, color: GUINDA }}
+                          title="Generar folio consecutivo automático">
+                          <Hash size={10} /> Auto
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-500">Fecha del oficio</label>
+                    <input type="text" placeholder="16 de marzo de 2026"
                       className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none"
+                      style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
+                      value={fechaRespLocal} onChange={e => setFechaRespLocal(e.target.value)}
+                      onBlur={() => fechaRespLocal !== (doc.fecha_respuesta ?? '') && guardarFolioRef('fecha', fechaRespLocal)} />
+                    <p className="text-[9px] text-gray-400 mt-0.5">Vacío = fecha de descarga</p>
+                  </div>
+                </div>
+
+                {/* Fila 2: Revisó y Elaboró — angostos, mismo tamaño */}
+                <div className="flex gap-2">
+                  <div className="w-32">
+                    <label className="text-[10px] text-gray-500">Revisó</label>
+                    <input type="text" placeholder="ECJ"
+                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none uppercase"
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
                       value={elaboroLocal} onChange={e => setElaboro(e.target.value)}
                       onBlur={() => elaboroLocal !== (doc.referencia_elaboro ?? '') && guardarFolioRef('elaboro', elaboroLocal)} />
                   </div>
-                  <div>
-                    <label className="text-[10px] text-gray-500">Revisó</label>
-                    <input type="text" placeholder="bhs"
-                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none"
+                  <div className="w-32">
+                    <label className="text-[10px] text-gray-500">Elaboró</label>
+                    <input type="text" placeholder="BHS"
+                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none uppercase"
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
                       value={revisoLocal} onChange={e => setReviso(e.target.value)}
                       onBlur={() => revisoLocal !== (doc.referencia_reviso ?? '') && guardarFolioRef('reviso', revisoLocal)} />
@@ -2685,10 +2692,46 @@ function PanelRecibido({
             {/* ── Paso 1: Documentos de apoyo (Referencia IA + Tabla) lado a lado ── */}
             {canGenerarRespuestaEfectivo && (
               <div className="space-y-2">
-                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
-                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[9px] font-bold" style={{ backgroundColor: GUINDA }}>1</span>
-                  Preparar documentos de apoyo (opcional)
-                </p>
+                {/* Encabezado colapsable */}
+                <button
+                  type="button"
+                  onClick={() => setMostrarApoyo(v => !v)}
+                  className="w-full flex items-center justify-between gap-1.5 group"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[9px] font-bold" style={{ backgroundColor: GUINDA }}>1</span>
+                    <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide group-hover:text-gray-700 transition-colors">
+                      Preparar documentos de apoyo (opcional)
+                    </span>
+                    {/* Badges cuando hay contenido cargado */}
+                    {(doc.referencia_archivo_nombre || doc.tabla_imagen_nombre || doc.tabla_datos_json) && !mostrarApoyo && (
+                      <div className="flex items-center gap-1">
+                        {doc.referencia_archivo_nombre && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] font-medium bg-blue-100 text-blue-700">
+                            <FileText size={8} /> Ref
+                          </span>
+                        )}
+                        {(doc.tabla_imagen_nombre || doc.tabla_datos_json) && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] font-medium bg-amber-100 text-amber-700">
+                            <FileText size={8} /> Tabla
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] text-gray-400 group-hover:text-gray-600">
+                      {mostrarApoyo ? 'Ocultar' : 'Configurar'}
+                    </span>
+                    <ChevronRight
+                      size={13}
+                      className={clsx('text-gray-400 group-hover:text-gray-600 transition-transform duration-200', mostrarApoyo && 'rotate-90')}
+                    />
+                  </div>
+                </button>
+
+                {/* Contenido colapsable */}
+                {mostrarApoyo && (
                 <div className="grid grid-cols-2 gap-2">
                   {/* Izquierda: Documento de referencia para IA */}
                   <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
@@ -2787,65 +2830,84 @@ function PanelRecibido({
                     )}
                   </div>
                 </div>
+                )} {/* fin mostrarApoyo */}
 
-                {/* ── Paso 2: Subir oficio elaborado externamente ── */}
-                <div className="bg-green-50 border border-green-200 rounded-xl p-3 space-y-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[9px] font-bold" style={{ backgroundColor: '#16a34a' }}>2</span>
-                    <p className="text-[10px] font-medium text-green-800">Subir oficio elaborado fuera de la plataforma</p>
-                  </div>
-                  <p className="text-[9px] text-green-700 leading-relaxed">
-                    Si ya tienes el oficio de respuesta listo (PDF o Word), súbelo directamente sin necesidad de generarlo con IA.
-                  </p>
-                  {doc.oficio_externo_nombre ? (
-                    <div className="flex items-center gap-2 bg-green-100 border border-green-300 rounded-lg px-2 py-1.5">
-                      <CheckCircle2 size={12} className="text-green-700 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[9px] font-medium text-green-800 truncate">{doc.oficio_externo_nombre}</p>
-                        <p className="text-[8px] text-green-600">Oficio cargado externamente</p>
-                      </div>
-                      <input ref={externoFileRef} type="file" accept=".pdf,.doc,.docx" className="hidden"
-                        onChange={e => { const f = e.target.files?.[0]; if (f) handleSubirOficioExterno(f); if (e.target) e.target.value = '' }} />
-                      <button onClick={() => externoFileRef.current?.click()} disabled={subiendoExterno}
-                        className="flex items-center gap-1 px-2 py-1 text-[9px] rounded font-medium border border-green-400 text-green-700 hover:bg-green-200 disabled:opacity-50">
-                        <Upload size={9} /> Cambiar
-                      </button>
+                {/* ── Pasos 2 y 3 lado a lado ── */}
+                <div className="grid grid-cols-2 gap-2">
+
+                  {/* Izquierda — Paso 2: Generar con IA */}
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2 flex flex-col">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[9px] font-bold" style={{ backgroundColor: '#2563eb' }}>2</span>
+                      <Wand2 size={12} className="text-blue-600" />
+                      <p className="text-[10px] font-medium text-blue-800">Generar oficio con IA</p>
                     </div>
-                  ) : (
-                    <>
-                      <input ref={externoFileRef} type="file" accept=".pdf,.doc,.docx" className="hidden"
-                        onChange={e => { const f = e.target.files?.[0]; if (f) handleSubirOficioExterno(f); if (e.target) e.target.value = '' }} />
-                      <button onClick={() => externoFileRef.current?.click()} disabled={subiendoExterno}
-                        className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium border-2 border-dashed border-green-400 text-green-700 hover:bg-green-100 disabled:opacity-50 transition-colors">
-                        {subiendoExterno
-                          ? <><RotateCcw size={11} className="animate-spin" /> Subiendo oficio…</>
-                          : <><Upload size={11} /> Subir oficio externo (PDF / Word)</>}
-                      </button>
-                    </>
-                  )}
+                    <textarea
+                      value={instruccionesIA}
+                      onChange={e => setInstruccionesIA(e.target.value)}
+                      placeholder="Instrucciones (ej: 'Contestar en sentido negativo', 'Usa el oficio adjunto como base')..."
+                      className="w-full border border-blue-200 rounded-lg px-2 py-2 text-[10px] h-16 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300 flex-1"
+                    />
+                    <button onClick={() => handleBorrador(instruccionesIA)} disabled={generando}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium text-white transition-colors mt-auto"
+                      style={{ backgroundColor: GUINDA }}>
+                      {generando
+                        ? <><RotateCcw size={11} className="animate-spin" /> Generando...</>
+                        : <><Wand2 size={11} /> Generar oficio de respuesta</>}
+                    </button>
+                  </div>
+
+                  {/* Derecha — Paso 3: Subir oficio externo */}
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-3 space-y-2 flex flex-col">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[9px] font-bold" style={{ backgroundColor: '#16a34a' }}>3</span>
+                      <p className="text-[10px] font-medium text-green-800">Subir oficio externo</p>
+                    </div>
+                    <p className="text-[9px] text-green-700 leading-relaxed">
+                      ¿Ya tienes el oficio listo? Súbelo en PDF o Word directamente.
+                    </p>
+                    <div className="flex-1 flex flex-col justify-end">
+                      {doc.oficio_externo_nombre ? (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-1.5 bg-green-100 border border-green-300 rounded-lg px-2 py-1.5">
+                            <CheckCircle2 size={11} className="text-green-700 flex-shrink-0" />
+                            <p className="text-[9px] font-medium text-green-800 truncate flex-1">{doc.oficio_externo_nombre}</p>
+                            <button
+                              onClick={async () => {
+                                if (!window.confirm('¿Eliminar el oficio externo?')) return
+                                try {
+                                  await documentosApi.eliminarOficioExterno(doc.id)
+                                  invalidate()
+                                  setPdfUrl(null)
+                                } catch { window.alert('Error al eliminar el oficio externo.') }
+                              }}
+                              className="p-0.5 rounded hover:bg-red-100 text-red-400 flex-shrink-0" title="Eliminar oficio externo">
+                              <X size={11} />
+                            </button>
+                          </div>
+                          <input ref={externoFileRef} type="file" accept=".pdf,.doc,.docx" className="hidden"
+                            onChange={e => { const f = e.target.files?.[0]; if (f) handleSubirOficioExterno(f); if (e.target) e.target.value = '' }} />
+                          <button onClick={() => externoFileRef.current?.click()} disabled={subiendoExterno}
+                            className="w-full flex items-center justify-center gap-1 py-1.5 text-[9px] rounded-lg font-medium border border-green-400 text-green-700 hover:bg-green-100 disabled:opacity-50">
+                            <Upload size={9} /> Cambiar archivo
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <input ref={externoFileRef} type="file" accept=".pdf,.doc,.docx" className="hidden"
+                            onChange={e => { const f = e.target.files?.[0]; if (f) handleSubirOficioExterno(f); if (e.target) e.target.value = '' }} />
+                          <button onClick={() => externoFileRef.current?.click()} disabled={subiendoExterno}
+                            className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium border-2 border-dashed border-green-400 text-green-700 hover:bg-green-100 disabled:opacity-50 transition-colors">
+                            {subiendoExterno
+                              ? <><RotateCcw size={11} className="animate-spin" /> Subiendo...</>
+                              : <><Upload size={11} /> Subir oficio (PDF / Word)</>}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                {/* ── Paso 3: Generar con IA ── */}
-                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[9px] font-bold" style={{ backgroundColor: '#2563eb' }}>3</span>
-                    <Wand2 size={12} className="text-blue-600" />
-                    <p className="text-[10px] font-medium text-blue-800">Generar oficio de respuesta con IA</p>
-                  </div>
-                  <textarea
-                    value={instruccionesIA}
-                    onChange={e => setInstruccionesIA(e.target.value)}
-                    placeholder="Instrucciones para la IA (ej: 'Contestar en sentido negativo', 'Incluir la tabla adjunta', 'Usa el oficio adjunto como base')..."
-                    className="w-full border border-blue-200 rounded-lg px-3 py-2 text-xs h-14 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
-                  />
-                  <button onClick={() => handleBorrador(instruccionesIA)} disabled={generando}
-                    className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs rounded-lg font-medium text-white transition-colors"
-                    style={{ backgroundColor: GUINDA }}>
-                    {generando
-                      ? <><RotateCcw size={12} className="animate-spin" /> Generando oficio...</>
-                      : <><Wand2 size={12} /> Generar oficio de respuesta</>}
-                  </button>
-                </div>
               </div>
             )}
 
@@ -2921,7 +2983,7 @@ function PanelRecibido({
 
 
                 {/* ── Fila horizontal: Editar borrador | Descargar oficio | Firmar documento ── */}
-                <div className="flex gap-2">
+                <div className="flex gap-2 mt-8">
                   {canGenerarRespuestaEfectivo && doc.borrador_respuesta && (
                     <button onClick={() => { setEditBorrador(prev => !prev); setBorradorText(doc.borrador_respuesta ?? '') }}
                       className={clsx(
@@ -3327,29 +3389,15 @@ function PanelRecibido({
             </div>
           ) : ['en_atencion', 'respondido', 'de_conocimiento'].includes(doc.estado) && doc.borrador_respuesta ? (
             <div className="space-y-2">
-              {/* Fila horizontal: Enviar/Re-enviar a firma + Devolver para correcciones */}
+              {/* Fila horizontal: Firmar + Devolver para correcciones */}
               <div className="flex gap-2">
-                {canFirmar ? (
+                {canFirmar && (
                   <button onClick={() => setShowFirmaModal(true)}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg text-white font-semibold transition-colors hover:opacity-90"
                     style={{ backgroundColor: GUINDA }}>
                     <FileSignature size={12} /> Firmar documento
                   </button>
-                ) : (!hideDocumentVisor || tab === 'ocr') && canEnviarParaFirma ? (
-                  <button onClick={async () => {
-                    try {
-                      await documentosApi.cambiarEstado(doc.id, 'respondido' as never)
-                      invalidate()
-                      setEnviadoFirmaOk(true)
-                      setTimeout(() => setEnviadoFirmaOk(false), 4000)
-                    } catch (e) { window.alert('Error al enviar a firma: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo')) }
-                  }}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg text-white font-semibold transition-colors hover:opacity-90"
-                    style={{ backgroundColor: GUINDA }}>
-                    <Send size={12} />
-                    {doc.estado === 'respondido' ? 'Re-enviar a firma' : 'Enviar a firma'}
-                  </button>
-                ) : null}
+                )}
                 {(!hideDocumentVisor || tab === 'ocr') && can('devolver') && (
                   <button onClick={() => { setObservacionesDevolucion(''); setShowDevolucionModal(true) }}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium bg-red-50 border border-red-300 text-red-700 hover:bg-red-100 transition-colors">

@@ -1486,6 +1486,41 @@ async def subir_oficio_externo(
     return await crud_documento.get_with_relations(db, doc.id)
 
 
+@router.delete(
+    "/{doc_id}/oficio-externo",
+    response_model=DocumentoResponse,
+    summary="Eliminar oficio externo subido",
+)
+async def eliminar_oficio_externo(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    doc = await crud_documento.get_with_relations(db, doc_id)
+    if not doc:
+        raise NotFoundError("Documento no encontrado.")
+    _assert_acceso(current_user, str(doc.cliente_id))
+
+    # Eliminar archivo físico si existe
+    if doc.oficio_externo_url and os.path.exists(doc.oficio_externo_url):
+        try:
+            os.remove(doc.oficio_externo_url)
+        except OSError:
+            pass
+
+    # Limpiar campos
+    doc.oficio_externo_url = None
+    doc.oficio_externo_nombre = None
+    # Si el borrador era un marcador de oficio externo, limpiarlo también
+    if doc.borrador_respuesta and doc.borrador_respuesta.startswith("[OFICIO EXTERNO:"):
+        doc.borrador_respuesta = None
+
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    return await crud_documento.get_with_relations(db, doc.id)
+
+
 # ---------- Upload de archivo (sin OCR) --------------------------------------
 
 @router.post("/{doc_id}/upload", response_model=DocumentoResponse, summary="Adjuntar archivo")
