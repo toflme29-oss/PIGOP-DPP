@@ -1315,7 +1315,7 @@ function PanelMembrete() {
           className="hidden"
           onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]) }}
         />
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
           <button
             onClick={() => fileRef.current?.click()}
             disabled={subiendo}
@@ -1328,9 +1328,19 @@ function PanelMembrete() {
             }
           </button>
           {info?.activo && (
-            <p className="text-[11px] text-gray-400 self-center">
-              Al subir uno nuevo reemplaza al anterior automáticamente.
-            </p>
+            <button
+              onClick={async () => {
+                try {
+                  const apiClient = (await import('../api/client')).default
+                  const res = await apiClient.get('/documentos/membrete/calibrar', { responseType: 'blob' })
+                  const url = URL.createObjectURL(res.data as Blob)
+                  window.open(url, '_blank')
+                } catch { alert('Error al generar PDF de calibración.') }
+              }}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium border border-blue-300 text-blue-600 hover:bg-blue-50 transition-colors"
+            >
+              <FileImage size={14} /> PDF de calibración
+            </button>
           )}
         </div>
 
