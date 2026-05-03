@@ -1441,6 +1441,51 @@ async def generar_borrador(
     return await crud_documento.get_with_relations(db, updated.id)
 
 
+# ---------- Subir oficio elaborado externamente --------------------------------
+
+@router.post(
+    "/{doc_id}/subir-oficio-externo",
+    response_model=DocumentoResponse,
+    summary="Subir oficio de respuesta elaborado fuera de la plataforma",
+)
+async def subir_oficio_externo(
+    doc_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    doc = await crud_documento.get_with_relations(db, doc_id)
+    if not doc:
+        raise NotFoundError("Documento no encontrado.")
+    _assert_acceso(current_user, str(doc.cliente_id))
+
+    # Guardar el archivo en la carpeta de uploads del documento
+    upload_dir = os.path.join("uploads", str(doc.cliente_id), "oficios_externos")
+    os.makedirs(upload_dir, exist_ok=True)
+    ext = os.path.splitext(file.filename or "oficio.pdf")[1].lower() or ".pdf"
+    safe_name = f"oficio_externo_{doc_id}{ext}"
+    file_path = os.path.join(upload_dir, safe_name)
+
+    contents = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(contents)
+
+    # Guardar referencia en el documento
+    doc.oficio_externo_url = file_path
+    doc.oficio_externo_nombre = file.filename or safe_name
+    # Si es PDF, usarlo directamente como borrador visual
+    if ext == ".pdf":
+        doc.borrador_respuesta = f"[OFICIO EXTERNO: {file.filename}]"
+    else:
+        # Para DOCX, convertir a texto como borrador
+        doc.borrador_respuesta = f"[OFICIO EXTERNO: {file.filename}]"
+
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    return await crud_documento.get_with_relations(db, doc.id)
+
+
 # ---------- Upload de archivo (sin OCR) --------------------------------------
 
 @router.post("/{doc_id}/upload", response_model=DocumentoResponse, summary="Adjuntar archivo")

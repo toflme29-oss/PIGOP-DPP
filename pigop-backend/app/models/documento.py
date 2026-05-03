@@ -145,6 +145,10 @@ class DocumentoOficial(Base):
     referencia_archivo_url    = Column(String(500), nullable=True)
     contenido_referencia      = Column(Text, nullable=True)  # texto extraído del doc de referencia
 
+    # ── Oficio elaborado externamente (sube PDF/DOCX ya listo) ───────────────
+    oficio_externo_url    = Column(String(500), nullable=True)
+    oficio_externo_nombre = Column(String(300), nullable=True)
+
     # ── Acuse de conocimiento ───────────────────────────────────────────────
     atendido_por_id = Column(String(36), ForeignKey("usuarios.id"), nullable=True)
     atendido_en     = Column(DateTime(timezone=True), nullable=True)

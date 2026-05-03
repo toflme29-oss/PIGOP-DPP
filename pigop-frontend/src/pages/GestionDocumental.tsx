@@ -1628,7 +1628,9 @@ function PanelRecibido({
   const [revisoLocal, setReviso] = useState(doc.referencia_reviso ?? '')
   const [instruccionesIA, setInstruccionesIA] = useState('')
   const [cargandoReferencia, setCargandoReferencia] = useState(false)
+  const [subiendoExterno, setSubiendoExterno] = useState(false)
   const refFileRef = useRef<HTMLInputElement>(null)
+  const externoFileRef = useRef<HTMLInputElement>(null)
   // ── Roles reales de la DPP ──
   // Director = admin_cliente (firma, revisa, devuelve)
   // Roles del módulo de Gestión Documental (v4)
@@ -1763,7 +1765,19 @@ function PanelRecibido({
 
   const handleBorrador = async (instrucciones?: string) => {
     setGenerando(true)
-    try { await documentosApi.generarBorrador(doc.id, instrucciones || instruccionesIA || undefined); invalidate() }
+    // Limpiar PDF anterior para forzar recarga tras generación
+    setPdfUrl(null)
+    try {
+      await documentosApi.generarBorrador(doc.id, instrucciones || instruccionesIA || undefined)
+      invalidate()
+      // Recargar PDF del borrador recién generado
+      setTimeout(async () => {
+        try {
+          const url = await documentosApi.obtenerOficioPdfUrl(doc.id)
+          setPdfUrl(url)
+        } catch { /* silencioso */ }
+      }, 800)
+    }
     catch (e) { window.alert('Error al generar borrador: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo')) }
     finally { setGenerando(false) }
   }
@@ -1778,6 +1792,20 @@ function PanelRecibido({
   const handleEliminarReferencia = async () => {
     try { await documentosApi.eliminarReferencia(doc.id); invalidate() }
     catch (e) { window.alert('Error al eliminar referencia: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo')) }
+  }
+
+  const handleSubirOficioExterno = async (file: File) => {
+    setSubiendoExterno(true)
+    setPdfUrl(null)
+    try {
+      await documentosApi.subirOficioExterno(doc.id, file)
+      invalidate()
+      setTimeout(async () => {
+        try { const url = await documentosApi.obtenerOficioPdfUrl(doc.id); setPdfUrl(url) } catch { /* */ }
+      }, 800)
+    }
+    catch (e) { window.alert('Error al subir oficio: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo')) }
+    finally { setSubiendoExterno(false) }
   }
 
   // handleOficioEstructurado eliminado — unificado en handleBorrador
@@ -2654,93 +2682,170 @@ function PanelRecibido({
               </div>
             )}
 
-            {/* ── Generación de respuesta con IA (solo Área + Director + Super) ── */}
+            {/* ── Paso 1: Documentos de apoyo (Referencia IA + Tabla) lado a lado ── */}
             {canGenerarRespuestaEfectivo && (
-              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Wand2 size={14} className="text-blue-600" />
-                  <p className="text-xs font-medium text-blue-800">Generar oficio de respuesta con IA</p>
-                </div>
-                <textarea
-                  value={instruccionesIA}
-                  onChange={e => setInstruccionesIA(e.target.value)}
-                  placeholder="Instrucciones para la IA (ej: 'Contestar en sentido negativo', 'Incluir la tabla del documento adjunto en la respuesta', 'Usa el oficio adjunto como base, solo mejora redacción')..."
-                  className="w-full border border-blue-200 rounded-lg px-3 py-2 text-xs h-16 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
-                />
-                <button onClick={() => handleBorrador(instruccionesIA)} disabled={generando}
-                  className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs rounded-lg font-medium text-white transition-colors"
-                  style={{ backgroundColor: GUINDA }}>
-                  {generando
-                    ? <><RotateCcw size={12} className="animate-spin" /> Generando oficio...</>
-                    : <><Wand2 size={12} /> Generar oficio de respuesta</>}
-                </button>
-              </div>
-            )}
-
-            {/* ── Cargar documento de referencia para IA ── */}
-            {canGenerarRespuestaEfectivo && (
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Upload size={14} className="text-blue-600" />
-                  <p className="text-xs font-medium text-gray-700">Documento de referencia para IA</p>
-                </div>
-                <p className="text-[10px] text-gray-500 leading-relaxed">
-                  Adjunta tablas, respuestas previas, Excel o documentos Word. La IA los analiza directamente (incluyendo tablas y formato) al generar la respuesta. Usa las instrucciones para indicar: "incluye la tabla adjunta", "mejora la redacción del oficio adjunto", etc.
+              <div className="space-y-2">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[9px] font-bold" style={{ backgroundColor: GUINDA }}>1</span>
+                  Preparar documentos de apoyo (opcional)
                 </p>
-
-                {doc.referencia_archivo_nombre ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                      <FileText size={14} className="text-blue-600 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[10px] font-medium text-blue-800 truncate">{doc.referencia_archivo_nombre}</p>
-                        <p className="text-[9px] text-blue-600">
-                          {doc.contenido_referencia
-                            ? `${Math.min(doc.contenido_referencia.length, 99999).toLocaleString()} caracteres extraídos`
-                            : 'Procesando…'}
-                        </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Izquierda: Documento de referencia para IA */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <Upload size={12} className="text-blue-600" />
+                      <p className="text-[10px] font-medium text-gray-700">Referencia para IA</p>
+                    </div>
+                    <p className="text-[9px] text-gray-500 leading-relaxed">
+                      PDF, Word, Excel o respuesta previa. La IA lo analiza al generar.
+                    </p>
+                    {doc.referencia_archivo_nombre ? (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1.5">
+                          <FileText size={12} className="text-blue-600 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[9px] font-medium text-blue-800 truncate">{doc.referencia_archivo_nombre}</p>
+                            <p className="text-[8px] text-blue-600">
+                              {doc.contenido_referencia ? `${doc.contenido_referencia.length.toLocaleString()} chars` : 'Procesando…'}
+                            </p>
+                          </div>
+                          <button onClick={handleEliminarReferencia} className="p-0.5 rounded hover:bg-red-100 text-red-400" title="Eliminar">
+                            <X size={11} />
+                          </button>
+                        </div>
+                        <input ref={refFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp,.doc,.docx,.xlsx,.xls,.csv,.txt" className="hidden"
+                          onChange={e => { const f = e.target.files?.[0]; if (f) { handleEliminarReferencia().then(() => handleCargarReferencia(f)) }; if (e.target) e.target.value = '' }} />
+                        <button onClick={() => refFileRef.current?.click()} disabled={cargandoReferencia}
+                          className="w-full flex items-center justify-center gap-1 py-1.5 text-[9px] rounded-lg font-medium border border-blue-300 text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+                          {cargandoReferencia ? <><RotateCcw size={9} className="animate-spin" /> Procesando…</> : <><Upload size={9} /> Cambiar</>}
+                        </button>
                       </div>
-                      <button onClick={handleEliminarReferencia}
-                        className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
-                        title="Eliminar referencia">
-                        <X size={14} />
-                      </button>
-                    </div>
-                    <div className="flex gap-2">
-                      <input ref={refFileRef} type="file"
-                        accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp,.doc,.docx,.xlsx,.xls,.csv,.txt"
-                        className="hidden"
-                        onChange={e => { const f = e.target.files?.[0]; if (f) { handleEliminarReferencia().then(() => handleCargarReferencia(f)) }; if (e.target) e.target.value = '' }}
-                      />
-                      <button onClick={() => refFileRef.current?.click()}
-                        disabled={cargandoReferencia}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-[10px] rounded-lg font-medium transition-colors border border-blue-300 text-blue-700 hover:bg-blue-50 disabled:opacity-50">
-                        {cargandoReferencia
-                          ? <><RotateCcw size={10} className="animate-spin" /> Procesando…</>
-                          : <><Upload size={10} /> Cambiar archivo</>}
-                      </button>
-                      <button onClick={handleEliminarReferencia}
-                        className="flex items-center justify-center gap-1 py-1.5 px-3 text-[10px] rounded-lg font-medium transition-colors border border-red-300 text-red-600 hover:bg-red-50">
-                        <X size={10} /> Eliminar
-                      </button>
-                    </div>
+                    ) : (
+                      <>
+                        <input ref={refFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp,.doc,.docx,.xlsx,.xls,.csv,.txt" className="hidden"
+                          onChange={e => { const f = e.target.files?.[0]; if (f) handleCargarReferencia(f) }} />
+                        <button onClick={() => refFileRef.current?.click()} disabled={cargandoReferencia}
+                          className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50">
+                          {cargandoReferencia ? <><RotateCcw size={10} className="animate-spin" /> Procesando…</> : <><Upload size={10} /> Cargar documento</>}
+                        </button>
+                      </>
+                    )}
                   </div>
-                ) : (
-                  <>
-                    <input ref={refFileRef} type="file"
-                      accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp,.doc,.docx,.xlsx,.xls,.csv,.txt"
-                      className="hidden"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) handleCargarReferencia(f) }}
-                    />
-                    <button onClick={() => refFileRef.current?.click()}
-                      disabled={cargandoReferencia}
-                      className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs rounded-lg font-medium text-white transition-colors bg-blue-600 hover:bg-blue-700 disabled:opacity-50">
-                      {cargandoReferencia
-                        ? <><RotateCcw size={12} className="animate-spin" /> Procesando documento…</>
-                        : <><Upload size={12} /> Cargar documento de referencia</>}
-                    </button>
-                  </>
-                )}
+
+                  {/* Derecha: Tabla/Cuadro */}
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <FileText size={12} className="text-amber-600" />
+                      <p className="text-[10px] font-medium text-amber-800">Tabla/Cuadro (opcional)</p>
+                    </div>
+                    <p className="text-[9px] text-amber-600 leading-relaxed">
+                      Imagen PNG/JPG, Excel .xlsx o pega con Ctrl+V. Se inserta en el DOCX.
+                    </p>
+                    {(doc.tabla_imagen_nombre || doc.tabla_datos_json) ? (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 bg-green-100 border border-green-300 rounded-lg px-2 py-1.5">
+                          <CheckCircle2 size={12} className="text-green-700 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[9px] font-medium text-green-800 truncate">{doc.tabla_imagen_nombre || 'Tabla cargada'}</p>
+                            {doc.tabla_datos_json && <p className="text-[8px] text-green-600">{doc.tabla_datos_json.length} filas × {doc.tabla_datos_json[0]?.length || 0} cols</p>}
+                          </div>
+                          <button onClick={async () => { try { await documentosApi.eliminarTablaImagen(doc.id); invalidate() } catch {} }}
+                            className="p-0.5 rounded hover:bg-red-100 text-red-400" title="Eliminar tabla"><X size={11} /></button>
+                        </div>
+                        <input id={`tabla-change-${doc.id}`} type="file" accept="image/png,image/jpeg,image/webp,.xlsx,.xls" className="hidden"
+                          onChange={async e => { const f = e.target.files?.[0]; if (f) { try { await documentosApi.cargarTablaImagen(doc.id, f); invalidate() } catch {} }; if (e.target) e.target.value = '' }} />
+                        <button onClick={() => document.getElementById(`tabla-change-${doc.id}`)?.click()}
+                          className="w-full flex items-center justify-center gap-1 py-1.5 text-[9px] rounded-lg font-medium border border-amber-400 text-amber-700 hover:bg-amber-100">
+                          <Upload size={9} /> Cambiar tabla
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <input id={`tabla-img-${doc.id}`} type="file" accept="image/png,image/jpeg,image/webp,.xlsx,.xls" className="hidden"
+                          onChange={async e => { const f = e.target.files?.[0]; if (f) { try { await documentosApi.cargarTablaImagen(doc.id, f); invalidate() } catch {} }; if (e.target) e.target.value = '' }} />
+                        <button onClick={() => document.getElementById(`tabla-img-${doc.id}`)?.click()}
+                          className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium border border-amber-400 text-amber-700 hover:bg-amber-100">
+                          <Upload size={10} /> Subir imagen o Excel
+                        </button>
+                        <div className="border-2 border-dashed border-amber-300 rounded-lg p-2 text-center cursor-text hover:bg-amber-100 focus:border-amber-600 focus:outline-none"
+                          tabIndex={0}
+                          onPaste={async (e) => {
+                            const items = e.clipboardData?.items; if (!items) return;
+                            for (const item of Array.from(items)) {
+                              if (item.type.startsWith('image/')) {
+                                e.preventDefault();
+                                const blob = item.getAsFile();
+                                if (blob) { const file = new File([blob], `tabla.${blob.type.split('/')[1] || 'png'}`, { type: blob.type }); try { await documentosApi.cargarTablaImagen(doc.id, file); invalidate() } catch {} }
+                                return;
+                              }
+                            }
+                          }}>
+                          <p className="text-[9px] text-amber-700 font-semibold">Pegar con Ctrl+V</p>
+                          <p className="text-[8px] text-amber-500 mt-0.5">Copia tabla en Excel → pega aquí</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Paso 2: Subir oficio elaborado externamente ── */}
+                <div className="bg-green-50 border border-green-200 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[9px] font-bold" style={{ backgroundColor: '#16a34a' }}>2</span>
+                    <p className="text-[10px] font-medium text-green-800">Subir oficio elaborado fuera de la plataforma</p>
+                  </div>
+                  <p className="text-[9px] text-green-700 leading-relaxed">
+                    Si ya tienes el oficio de respuesta listo (PDF o Word), súbelo directamente sin necesidad de generarlo con IA.
+                  </p>
+                  {doc.oficio_externo_nombre ? (
+                    <div className="flex items-center gap-2 bg-green-100 border border-green-300 rounded-lg px-2 py-1.5">
+                      <CheckCircle2 size={12} className="text-green-700 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[9px] font-medium text-green-800 truncate">{doc.oficio_externo_nombre}</p>
+                        <p className="text-[8px] text-green-600">Oficio cargado externamente</p>
+                      </div>
+                      <input ref={externoFileRef} type="file" accept=".pdf,.doc,.docx" className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleSubirOficioExterno(f); if (e.target) e.target.value = '' }} />
+                      <button onClick={() => externoFileRef.current?.click()} disabled={subiendoExterno}
+                        className="flex items-center gap-1 px-2 py-1 text-[9px] rounded font-medium border border-green-400 text-green-700 hover:bg-green-200 disabled:opacity-50">
+                        <Upload size={9} /> Cambiar
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <input ref={externoFileRef} type="file" accept=".pdf,.doc,.docx" className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleSubirOficioExterno(f); if (e.target) e.target.value = '' }} />
+                      <button onClick={() => externoFileRef.current?.click()} disabled={subiendoExterno}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium border-2 border-dashed border-green-400 text-green-700 hover:bg-green-100 disabled:opacity-50 transition-colors">
+                        {subiendoExterno
+                          ? <><RotateCcw size={11} className="animate-spin" /> Subiendo oficio…</>
+                          : <><Upload size={11} /> Subir oficio externo (PDF / Word)</>}
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {/* ── Paso 3: Generar con IA ── */}
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[9px] font-bold" style={{ backgroundColor: '#2563eb' }}>3</span>
+                    <Wand2 size={12} className="text-blue-600" />
+                    <p className="text-[10px] font-medium text-blue-800">Generar oficio de respuesta con IA</p>
+                  </div>
+                  <textarea
+                    value={instruccionesIA}
+                    onChange={e => setInstruccionesIA(e.target.value)}
+                    placeholder="Instrucciones para la IA (ej: 'Contestar en sentido negativo', 'Incluir la tabla adjunta', 'Usa el oficio adjunto como base')..."
+                    className="w-full border border-blue-200 rounded-lg px-3 py-2 text-xs h-14 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
+                  />
+                  <button onClick={() => handleBorrador(instruccionesIA)} disabled={generando}
+                    className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs rounded-lg font-medium text-white transition-colors"
+                    style={{ backgroundColor: GUINDA }}>
+                    {generando
+                      ? <><RotateCcw size={12} className="animate-spin" /> Generando oficio...</>
+                      : <><Wand2 size={12} /> Generar oficio de respuesta</>}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -2814,101 +2919,6 @@ function PanelRecibido({
                   </div>
                 )}
 
-                {/* Tabla/cuadro para el DOCX: imagen, Excel o pegado desde clipboard */}
-                {canGenerarRespuestaEfectivo && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-                    <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">Tabla/Cuadro para el oficio (opcional)</p>
-                    <p className="text-[9px] text-amber-600">
-                      Sube una imagen (PNG/JPG), un archivo Excel (.xlsx), o pega directamente desde el portapapeles (Ctrl+V).
-                      Se insertará como tabla real en el DOCX.
-                    </p>
-                    {(doc.tabla_imagen_nombre || doc.tabla_datos_json) ? (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2 bg-green-100 border border-green-300 rounded-lg px-3 py-2">
-                          <CheckCircle2 size={14} className="text-green-700 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[10px] font-medium text-green-800 truncate">{doc.tabla_imagen_nombre || 'Tabla cargada'}</p>
-                            {doc.tabla_datos_json && (
-                              <p className="text-[9px] text-green-600">{doc.tabla_datos_json.length} filas × {doc.tabla_datos_json[0]?.length || 0} columnas — Se insertará automáticamente en el DOCX</p>
-                            )}
-                            {doc.tabla_imagen_url && !doc.tabla_datos_json && (
-                              <p className="text-[9px] text-green-600">Imagen cargada — Se insertará automáticamente en el DOCX</p>
-                            )}
-                          </div>
-                          <button onClick={async () => { try { await documentosApi.eliminarTablaImagen(doc.id); invalidate() } catch {} }}
-                            className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600" title="Eliminar tabla">
-                            <X size={12} />
-                          </button>
-                        </div>
-                        {/* Preview de tabla Excel */}
-                        {doc.tabla_datos_json && doc.tabla_datos_json.length > 0 && (
-                          <div className="max-h-40 overflow-auto border border-amber-200 rounded">
-                            <table className="w-full text-[9px]">
-                              <thead><tr className="bg-amber-200">
-                                {doc.tabla_datos_json[0].map((h: string, ci: number) => <th key={ci} className="px-1 py-0.5 text-left font-semibold text-amber-900 border-r border-amber-300 last:border-r-0">{h}</th>)}
-                              </tr></thead>
-                              <tbody>
-                                {doc.tabla_datos_json.slice(1, 8).map((row: string[], ri: number) => (
-                                  <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-amber-50'}>
-                                    {row.map((c: string, ci: number) => <td key={ci} className="px-1 py-0.5 border-r border-amber-100 last:border-r-0">{c}</td>)}
-                                  </tr>
-                                ))}
-                                {doc.tabla_datos_json.length > 8 && (
-                                  <tr><td colSpan={doc.tabla_datos_json[0].length} className="px-1 py-0.5 text-center text-amber-500 italic">...{doc.tabla_datos_json.length - 8} filas más</td></tr>
-                                )}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                        {/* Botón para cambiar tabla */}
-                        <div>
-                          <input id={`tabla-change-${doc.id}`} type="file" accept="image/png,image/jpeg,image/webp,.xlsx,.xls" className="hidden"
-                            onChange={async e => { const f = e.target.files?.[0]; if (f) { try { await documentosApi.cargarTablaImagen(doc.id, f); invalidate() } catch {} }; if (e.target) e.target.value = '' }} />
-                          <button onClick={() => document.getElementById(`tabla-change-${doc.id}`)?.click()}
-                            className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[10px] rounded-lg font-medium transition-colors border border-amber-400 text-amber-700 hover:bg-amber-100">
-                            <Upload size={10} /> Cambiar tabla
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <input id={`tabla-img-${doc.id}`} type="file" accept="image/png,image/jpeg,image/webp,.xlsx,.xls" className="hidden"
-                          onChange={async e => { const f = e.target.files?.[0]; if (f) { try { await documentosApi.cargarTablaImagen(doc.id, f); invalidate() } catch {} }; if (e.target) e.target.value = '' }} />
-                        <div className="flex gap-2">
-                          <button onClick={() => document.getElementById(`tabla-img-${doc.id}`)?.click()}
-                            className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium transition-colors border border-amber-400 text-amber-700 hover:bg-amber-100">
-                            <Upload size={10} /> Subir imagen (PNG/JPG) o Excel (.xlsx)
-                          </button>
-                        </div>
-                        {/* Zona de pegado desde clipboard — NO abre file picker */}
-                        <div
-                          className="border-2 border-dashed border-amber-300 rounded-lg p-3 text-center cursor-text hover:bg-amber-100 hover:border-amber-500 transition-colors focus:border-amber-600 focus:bg-amber-100 focus:outline-none"
-                          tabIndex={0}
-                          onPaste={async (e) => {
-                            const items = e.clipboardData?.items;
-                            if (!items) return;
-                            for (const item of Array.from(items)) {
-                              if (item.type.startsWith('image/')) {
-                                e.preventDefault();
-                                const blob = item.getAsFile();
-                                if (blob) {
-                                  const file = new File([blob], `tabla_pegada.${blob.type.split('/')[1] || 'png'}`, { type: blob.type });
-                                  try { await documentosApi.cargarTablaImagen(doc.id, file); invalidate() } catch {}
-                                }
-                                return;
-                              }
-                            }
-                          }}
-                        >
-                          <p className="text-[10px] text-amber-700 font-semibold">Pegar imagen del portapapeles</p>
-                          <p className="text-[9px] text-amber-500 mt-1">1. Selecciona la tabla en Excel → Copiar como imagen</p>
-                          <p className="text-[9px] text-amber-500">2. Haz click aquí para activar esta zona</p>
-                          <p className="text-[9px] text-amber-500">3. Presiona Ctrl+V (⌘+V en Mac)</p>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
 
                 {/* ── Fila horizontal: Editar borrador | Descargar oficio | Firmar documento ── */}
                 <div className="flex gap-2">
@@ -5021,10 +5031,10 @@ export default function GestionDocumental() {
     if (floatingDocId) loadFloatingPdf(floatingDocId, newTab)
   }, [floatingDocId, loadFloatingPdf])
 
-  // Recargar PDF de respuesta cuando se genera el borrador estando en tab 'ocr'
+  // Recargar PDF de respuesta siempre que cambie el borrador (incluyendo regeneraciones)
   const floatingDocBorrador = floatingDoc?.borrador_respuesta
   useEffect(() => {
-    if (floatingDocId && floatingActiveTab === 'ocr' && floatingDocBorrador) {
+    if (floatingDocId && floatingDocBorrador) {
       loadFloatingPdf(floatingDocId, 'ocr')
     }
   }, [floatingDocBorrador])

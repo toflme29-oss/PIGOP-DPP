@@ -203,6 +203,8 @@ class DocumentoResponse(DocumentoListResponse):
     referencia_archivo_nombre: Optional[str] = None
     referencia_archivo_url:    Optional[str] = None
     contenido_referencia:      Optional[str] = None
+    oficio_externo_url:        Optional[str] = None
+    oficio_externo_nombre:     Optional[str] = None
     firmado_digitalmente: Optional[bool] = None
     firma_metadata:       Optional[dict] = None
     actualizado_en:       Optional[datetime]

@@ -110,6 +110,8 @@ export interface Documento extends DocumentoListItem {
   referencia_archivo_nombre: string | null
   referencia_archivo_url:    string | null
   contenido_referencia:      string | null
+  oficio_externo_url:        string | null
+  oficio_externo_nombre:     string | null
   actualizado_en:        string | null
   creado_por:            UsuarioInfo | null
   turnado_por:           UsuarioInfo | null
@@ -541,6 +543,15 @@ export const documentosApi = {
   generarBorrador: async (id: string, instrucciones?: string): Promise<Documento> => {
     const body = instrucciones ? { instrucciones } : undefined
     const res = await apiClient.post(`/documentos/${id}/generar-borrador`, body)
+    return res.data
+  },
+
+  subirOficioExterno: async (id: string, file: File): Promise<Documento> => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await apiClient.post(`/documentos/${id}/subir-oficio-externo`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
     return res.data
   },
 
