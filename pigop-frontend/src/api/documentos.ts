@@ -603,8 +603,14 @@ export const documentosApi = {
     const a = document.createElement('a')
     a.href = url
     const disposition = res.headers['content-disposition'] || ''
-    const match = disposition.match(/filename="?([^"]+)"?/)
-    a.download = match ? match[1] : `oficio_${id}.docx`
+    // Preferir filename* (RFC 5987 UTF-8) → decodificar; si no, usar filename="..."
+    const matchStar  = disposition.match(/filename\*=UTF-8''([^;\s]+)/i)
+    const matchPlain = disposition.match(/filename="([^"]+)"/)
+    a.download = matchStar
+      ? decodeURIComponent(matchStar[1])
+      : matchPlain
+        ? matchPlain[1]
+        : `OF. RESP. ${id}.docx`
     document.body.appendChild(a)
     a.click()
     window.URL.revokeObjectURL(url)
