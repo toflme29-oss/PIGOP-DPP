@@ -13,7 +13,7 @@ import {
   Users, Building2, Plus, ToggleLeft, ToggleRight,
   Shield, UserCheck, Eye, Loader2, X, AlertCircle,
   KeyRound, RefreshCw, Search, ChevronDown, Lock,
-  Upload, CheckCircle2,
+  Upload, CheckCircle2, FileImage, Trash2,
 } from 'lucide-react'
 import {
   usuariosApi, clientesAdminApi,
@@ -21,6 +21,7 @@ import {
   type UsuarioAdmin, type ClienteAdmin,
   type UsuarioCreate, type ClienteCreate,
 } from '../api/usuarios'
+import { documentosApi } from '../api/documentos'
 import { useAuth } from '../hooks/useAuth'
 import { formatDate } from '../utils'
 import { TablaPermisos } from './AdminPermisos'
@@ -1190,9 +1191,155 @@ function ModalImportarDependencias({
   )
 }
 
+// ── Panel Membrete ─────────────────────────────────────────────────────────────
+
+function PanelMembrete() {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const queryClient = useQueryClient()
+  const [preview, setPreview] = useState<string | null>(null)
+  const [subiendo, setSubiendo] = useState(false)
+  const [msg, setMsg] = useState<{ tipo: 'ok' | 'err'; texto: string } | null>(null)
+
+  const { data: info, isLoading } = useQuery({
+    queryKey: ['membrete-info'],
+    queryFn: () => documentosApi.infoMembrete(),
+  })
+
+  const handleFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setMsg({ tipo: 'err', texto: 'Solo se aceptan imágenes PNG o JPG.' })
+      return
+    }
+    // Previsualizar localmente
+    const localUrl = URL.createObjectURL(file)
+    setPreview(localUrl)
+    setMsg(null)
+    setSubiendo(true)
+    try {
+      const res = await documentosApi.subirMembrete(file)
+      setMsg({ tipo: 'ok', texto: res.mensaje })
+      queryClient.invalidateQueries({ queryKey: ['membrete-info'] })
+    } catch (e: any) {
+      setMsg({ tipo: 'err', texto: e?.response?.data?.detail || 'Error al subir el membrete.' })
+      setPreview(null)
+    } finally {
+      setSubiendo(false)
+    }
+  }
+
+  const membreteUrl = info?.activo
+    ? `${documentosApi.membretePreviewUrl()}?t=${Date.now()}`
+    : null
+
+  const imgSrc = preview || membreteUrl
+
+  return (
+    <div className="max-w-2xl">
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-5">
+        {/* Encabezado */}
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+               style={{ backgroundColor: '#FDF0F3' }}>
+            <FileImage size={20} style={{ color: GUINDA }} />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Membrete institucional</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Imagen PNG o JPG que se usará como fondo de página en todos los oficios generados.
+              Se recomienda una imagen tamaño carta (2550 × 3300 px) con fondo transparente o blanco.
+            </p>
+          </div>
+        </div>
+
+        {/* Estado actual */}
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-xs text-gray-400">
+            <Loader2 size={13} className="animate-spin" /> Verificando membrete activo...
+          </div>
+        ) : info?.activo ? (
+          <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
+            <CheckCircle2 size={13} />
+            <span>Membrete activo: <b>{info.filename}</b> — {info.size_kb} KB — subido el {info.actualizado}</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+            <AlertCircle size={13} />
+            <span>No hay membrete configurado. Los oficios se generarán sin fondo.</span>
+          </div>
+        )}
+
+        {/* Previsualización */}
+        {imgSrc && (
+          <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50">
+            <p className="text-[10px] text-gray-400 px-3 py-1.5 border-b border-gray-100">
+              Vista previa del membrete actual
+            </p>
+            <img
+              src={imgSrc}
+              alt="Membrete"
+              className="w-full object-contain max-h-80"
+              style={{ imageRendering: 'auto' }}
+            />
+          </div>
+        )}
+
+        {/* Mensaje de resultado */}
+        {msg && (
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs border ${
+            msg.tipo === 'ok'
+              ? 'bg-green-50 border-green-200 text-green-700'
+              : 'bg-red-50 border-red-200 text-red-700'
+          }`}>
+            {msg.tipo === 'ok' ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}
+            {msg.texto}
+          </div>
+        )}
+
+        {/* Botón subir */}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg"
+          className="hidden"
+          onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]) }}
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={subiendo}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-50"
+            style={{ backgroundColor: GUINDA }}
+          >
+            {subiendo
+              ? <><Loader2 size={14} className="animate-spin" /> Subiendo...</>
+              : <><Upload size={14} /> {info?.activo ? 'Reemplazar membrete' : 'Subir membrete'}</>
+            }
+          </button>
+          {info?.activo && (
+            <p className="text-[11px] text-gray-400 self-center">
+              Al subir uno nuevo reemplaza al anterior automáticamente.
+            </p>
+          )}
+        </div>
+
+        {/* Instrucciones */}
+        <div className="bg-gray-50 rounded-xl p-4 text-xs text-gray-500 space-y-1">
+          <p className="font-medium text-gray-700">Recomendaciones:</p>
+          <ul className="list-disc list-inside space-y-0.5">
+            <li>Formato PNG con fondo transparente (recomendado) o JPG con fondo blanco</li>
+            <li>Tamaño carta: 2550 × 3300 píxeles a 300 dpi</li>
+            <li>El membrete se aplica de inmediato a todos los nuevos oficios</li>
+            <li>Los oficios ya generados no se modifican</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Componente principal ───────────────────────────────────────────────────────
 
-type Tab = 'usuarios' | 'clientes' | 'permisos'
+type Tab = 'usuarios' | 'clientes' | 'permisos' | 'membrete'
 
 export default function Admin() {
   const { user } = useAuth()
@@ -1312,6 +1459,7 @@ export default function Admin() {
           { key: 'usuarios',  label: 'Usuarios',          icon: Users     },
           { key: 'clientes',  label: 'Dependencias',      icon: Building2 },
           { key: 'permisos',  label: 'Roles y Permisos',  icon: Lock      },
+          { key: 'membrete',  label: 'Membrete',           icon: FileImage },
         ] as const).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -1427,6 +1575,8 @@ export default function Admin() {
 
 
       {tab === 'permisos' && <TablaPermisos />}
+
+      {tab === 'membrete' && <PanelMembrete />}
 
       {/* Modales */}
       {showModalUsuario && (

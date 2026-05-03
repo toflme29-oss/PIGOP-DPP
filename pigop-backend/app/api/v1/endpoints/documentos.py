@@ -214,6 +214,88 @@ async def listar_documentos(
     return await crud_documento.list_documentos(db, **filter_args, skip=skip, limit=limit)
 
 
+# ---------- Membrete institucional ------------------------------------------
+
+_LOGOS_DIR = os.path.join(
+    os.path.dirname(__file__), "..", "..", "..", "static", "logos"
+)
+os.makedirs(_LOGOS_DIR, exist_ok=True)
+
+_MEMBRETE_MIMES = {"image/png", "image/jpeg", "image/jpg"}
+_MEMBRETE_EXTS  = {".png", ".jpg", ".jpeg"}
+
+
+@router.post("/membrete", summary="Subir membrete institucional activo")
+async def subir_membrete(
+    file: UploadFile = File(...),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Sube un PNG/JPG que se usará como fondo de página en todos los oficios PDF."""
+    if current_user.rol not in ("superadmin", "admin_cliente"):
+        raise ForbiddenError("Solo administradores pueden cambiar el membrete.")
+
+    content_type = (file.content_type or "").split(";")[0].strip()
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if content_type not in _MEMBRETE_MIMES and ext not in _MEMBRETE_EXTS:
+        raise BusinessError("Solo se aceptan imágenes PNG o JPG para el membrete.")
+
+    # Borrar membrete anterior (cualquier extensión)
+    for old_ext in _MEMBRETE_EXTS:
+        old_path = os.path.join(_LOGOS_DIR, f"membrete_activo{old_ext}")
+        if os.path.exists(old_path):
+            os.remove(old_path)
+
+    # Guardar nuevo membrete
+    save_ext = ext if ext in _MEMBRETE_EXTS else ".png"
+    save_path = os.path.join(_LOGOS_DIR, f"membrete_activo{save_ext}")
+    content = await file.read()
+    with open(save_path, "wb") as f:
+        f.write(content)
+
+    return {
+        "ok": True,
+        "filename": f"membrete_activo{save_ext}",
+        "size_kb": round(len(content) / 1024, 1),
+        "mensaje": "Membrete actualizado. Los nuevos oficios usarán este fondo.",
+    }
+
+
+@router.get("/membrete/info", summary="Info del membrete activo")
+async def info_membrete(
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Devuelve información del membrete actualmente activo."""
+    for ext in (".png", ".jpg", ".jpeg"):
+        path = os.path.join(_LOGOS_DIR, f"membrete_activo{ext}")
+        if os.path.exists(path):
+            size_kb = round(os.path.getsize(path) / 1024, 1)
+            import time
+            mtime = time.strftime(
+                "%Y-%m-%d %H:%M", time.localtime(os.path.getmtime(path))
+            )
+            return {
+                "activo": True,
+                "filename": f"membrete_activo{ext}",
+                "size_kb": size_kb,
+                "actualizado": mtime,
+                "url": f"/api/v1/documentos/membrete/preview",
+            }
+    return {"activo": False}
+
+
+@router.get("/membrete/preview", summary="Ver imagen del membrete activo")
+async def preview_membrete(
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Devuelve la imagen del membrete activo para previsualizarla."""
+    for ext in (".png", ".jpg", ".jpeg"):
+        path = os.path.join(_LOGOS_DIR, f"membrete_activo{ext}")
+        if os.path.exists(path):
+            mime = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
+            return FileResponse(path, media_type=mime)
+    raise NotFoundError("No hay membrete activo configurado.")
+
+
 # ---------- Siguiente folio consecutivo -------------------------------------
 
 @router.get("/siguiente-folio", summary="Obtener siguiente folio consecutivo")

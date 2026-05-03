@@ -714,6 +714,30 @@ export const documentosApi = {
     window.URL.revokeObjectURL(url)
     a.remove()
   },
+
+  // ── Membrete institucional ──────────────────────────────────────────────────
+
+  /** Subir nuevo membrete (PNG/JPG) para usarlo como fondo en los oficios PDF */
+  subirMembrete: async (file: File): Promise<{ ok: boolean; filename: string; size_kb: number; mensaje: string }> => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await apiClient.post('/documentos/membrete', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  },
+
+  /** Obtener información del membrete activo */
+  infoMembrete: async (): Promise<{ activo: boolean; filename?: string; size_kb?: number; actualizado?: string; url?: string }> => {
+    const res = await apiClient.get('/documentos/membrete/info')
+    return res.data
+  },
+
+  /** URL de previsualización del membrete activo */
+  membretePreviewUrl: (): string => {
+    const base = (import.meta.env.VITE_API_URL as string) || '/api/v1'
+    return `${base}/documentos/membrete/preview`
+  },
 }
 
 export const firmaLoteApi = {

@@ -32,6 +32,15 @@ STATIC_DIR = Path(__file__).parent.parent / "static"
 LOGOS_DIR = STATIC_DIR / "logos"
 FIRMAS_DIR = STATIC_DIR / "firmas"
 
+# ── Membrete activo ────────────────────────────────────────────────────────────
+def _get_membrete_activo() -> Optional[str]:
+    """Devuelve la ruta al membrete activo (PNG/JPG) si existe."""
+    for ext in (".png", ".jpg", ".jpeg"):
+        p = LOGOS_DIR / f"membrete_activo{ext}"
+        if p.exists():
+            return str(p)
+    return None
+
 # Colores institucionales
 GUINDA = colors.HexColor("#911A3A")
 GUINDA_LIGHT = colors.HexColor("#FDF0F3")
@@ -321,8 +330,26 @@ class OficioPdfService:
             ref = generar_referencia_oficio("DIR", referencia_elaboro, referencia_reviso)
             elements.append(Paragraph(ref, s_small))
 
-        # ── Build ───────────────────────────────────────────────────────────
-        doc.build(elements)
+        # ── Build con membrete de fondo ─────────────────────────────────────
+        membrete_path = _get_membrete_activo()
+
+        if membrete_path:
+            from reportlab.lib.pagesizes import letter as _letter
+
+            def _draw_membrete(canvas, _doc, _path=membrete_path):
+                canvas.saveState()
+                canvas.drawImage(
+                    _path, 0, 0,
+                    width=_letter[0], height=_letter[1],
+                    preserveAspectRatio=False,
+                    mask="auto",
+                )
+                canvas.restoreState()
+
+            doc.build(elements, onFirstPage=_draw_membrete, onLaterPages=_draw_membrete)
+        else:
+            doc.build(elements)
+
         return buffer.getvalue()
 
     def _add_tabla_datos_pdf(self, elements: list, doc, tabla_datos: list[list[str]]) -> None:
