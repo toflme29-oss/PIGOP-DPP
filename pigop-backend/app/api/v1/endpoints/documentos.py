@@ -1755,15 +1755,37 @@ def _extraer_texto_archivo(file_path: str, max_pages: int = 3) -> str:
     if ext in (".docx", ".doc"):
         try:
             from docx import Document as DocxDocument
+            from docx.oxml.ns import qn as _qn
+
             doc_obj = DocxDocument(file_path)
-            parrafos = [p.text for p in doc_obj.paragraphs if p.text.strip()]
-            # Incluir texto de tablas
-            for tabla in doc_obj.tables:
-                for fila in tabla.rows:
-                    for celda in fila.cells:
-                        if celda.text.strip():
-                            parrafos.append(celda.text.strip())
-            return "\n".join(parrafos[:300])
+
+            # Recopilar TODO el texto del XML del documento (body + headers + footers).
+            # Esto incluye párrafos normales, celdas de tabla Y cuadros de texto
+            # flotantes (wps:txbxContent / w:txbxContent) del membrete.
+            tokens: list[str] = []
+
+            def _cosechar_texto(xml_element) -> None:
+                """Extrae todos los w:t del elemento y sus descendientes."""
+                for t_el in xml_element.iter(_qn("w:t")):
+                    if t_el.text and t_el.text.strip():
+                        tokens.append(t_el.text.strip())
+
+            # Body principal
+            _cosechar_texto(doc_obj.element.body)
+
+            # Partes de encabezado y pie de página (contienen el membrete con text boxes)
+            from docx.opc.constants import RELATIONSHIP_TYPE as RT
+            for rel in doc_obj.part.rels.values():
+                if rel.reltype in (
+                    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header",
+                    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer",
+                ):
+                    try:
+                        _cosechar_texto(rel.target_part._element)
+                    except Exception:
+                        pass
+
+            return "\n".join(tokens[:500]) if tokens else ""
         except Exception as exc:
             logger.warning("python-docx no pudo leer %s: %s", file_path, exc)
         return ""
@@ -1841,8 +1863,10 @@ async def extraer_datos_oficio_externo(
 
     # ── Detectar número de oficio ─────────────────────────────────────────────
     # Patrones comunes: SFA/DPP/1260/2026, SFA/SF/DPP/SCG/0001/2026, etc.
+    # Busca la cadena más larga que empiece por una sigla institucional y
+    # termine en /NNN.../20YY (número consecutivo + año).
     folio_match = re.search(
-        r'\b(?:SFA|GEM|DPP|SEFOA|SF)[/A-Z]*(?:/\w+)*?/\d{3,5}/20\d{2}\b',
+        r'\b(?:SFA|GEM|DPP|SEFOA|SF)(?:/[A-Z0-9]+){1,6}/\d{3,5}/20\d{2}\b',
         texto,
         re.IGNORECASE,
     )

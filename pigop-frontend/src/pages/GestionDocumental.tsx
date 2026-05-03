@@ -1705,26 +1705,28 @@ function PanelRecibido({
   // Verificar discrepancias cuando ya existe un oficio externo cargado
   useEffect(() => {
     if (!doc.oficio_externo_nombre) { setAlertasExterno([]); return }
+    const folioVigente  = folioLocal     || doc.folio_respuesta  || ''
+    const fechaVigente  = fechaRespLocal || doc.fecha_respuesta  || ''
     documentosApi.extraerDatosOficioExterno(doc.id).then(datos => {
       const alertas: string[] = []
       if (datos.no_oficio_extraido) {
         const norm = (s: string) => s.replace(/\s+/g, '').toUpperCase()
-        const folioActual = norm(doc.folio_respuesta || '')
+        const folioActual = norm(folioVigente)
         const folioDoc   = norm(datos.no_oficio_extraido)
         if (folioActual && folioDoc && folioDoc !== folioActual)
-          alertas.push(`El No. de oficio del documento (${datos.no_oficio_extraido}) no coincide con el folio de respuesta registrado (${doc.folio_respuesta || '—'}).`)
+          alertas.push(`⚠️ El No. de oficio del documento (${datos.no_oficio_extraido}) no coincide con el folio de respuesta registrado (${folioVigente}).`)
       }
       if (datos.fecha_extraida) {
         const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
-        const fechaActual = norm(doc.fecha_respuesta || '')
+        const fechaActual = norm(fechaVigente)
         const fechaDoc   = norm(datos.fecha_extraida)
         if (fechaActual && fechaDoc && fechaDoc !== fechaActual)
-          alertas.push(`La fecha del documento (${datos.fecha_extraida}) no coincide con la fecha del oficio registrada (${doc.fecha_respuesta || '—'}).`)
+          alertas.push(`⚠️ La fecha del documento (${datos.fecha_extraida}) no coincide con la fecha del oficio registrada (${fechaVigente}).`)
       }
       setAlertasExterno(alertas)
     }).catch(() => { /* extracción opcional */ })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc.id, doc.oficio_externo_nombre, doc.folio_respuesta, doc.fecha_respuesta])
+  }, [doc.id, doc.oficio_externo_nombre, doc.folio_respuesta, doc.fecha_respuesta, folioLocal, fechaRespLocal])
 
   const handleSubirArchivoOriginal = async (file: File) => {
     setSubiendoArchivo(true)
@@ -1844,20 +1846,22 @@ function PanelRecibido({
         // Comparar No. de oficio con folio de respuesta
         if (datos.no_oficio_extraido) {
           const normalizar = (s: string) => s.replace(/\s+/g, '').toUpperCase()
-          const folioActual = normalizar(folioLocal || doc.folio_respuesta || '')
+          const folioVigente = folioLocal || doc.folio_respuesta || ''
+          const folioActual = normalizar(folioVigente)
           const folioDoc   = normalizar(datos.no_oficio_extraido)
           if (folioActual && folioDoc && folioDoc !== folioActual) {
-            alertas.push(`El No. de oficio del documento (${datos.no_oficio_extraido}) no coincide con el folio de respuesta registrado (${folioLocal || doc.folio_respuesta || '—'}).`)
+            alertas.push(`⚠️ El No. de oficio del documento (${datos.no_oficio_extraido}) no coincide con el folio de respuesta registrado (${folioVigente}).`)
           }
         }
 
         // Comparar fecha
         if (datos.fecha_extraida) {
           const normalizar = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
-          const fechaActual = normalizar(fechaRespLocal || doc.fecha_respuesta || '')
+          const fechaVigente = fechaRespLocal || doc.fecha_respuesta || ''
+          const fechaActual = normalizar(fechaVigente)
           const fechaDoc   = normalizar(datos.fecha_extraida)
           if (fechaActual && fechaDoc && fechaDoc !== fechaActual) {
-            alertas.push(`La fecha del documento (${datos.fecha_extraida}) no coincide con la fecha del oficio registrada (${fechaRespLocal || doc.fecha_respuesta || '—'}).`)
+            alertas.push(`⚠️ La fecha del documento (${datos.fecha_extraida}) no coincide con la fecha del oficio registrada (${fechaVigente}).`)
           }
         }
 
