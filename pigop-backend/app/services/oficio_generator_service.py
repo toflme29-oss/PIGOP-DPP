@@ -73,11 +73,19 @@ class OficioGeneratorService:
         if membrete_activo:
             # ── Con membrete: fondo PNG de página completa ──────────────────
             self._add_membrete_background_docx(doc, membrete_path)
-            # ── Espaciador preciso para que la fecha quede justo debajo ─────
-            # Página carta = 792 pt; fecha_y (desde abajo) → desde arriba = 792 - fecha_y
-            # Margen superior DOCX = 1.5 cm = 42.52 pt
-            # Espacio en área de contenido = (792 - fecha_y) - 42.52
             cfg = _get_membrete_config()
+
+            # ── Valores del recuadro como texto flotante sobre el membrete ──
+            self._add_valores_sobre_membrete_docx(
+                doc, cfg,
+                folio=folio_respuesta,
+                asunto=self._truncar_asunto(asunto or "El que se indica"),
+            )
+
+            # ── Número de página en pie de página ───────────────────────────
+            self._add_page_numbers_footer(doc)
+
+            # ── Espaciador preciso para que la fecha quede justo debajo ─────
             fecha_y     = cfg.get("fecha_y", 620)
             _TOP_MARGIN = 1.5 * 28.3465          # ≈ 42.52 pt
             space_pt    = max((792 - fecha_y) - _TOP_MARGIN, 1.0)
@@ -238,6 +246,211 @@ class OficioGeneratorService:
         # 4. Insertar al inicio del body
         p_elem = _lxml_etree.fromstring(xml_str.encode("utf-8"))
         doc.element.body.insert(0, p_elem)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # MEMBRETE: valores flotantes sobre el PNG de fondo
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _add_valores_sobre_membrete_docx(
+        self,
+        doc: Document,
+        cfg: dict,
+        folio: str,
+        asunto: str,
+        dependencia: str = "Secretaría de Finanzas y Administración",
+        subdep: str = "Subsecretaría de Finanzas",
+        oficina: str = "Dirección de Programación y Presupuesto",
+        expediente: str = "General",
+    ) -> None:
+        """
+        Inserta cada valor del recuadro como cuadro de texto flotante posicionado
+        exactamente sobre la celda correspondiente del membrete PNG.
+        Usa coordenadas absolutas (relativeFrom="page") derivadas de la config JSON.
+        """
+        campos_valores: dict[str, str] = {
+            "dependencia": dependencia,
+            "subdep":       subdep,
+            "oficina":      oficina,
+            "nooficio":     folio or "—",
+            "expediente":   expediente,
+            "asunto":       asunto or "El que se indica",
+        }
+
+        fontsize_pt = float(cfg.get("fontsize", 7))
+        # Página carta en PDF: 792 pt de alto
+        PAGE_H_PT = 792.0
+
+        for idx, campo in enumerate(cfg.get("campos", []), start=901):
+            key      = campo.get("key", "")
+            valor    = campos_valores.get(key, "")
+            if not valor:
+                continue
+
+            x_pt      = float(campo.get("x", 400))
+            y_pt      = float(campo.get("y", 700))   # PDF coords: desde abajo
+            max_w_pt  = float(campo.get("max_width", 180))
+            multiline = campo.get("multiline", False)
+
+            # Convertir a EMU (1 pt = 12700 EMU)
+            # PDF origin = bottom-left → Word origin = top-left
+            x_emu = int(x_pt * 12700)
+            y_emu = int((PAGE_H_PT - y_pt) * 12700)
+            w_emu = int(max_w_pt * 12700)
+            # Alto: si multiline, hasta 3 líneas; si no, 1 línea
+            line_h_pt = float(cfg.get("line_height", 9))
+            h_emu = int(line_h_pt * (3 if multiline else 1) * 12700)
+
+            self._insert_floating_label_value(
+                doc, valor, x_emu, y_emu, w_emu, h_emu,
+                fontsize_pt=fontsize_pt, anchor_id=idx,
+            )
+
+    def _insert_floating_label_value(
+        self,
+        doc: Document,
+        text: str,
+        x_emu: int,
+        y_emu: int,
+        w_emu: int,
+        h_emu: int,
+        fontsize_pt: float = 7.0,
+        anchor_id: int = 901,
+    ) -> None:
+        """
+        Inserta un cuadro de texto (wps:wsp) flotante en posición absoluta
+        respecto a la página con el texto indicado, sin borde ni fondo.
+        """
+        NS_W   = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        NS_WP  = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+        NS_A   = "http://schemas.openxmlformats.org/drawingml/2006/main"
+        NS_WPS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+
+        sz_half = int(fontsize_pt * 2)   # w:sz / w:szCs usa medias-puntos
+
+        # Escapar caracteres XML especiales en el texto
+        import html as _html
+        safe_text = _html.escape(text)
+
+        xml_str = (
+            f'<w:p xmlns:w="{NS_W}" xmlns:wp="{NS_WP}"'
+            f' xmlns:a="{NS_A}" xmlns:wps="{NS_WPS}">'
+            f'<w:r><w:drawing>'
+            f'<wp:anchor distT="0" distB="0" distL="0" distR="0"'
+            f' simplePos="0" relativeHeight="251658242" behindDoc="0"'
+            f' locked="0" layoutInCell="1" allowOverlap="1">'
+            f'<wp:simplePos x="0" y="0"/>'
+            f'<wp:positionH relativeFrom="page"><wp:posOffset>{x_emu}</wp:posOffset></wp:positionH>'
+            f'<wp:positionV relativeFrom="page"><wp:posOffset>{y_emu}</wp:posOffset></wp:positionV>'
+            f'<wp:extent cx="{w_emu}" cy="{h_emu}"/>'
+            f'<wp:effectExtent l="0" t="0" r="0" b="0"/>'
+            f'<wp:wrapNone/>'
+            f'<wp:docPr id="{anchor_id}" name="ValMbr_{anchor_id}"/>'
+            f'<wp:cNvGraphicFramePr/>'
+            f'<a:graphic>'
+            f'<a:graphicData uri="{NS_WPS}">'
+            f'<wps:wsp>'
+            f'<wps:cNvSpPr txBx="1"/>'
+            f'<wps:spPr>'
+            f'<a:xfrm><a:off x="0" y="0"/><a:ext cx="{w_emu}" cy="{h_emu}"/></a:xfrm>'
+            f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+            f'<a:noFill/>'
+            f'<a:ln><a:noFill/></a:ln>'
+            f'</wps:spPr>'
+            f'<wps:txbx>'
+            f'<w:txbxContent>'
+            f'<w:p>'
+            f'<w:pPr>'
+            f'<w:spacing w:before="0" w:after="0"/>'
+            f'<w:jc w:val="left"/>'
+            f'</w:pPr>'
+            f'<w:r>'
+            f'<w:rPr>'
+            f'<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>'
+            f'<w:sz w:val="{sz_half}"/>'
+            f'<w:szCs w:val="{sz_half}"/>'
+            f'</w:rPr>'
+            f'<w:t xml:space="preserve">{safe_text}</w:t>'
+            f'</w:r>'
+            f'</w:p>'
+            f'</w:txbxContent>'
+            f'</wps:txbx>'
+            f'<wps:bodyPr lIns="0" rIns="0" tIns="0" bIns="0" anchor="t" wrap="square"/>'
+            f'</wps:wsp>'
+            f'</a:graphicData>'
+            f'</a:graphic>'
+            f'</wp:anchor>'
+            f'</w:drawing></w:r>'
+            f'</w:p>'
+        )
+
+        p_elem = _lxml_etree.fromstring(xml_str.encode("utf-8"))
+        # Insertar al inicio del body (después del fondo, antes del espaciador)
+        doc.element.body.insert(0, p_elem)
+
+    def _add_page_numbers_footer(self, doc: Document) -> None:
+        """
+        Agrega 'Página X de Y' alineado a la derecha en el pie de página.
+        Usa campos DOCX estándar PAGE / NUMPAGES que Word/LibreOffice calculan.
+        """
+        section = doc.sections[0]
+        footer  = section.footer
+
+        # Limpiar párrafos previos del footer
+        for p in footer.paragraphs:
+            p.clear()
+
+        p_footer = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+        p_footer.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p_footer.paragraph_format.space_before = Pt(0)
+        p_footer.paragraph_format.space_after  = Pt(0)
+
+        def _set_run_font(run):
+            run.font.name = "Arial"
+            run.font.size = Pt(7)
+            run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+
+        def _add_field(paragraph, instr: str, display: str = "1"):
+            """Agrega un campo DOCX (fldChar begin/instrText/separate/end)."""
+            # begin
+            r_begin = paragraph.add_run()
+            _set_run_font(r_begin)
+            fc_begin = OxmlElement("w:fldChar")
+            fc_begin.set(qn("w:fldCharType"), "begin")
+            r_begin._r.append(fc_begin)
+            # instrText
+            r_instr = paragraph.add_run()
+            _set_run_font(r_instr)
+            it = OxmlElement("w:instrText")
+            it.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+            it.text = f" {instr} "
+            r_instr._r.append(it)
+            # separate
+            r_sep = paragraph.add_run()
+            _set_run_font(r_sep)
+            fc_sep = OxmlElement("w:fldChar")
+            fc_sep.set(qn("w:fldCharType"), "separate")
+            r_sep._r.append(fc_sep)
+            # valor visible provisional
+            r_val = paragraph.add_run(display)
+            _set_run_font(r_val)
+            # end
+            r_end = paragraph.add_run()
+            _set_run_font(r_end)
+            fc_end = OxmlElement("w:fldChar")
+            fc_end.set(qn("w:fldCharType"), "end")
+            r_end._r.append(fc_end)
+
+        r_pre = p_footer.add_run("Página ")
+        _set_run_font(r_pre)
+
+        _add_field(p_footer, "PAGE", "1")
+
+        r_mid = p_footer.add_run(" de ")
+        _set_run_font(r_mid)
+
+        _add_field(p_footer, "NUMPAGES", "1")
+
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _set_page_margins(self, doc: Document) -> None:
         """Pagina carta con margenes del modelo oficial."""
