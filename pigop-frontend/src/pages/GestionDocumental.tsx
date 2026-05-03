@@ -1633,6 +1633,9 @@ function PanelRecibido({
   const [mostrarUploadWord, setMostrarUploadWord] = useState(false)
   const [subiendoWord, setSubiendoWord] = useState(false)
   const [alertasExterno, setAlertasExterno] = useState<string[]>([])
+  const [fechaError, setFechaError] = useState('')
+  const [destinatarioRespLocal, setDestinatarioRespLocal] = useState(doc.remitente_nombre ?? '')
+  const [cargoRespLocal, setCargoRespLocal] = useState(doc.remitente_cargo ?? '')
   const refFileRef = useRef<HTMLInputElement>(null)
   const externoFileRef = useRef<HTMLInputElement>(null)
   const wordEditRef = useRef<HTMLInputElement>(null)
@@ -2696,21 +2699,25 @@ function PanelRecibido({
 
             {/* ── Datos del oficio de respuesta — al inicio en modo flotante ── */}
             {hideDocumentVisor && canGenerarRespuestaEfectivo && (
-              <div className="bg-gray-50 rounded-lg p-3 space-y-1">
-                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Datos del oficio de respuesta</p>
+              <div className={`rounded-lg p-3 space-y-2 ${bloqueadoPorFirma ? 'bg-gray-100 border border-gray-200' : 'bg-gray-50'}`}>
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Datos del oficio de respuesta</p>
+                  {bloqueadoPorFirma && <span className="text-[9px] text-amber-600 font-medium flex items-center gap-1"><Lock size={9} /> En proceso de firma — solo lectura</span>}
+                </div>
 
-                {/* Una sola fila: Folio | Fecha | Revisó | Elaboró */}
-                <div className="grid grid-cols-[3fr_3fr_1.2fr_1.2fr] gap-2 items-end">
+                {/* Fila 1: Folio | Fecha | Revisó | Elaboró */}
+                <div className="grid grid-cols-[3fr_3fr_1.2fr_1.2fr] gap-2 items-start">
                   {/* Folio */}
                   <div>
                     <label className="text-[10px] text-gray-500">Folio de respuesta</label>
                     <div className="flex gap-1">
                       <input type="text" placeholder="SFA/SF/DPP/0001/2026"
-                        className="flex-1 min-w-0 border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none font-mono"
+                        disabled={bloqueadoPorFirma}
+                        className="flex-1 min-w-0 border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none font-mono disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                         style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
                         value={folioLocal} onChange={e => setFolioLocal(e.target.value)}
                         onBlur={() => folioLocal !== (doc.folio_respuesta ?? '') && guardarFolioRef('folio', folioLocal)} />
-                      {!folioLocal && (
+                      {!folioLocal && !bloqueadoPorFirma && (
                         <button
                           onClick={async () => {
                             try {
@@ -2731,17 +2738,28 @@ function PanelRecibido({
                   {/* Fecha */}
                   <div>
                     <label className="text-[10px] text-gray-500">Fecha del oficio</label>
-                    <input type="text" placeholder="16 de marzo de 2026"
-                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none"
+                    <input type="text" placeholder="20 de abril de 2026"
+                      disabled={bloqueadoPorFirma}
+                      className={`w-full border rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed ${fechaError ? 'border-red-400' : 'border-gray-300'}`}
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                      value={fechaRespLocal} onChange={e => setFechaRespLocal(e.target.value)}
-                      onBlur={() => fechaRespLocal !== (doc.fecha_respuesta ?? '') && guardarFolioRef('fecha', fechaRespLocal)} />
+                      value={fechaRespLocal} onChange={e => { setFechaRespLocal(e.target.value); setFechaError('') }}
+                      onBlur={() => {
+                        if (fechaRespLocal) {
+                          const MESES = 'enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre'
+                          const ok = new RegExp(`^\\d{1,2}\\s+de\\s+(${MESES})\\s+de\\s+20\\d{2}$`, 'i').test(fechaRespLocal.trim())
+                          if (!ok) { setFechaError('Formato inválido. Usa: 20 de abril de 2026'); return }
+                        }
+                        setFechaError('')
+                        if (fechaRespLocal !== (doc.fecha_respuesta ?? '')) guardarFolioRef('fecha', fechaRespLocal)
+                      }} />
+                    {fechaError && <p className="text-[9px] text-red-500 mt-0.5">{fechaError}</p>}
                   </div>
                   {/* Revisó */}
                   <div>
                     <label className="text-[10px] text-gray-500">Revisó</label>
                     <input type="text" placeholder="ECJ"
-                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none uppercase"
+                      disabled={bloqueadoPorFirma}
+                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none uppercase disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
                       value={elaboroLocal} onChange={e => setElaboro(e.target.value)}
                       onBlur={() => elaboroLocal !== (doc.referencia_elaboro ?? '') && guardarFolioRef('elaboro', elaboroLocal)} />
@@ -2750,10 +2768,39 @@ function PanelRecibido({
                   <div>
                     <label className="text-[10px] text-gray-500">Elaboró</label>
                     <input type="text" placeholder="BHS"
-                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none uppercase"
+                      disabled={bloqueadoPorFirma}
+                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none uppercase disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
                       value={revisoLocal} onChange={e => setReviso(e.target.value)}
                       onBlur={() => revisoLocal !== (doc.referencia_reviso ?? '') && guardarFolioRef('reviso', revisoLocal)} />
+                  </div>
+                </div>
+
+                {/* Fila 2: Destinatario | Cargo */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-gray-500">Dirigido a</label>
+                    <input type="text" placeholder="Nombre del destinatario"
+                      disabled={bloqueadoPorFirma}
+                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                      style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
+                      value={destinatarioRespLocal} onChange={e => setDestinatarioRespLocal(e.target.value)}
+                      onBlur={async () => {
+                        if (destinatarioRespLocal !== (doc.remitente_nombre ?? ''))
+                          try { await documentosApi.update(doc.id, { remitente_nombre: destinatarioRespLocal }); invalidate() } catch { /* */ }
+                      }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-500">Cargo</label>
+                    <input type="text" placeholder="Cargo del destinatario"
+                      disabled={bloqueadoPorFirma}
+                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                      style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
+                      value={cargoRespLocal} onChange={e => setCargoRespLocal(e.target.value)}
+                      onBlur={async () => {
+                        if (cargoRespLocal !== (doc.remitente_cargo ?? ''))
+                          try { await documentosApi.update(doc.id, { remitente_cargo: cargoRespLocal }); invalidate() } catch { /* */ }
+                      }} />
                   </div>
                 </div>
 
@@ -3143,6 +3190,26 @@ function PanelRecibido({
                     </button>
                   ) : canEnviarParaFirma ? (
                     <button onClick={async () => {
+                      // Validar formato de fecha
+                      if (fechaRespLocal) {
+                        const MESES = 'enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre'
+                        const okFecha = new RegExp(`^\\d{1,2}\\s+de\\s+(${MESES})\\s+de\\s+20\\d{2}$`, 'i').test(fechaRespLocal.trim())
+                        if (!okFecha) {
+                          setFechaError('Formato inválido. Usa: 20 de abril de 2026')
+                          window.alert('La fecha del oficio tiene un formato incorrecto.\nUsa el formato: 20 de abril de 2026')
+                          return
+                        }
+                      }
+                      // Validar que el folio no esté duplicado
+                      if (folioLocal) {
+                        try {
+                          const { disponible, documento_id } = await documentosApi.verificarFolio(folioLocal)
+                          if (!disponible && documento_id !== doc.id) {
+                            window.alert(`⚠️ El folio "${folioLocal}" ya está registrado en otro documento.\nVerifica el número consecutivo antes de enviar a firma.`)
+                            return
+                          }
+                        } catch { /* Si falla la verificación, dejar pasar */ }
+                      }
                       try {
                         setEnviandoFirma(true)
                         await documentosApi.cambiarEstado(doc.id, 'respondido' as never)
@@ -3152,7 +3219,7 @@ function PanelRecibido({
                       } catch (e) { window.alert('Error al enviar para firma: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo'))
                       } finally { setEnviandoFirma(false) }
                     }}
-                      disabled={doc.estado === 'respondido' || enviandoFirma}
+                      disabled={doc.estado === 'respondido' || enviandoFirma || !!fechaError}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium text-white disabled:opacity-50 transition-colors"
                       style={{ backgroundColor: GUINDA }}>
                       {enviandoFirma
