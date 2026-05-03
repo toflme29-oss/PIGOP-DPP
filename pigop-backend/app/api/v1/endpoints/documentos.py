@@ -2236,11 +2236,35 @@ async def descargar_oficio(
     )
 
     import io
-    folio_safe = (doc.folio_respuesta or "oficio").replace("/", "_")
+    import urllib.parse
+
+    # Construir nombre con nomenclatura oficial: OF. RESP. {consecutivo}-{año}
+    # El folio tiene formato tipo "SFA/SF/DPP/1260/2026"; tomamos las dos últimas partes.
+    folio_raw = (doc.folio_respuesta or "").strip()
+    try:
+        partes = [p.strip() for p in folio_raw.split("/") if p.strip()]
+        if len(partes) >= 2:
+            consecutivo = partes[-2]
+            anio        = partes[-1]
+            nombre_archivo = f"OF. RESP. {consecutivo}-{anio}.docx"
+        elif folio_raw:
+            nombre_archivo = f"OF. RESP. {folio_raw}.docx"
+        else:
+            nombre_archivo = "OF. RESP. oficio.docx"
+    except Exception:
+        nombre_archivo = "OF. RESP. oficio.docx"
+
+    # RFC 5987 para que el nombre con espacios y puntos se descargue correctamente
+    encoded_name = urllib.parse.quote(nombre_archivo, safe="")
     return StreamingResponse(
         io.BytesIO(docx_bytes),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="oficio_{folio_safe}.docx"'},
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{nombre_archivo}"; '
+                f"filename*=UTF-8''{encoded_name}"
+            )
+        },
     )
 
 
