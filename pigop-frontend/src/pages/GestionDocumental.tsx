@@ -2937,9 +2937,10 @@ function PanelRecibido({
                       placeholder="Instrucciones (ej: 'Contestar en sentido negativo', 'Usa el oficio adjunto como base')..."
                       className="w-full border border-blue-200 rounded-lg px-2 py-2 text-[10px] resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
                     />
-                    <button onClick={() => handleBorrador(instruccionesIA)} disabled={generando}
-                      className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium text-white transition-colors mt-auto"
-                      style={{ backgroundColor: GUINDA }}>
+                    <button onClick={() => handleBorrador(instruccionesIA)} disabled={generando || bloqueadoPorFirma}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium text-white transition-colors mt-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ backgroundColor: GUINDA }}
+                      title={bloqueadoPorFirma ? 'No se puede regenerar mientras el oficio está en proceso de firma' : undefined}>
                       {generando
                         ? <><RotateCcw size={11} className="animate-spin" /> Generando...</>
                         : <><Wand2 size={11} /> Generar oficio de respuesta</>}
