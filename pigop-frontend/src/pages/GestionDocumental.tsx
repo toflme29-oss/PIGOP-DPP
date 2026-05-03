@@ -2850,8 +2850,9 @@ function PanelRecibido({
                       <>
                         <input ref={refFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp,.doc,.docx,.xlsx,.xls,.csv,.txt" className="hidden"
                           onChange={e => { const f = e.target.files?.[0]; if (f) handleCargarReferencia(f) }} />
-                        <button onClick={() => refFileRef.current?.click()} disabled={cargandoReferencia}
-                          className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50">
+                        <button onClick={() => refFileRef.current?.click()} disabled={cargandoReferencia || bloqueadoPorFirma}
+                          className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={bloqueadoPorFirma ? 'No se puede modificar mientras el oficio está en proceso de firma' : undefined}>
                           {cargandoReferencia ? <><RotateCcw size={10} className="animate-spin" /> Procesando…</> : <><Upload size={10} /> Cargar documento</>}
                         </button>
                       </>
@@ -2895,12 +2896,16 @@ function PanelRecibido({
                         <input id={`tabla-img-${doc.id}`} type="file" accept="image/png,image/jpeg,image/webp,.xlsx,.xls" className="hidden"
                           onChange={async e => { const f = e.target.files?.[0]; if (f) { try { await documentosApi.cargarTablaImagen(doc.id, f); invalidate(); recargarPdf() } catch {} }; if (e.target) e.target.value = '' }} />
                         <button onClick={() => document.getElementById(`tabla-img-${doc.id}`)?.click()}
-                          className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium border border-amber-400 text-amber-700 hover:bg-amber-100">
+                          disabled={bloqueadoPorFirma}
+                          className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium border border-amber-400 text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={bloqueadoPorFirma ? 'No se puede modificar mientras el oficio está en proceso de firma' : undefined}>
                           <Upload size={10} /> Subir imagen o Excel
                         </button>
-                        <div className="border-2 border-dashed border-amber-300 rounded-lg p-2 text-center cursor-text hover:bg-amber-100 focus:border-amber-600 focus:outline-none"
-                          tabIndex={0}
+                        <div className={`border-2 border-dashed border-amber-300 rounded-lg p-2 text-center hover:bg-amber-100 focus:border-amber-600 focus:outline-none ${bloqueadoPorFirma ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'cursor-text'}`}
+                          tabIndex={bloqueadoPorFirma ? -1 : 0}
+                          title={bloqueadoPorFirma ? 'No se puede modificar mientras el oficio está en proceso de firma' : undefined}
                           onPaste={async (e) => {
+                            if (bloqueadoPorFirma) return;
                             const items = e.clipboardData?.items; if (!items) return;
                             for (const item of Array.from(items)) {
                               if (item.type.startsWith('image/')) {
