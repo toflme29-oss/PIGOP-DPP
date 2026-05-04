@@ -452,20 +452,26 @@ function ModalRegistrarRecibido({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setErr('')
-    if (!form.asunto.trim()) { setErr('El asunto es obligatorio.'); return }
-    // Validar que la dependencia esté registrada en el catálogo
+    // ── Validar campos obligatorios ────────────────────────────────────────────
+    const camposFaltantes: string[] = []
+    if (!(form.numero_oficio_origen ?? '').trim())  camposFaltantes.push('No. de oficio')
+    if (!form.asunto.trim())                         camposFaltantes.push('Asunto')
+    if (!(form.remitente_nombre ?? '').trim())       camposFaltantes.push('Firmante')
+    if (!(form.remitente_cargo ?? '').trim())        camposFaltantes.push('Cargo')
+    if (!(form.remitente_dependencia ?? '').trim())  camposFaltantes.push('Dependencia')
+    if (!(form.fecha_documento ?? '').trim())        camposFaltantes.push('Fecha del oficio')
+    if (!(form.fecha_recibido ?? '').trim())         camposFaltantes.push('Fecha recepción DPP')
+    if (camposFaltantes.length > 0) {
+      setErr(`Campos obligatorios incompletos: ${camposFaltantes.join(', ')}.`)
+      return
+    }
+    // ── Validar que la dependencia esté en el catálogo ─────────────────────────
     const depVal = (form.remitente_dependencia ?? '').trim()
     if (catalogoDepend.length > 0) {
       const depNorm = depVal.toLowerCase()
-      const enCatalogo = catalogoDepend.some(
-        c => c.activo && c.nombre.toLowerCase() === depNorm
-      )
+      const enCatalogo = catalogoDepend.some(c => c.activo && c.nombre.toLowerCase() === depNorm)
       if (!enCatalogo) {
-        setErr(
-          depVal
-            ? `La dependencia "${depVal}" no existe en el catálogo. Selecciona una dependencia registrada.`
-            : 'Debes seleccionar una dependencia del catálogo antes de registrar.'
-        )
+        setErr(`La dependencia "${depVal}" no existe en el catálogo. Selecciona una dependencia registrada.`)
         return
       }
     }
@@ -865,9 +871,9 @@ function ModalRegistrarRecibido({
 
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                  No. de oficio <span className="text-green-600 text-[10px] font-normal">(IA)</span>
+                  No. de oficio <span className="text-red-500">*</span> <span className="text-green-600 text-[10px] font-normal">(IA)</span>
                 </label>
-                <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                <input className={`w-full border rounded-lg px-3 py-2 text-sm ${!(form.numero_oficio_origen ?? '').trim() ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                   placeholder="Ej: SCOP/DA/E0167/2026"
                   value={form.numero_oficio_origen ?? ''} onChange={e => set('numero_oficio_origen', e.target.value)} />
               </div>
@@ -876,16 +882,16 @@ function ModalRegistrarRecibido({
                 <label className="block text-xs font-medium text-gray-700 mb-1">
                   Asunto <span className="text-red-500">*</span> <span className="text-green-600 text-[10px] font-normal">(IA)</span>
                 </label>
-                <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                <input className={`w-full border rounded-lg px-3 py-2 text-sm ${!form.asunto.trim() ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                   placeholder="Asunto del oficio recibido"
                   value={form.asunto} onChange={e => set('asunto', e.target.value)} />
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Firmante <span className="text-green-600 text-[10px] font-normal">(IA)</span>
+                  Firmante <span className="text-red-500">*</span> <span className="text-green-600 text-[10px] font-normal">(IA)</span>
                 </label>
-                <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                <input className={`w-full border rounded-lg px-3 py-2 text-sm ${!(form.remitente_nombre ?? '').trim() ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                   placeholder="Nombre completo"
                   value={form.remitente_nombre ?? ''} onChange={e => set('remitente_nombre', e.target.value)} />
               </div>
@@ -893,21 +899,18 @@ function ModalRegistrarRecibido({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Cargo <span className="text-green-600 text-[10px] font-normal">(IA)</span>
+                    Cargo <span className="text-red-500">*</span> <span className="text-green-600 text-[10px] font-normal">(IA)</span>
                   </label>
-                  <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  <input className={`w-full border rounded-lg px-3 py-2 text-sm ${!(form.remitente_cargo ?? '').trim() ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                     placeholder="Delegado Administrativo"
                     value={form.remitente_cargo ?? ''} onChange={e => set('remitente_cargo', e.target.value)} />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Dependencia <span className="text-green-600 text-[10px] font-normal">(IA)</span>
-                    {(form.remitente_dependencia ?? '') && !catalogoDepend.some(c => c.activo && c.nombre.toLowerCase() === (form.remitente_dependencia ?? '').toLowerCase()) && (
-                      <span className="ml-1 text-red-500 text-[10px]">⚠ No registrada en catálogo</span>
-                    )}
+                    Dependencia <span className="text-red-500">*</span> <span className="text-green-600 text-[10px] font-normal">(IA)</span>
                   </label>
                   <select
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                    className={`w-full border rounded-lg px-3 py-2 text-sm bg-white ${!(form.remitente_dependencia ?? '').trim() ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                     value={form.remitente_dependencia ?? ''}
                     onChange={e => set('remitente_dependencia', e.target.value)}
                   >
@@ -922,14 +925,14 @@ function ModalRegistrarRecibido({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Fecha del oficio <span className="text-green-600 text-[10px] font-normal">(IA)</span>
+                    Fecha del oficio <span className="text-red-500">*</span> <span className="text-green-600 text-[10px] font-normal">(IA)</span>
                   </label>
-                  <input type="date" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  <input type="date" className={`w-full border rounded-lg px-3 py-2 text-sm ${!(form.fecha_documento ?? '').trim() ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                     value={form.fecha_documento ?? ''} onChange={e => set('fecha_documento', e.target.value)} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Fecha recepcion DPP</label>
-                  <input type="date" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Fecha recepción DPP <span className="text-red-500">*</span></label>
+                  <input type="date" className={`w-full border rounded-lg px-3 py-2 text-sm ${!(form.fecha_recibido ?? '').trim() ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                     value={form.fecha_recibido ?? ''} onChange={e => set('fecha_recibido', e.target.value)} />
                 </div>
               </div>
@@ -1002,36 +1005,36 @@ function ModalRegistrarRecibido({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">No. de oficio del remitente</label>
-                <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                <label className="block text-xs font-medium text-gray-700 mb-1">No. de oficio del remitente <span className="text-red-500">*</span></label>
+                <input className={`w-full border rounded-lg px-3 py-2 text-sm ${!(form.numero_oficio_origen ?? '').trim() ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                   placeholder="Ej: SCOP/DA/E0167/2026"
                   value={form.numero_oficio_origen ?? ''} onChange={e => set('numero_oficio_origen', e.target.value)} />
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Asunto <span className="text-red-500">*</span></label>
-                <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                <input className={`w-full border rounded-lg px-3 py-2 text-sm ${!form.asunto.trim() ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                   placeholder="Asunto del oficio recibido"
                   value={form.asunto} onChange={e => set('asunto', e.target.value)} />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Nombre del firmante</label>
-                <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                <label className="block text-xs font-medium text-gray-700 mb-1">Nombre del firmante <span className="text-red-500">*</span></label>
+                <input className={`w-full border rounded-lg px-3 py-2 text-sm ${!(form.remitente_nombre ?? '').trim() ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                   placeholder="Nombre completo"
                   value={form.remitente_nombre ?? ''} onChange={e => set('remitente_nombre', e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Cargo</label>
-                  <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Cargo <span className="text-red-500">*</span></label>
+                  <input className={`w-full border rounded-lg px-3 py-2 text-sm ${!(form.remitente_cargo ?? '').trim() ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                     placeholder="Delegado Administrativo"
                     value={form.remitente_cargo ?? ''} onChange={e => set('remitente_cargo', e.target.value)} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Dependencia</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Dependencia <span className="text-red-500">*</span></label>
                   <select
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                    className={`w-full border rounded-lg px-3 py-2 text-sm bg-white ${!(form.remitente_dependencia ?? '').trim() ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                     value={form.remitente_dependencia ?? ''}
                     onChange={e => set('remitente_dependencia', e.target.value)}
                   >
@@ -1044,13 +1047,13 @@ function ModalRegistrarRecibido({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Fecha del oficio</label>
-                  <input type="date" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Fecha del oficio <span className="text-red-500">*</span></label>
+                  <input type="date" className={`w-full border rounded-lg px-3 py-2 text-sm ${!(form.fecha_documento ?? '').trim() ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                     value={form.fecha_documento ?? ''} onChange={e => set('fecha_documento', e.target.value)} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Fecha recepcion DPP</label>
-                  <input type="date" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Fecha recepción DPP <span className="text-red-500">*</span></label>
+                  <input type="date" className={`w-full border rounded-lg px-3 py-2 text-sm ${!(form.fecha_recibido ?? '').trim() ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                     value={form.fecha_recibido ?? ''} onChange={e => set('fecha_recibido', e.target.value)} />
                 </div>
               </div>
