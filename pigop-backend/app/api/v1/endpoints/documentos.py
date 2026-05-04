@@ -441,13 +441,14 @@ async def siguiente_folio(
         prefijo = PREFIJOS_FOLIO[area]
         pattern = f"{prefijo}/%/{anio}"
 
-        # Solo contar folio_respuesta de documentos EMITIDOS.
-        # NO incluir numero_control de recibidos: esos son folios externos que
-        # pueden coincidir con el patrón y saltar el consecutivo interno.
+        # Solo folio_respuesta (SIN numero_control).
+        # folio_respuesta contiene los folios institucionales tanto de emitidos
+        # directos como de respuestas a recibidos. numero_control en cambio
+        # puede tener folios externos que coinciden con el patrón y saltan el
+        # consecutivo interno — por eso se excluye.
         query = text(
             "SELECT folio_respuesta FROM documentos_oficiales "
-            "WHERE folio_respuesta LIKE :pattern "
-            "AND flujo = 'emitido'"
+            "WHERE folio_respuesta LIKE :pattern"
         )
         result = await db.execute(query, {"pattern": pattern})
         rows = result.fetchall()
@@ -485,11 +486,10 @@ async def siguiente_folio(
     suffix = f"/{anio}"
     pattern_legacy = f"{prefix}%{suffix}"
 
-    # Solo contar folio_respuesta de emitidos (no numero_control de recibidos externos)
+    # Solo folio_respuesta (sin numero_control que puede tener folios externos)
     query = text(
         "SELECT folio_respuesta FROM documentos_oficiales "
-        "WHERE folio_respuesta LIKE :pattern "
-        "AND flujo = 'emitido'"
+        "WHERE folio_respuesta LIKE :pattern"
     )
     result = await db.execute(query, {"pattern": pattern_legacy})
     rows = result.fetchall()
