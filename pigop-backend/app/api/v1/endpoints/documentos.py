@@ -380,18 +380,69 @@ async def calibrar_membrete(
         c.setFillColor(rl_colors.HexColor("#0000CC"))
         c.drawString(x + 6, y - 2, f"{nombre} → x={x}, y={y}")
 
+    # ── Constantes del documento (iguales a oficio_pdf_service) ──────────────
+    LEFT_MARGIN  = 1.10 * 72   # 79.2 pt
+    RIGHT_MARGIN = 0.87 * 72   # 62.6 pt
+    TOP_MARGIN   = 0.60 * 72   # 43.2 pt
+    BODY_WIDTH   = pw - LEFT_MARGIN - RIGHT_MARGIN  # ~470 pt
+
+    # Calcular y_cuerpo_inicio (donde empieza el flujo Platypus)
+    _y_mas_alto   = max(campo["y"] for campo in MEMBRETE_CAMPOS)
+    _espacio_hdr  = (792 - _y_mas_alto) + (_y_mas_alto - MEMBRETE_FECHA_Y) + 20
+    Y_CUERPO      = 792 - TOP_MARGIN - _espacio_hdr   # y PDF donde empieza el cuerpo
+
+    # Posiciones aproximadas del cuerpo (texto de 11pt, leading 14-15pt)
+    DESTINATARIO_Y = Y_CUERPO               # 4 líneas × 14 pt
+    SALUDO_Y       = DESTINATARIO_Y - 56    # después del destinatario + spacer 14
+    PARRAFO1_Y     = SALUDO_Y - 20          # primer párrafo cuerpo
+    PARRAFO2_Y     = PARRAFO1_Y - 60        # segundo párrafo
+    PARRAFO3_Y     = PARRAFO2_Y - 60        # tercer párrafo
+    ATT_Y          = PARRAFO3_Y - 30        # "ATENTAMENTE."
+    FIRMA_Y        = ATT_Y - 50             # espacio para firma
+    NOMBRE_Y       = FIRMA_Y - 10           # nombre del firmante
+    CARGO_Y        = NOMBRE_Y - 15          # cargo del firmante
+
+    def _linea_cuerpo(y_pos, color_hex, label, dash=False):
+        """Dibuja línea horizontal + etiqueta para una sección del cuerpo."""
+        c.setStrokeColor(rl_colors.HexColor(color_hex))
+        c.setLineWidth(0.8)
+        if dash:
+            c.setDash(4, 3)
+        else:
+            c.setDash()
+        c.line(LEFT_MARGIN, y_pos, pw - RIGHT_MARGIN, y_pos)
+        c.setDash()
+        c.setFont("Helvetica-Bold", 6.5)
+        c.setFillColor(rl_colors.HexColor(color_hex))
+        c.drawString(LEFT_MARGIN + 2, y_pos + 2, f"y={y_pos:.0f}  {label}")
+
     # 4) Fecha: línea azul + texto de muestra real + etiqueta Y
     c.setStrokeColor(rl_colors.blue)
-    c.setLineWidth(1)
-    c.line(pw - 0.87*72 - 60, MEMBRETE_FECHA_Y, pw - 0.87*72 + 4, MEMBRETE_FECHA_Y)
-    # Texto de muestra igual al oficio real
+    c.setLineWidth(1.2)
+    c.line(LEFT_MARGIN, MEMBRETE_FECHA_Y, pw - RIGHT_MARGIN, MEMBRETE_FECHA_Y)
     c.setFont("Helvetica", 9)
     c.setFillColor(rl_colors.HexColor("#1a1a1a"))
-    c.drawRightString(pw - 0.87*72, MEMBRETE_FECHA_Y, "Morelia, Michoacán, 4 de mayo de 2026")
-    # Etiqueta Y
+    c.drawRightString(pw - RIGHT_MARGIN, MEMBRETE_FECHA_Y, "Morelia, Michoacán, 4 de mayo de 2026")
     c.setFont("Helvetica-Bold", 7)
-    c.setFillColor(rl_colors.HexColor("#006600"))
-    c.drawString(pw - 0.87*72 - 130, MEMBRETE_FECHA_Y - 8, f"Fecha → y={MEMBRETE_FECHA_Y}")
+    c.setFillColor(rl_colors.HexColor("#0000CC"))
+    c.drawString(LEFT_MARGIN + 2, MEMBRETE_FECHA_Y + 3, f"y={MEMBRETE_FECHA_Y}  ← FECHA  (campo: Fecha — posición Y)")
+
+    # 5) Secciones del cuerpo del oficio
+    _linea_cuerpo(Y_CUERPO,      "#007700", "── INICIO CUERPO  (destinatario)")
+    _linea_cuerpo(DESTINATARIO_Y - 56, "#009900", "── fin destinatario / inicio saludo", dash=True)
+    _linea_cuerpo(PARRAFO1_Y,    "#AA6600", "── Párrafo 1 (fundamento)", dash=True)
+    _linea_cuerpo(PARRAFO2_Y,    "#CC8800", "── Párrafo 2 (referencia)", dash=True)
+    _linea_cuerpo(PARRAFO3_Y,    "#CC8800", "── Párrafo 3 (objeto / cierre)", dash=True)
+    _linea_cuerpo(ATT_Y,         "#660066", "── ATENTAMENTE.")
+    _linea_cuerpo(FIRMA_Y,       "#880088", "── espacio firma", dash=True)
+    _linea_cuerpo(NOMBRE_Y,      "#660066", "── Nombre firmante")
+    _linea_cuerpo(CARGO_Y,       "#880088", "── Cargo firmante", dash=True)
+
+    # Rectángulo sombreado del área de cuerpo (orientativo)
+    c.setFillColor(rl_colors.HexColor("#0000FF11"))
+    c.setStrokeColor(rl_colors.HexColor("#AAAAFF"))
+    c.setLineWidth(0.4)
+    c.rect(LEFT_MARGIN, CARGO_Y - 10, BODY_WIDTH, Y_CUERPO - CARGO_Y + 10, fill=1, stroke=1)
 
     c.save()
     buf.seek(0)
