@@ -1635,9 +1635,14 @@ function PanelRecibido({
   const [alertasExterno, setAlertasExterno] = useState<string[]>([])
   const [fechaError, setFechaError] = useState('')
   const [folioErrorMsg, setFolioErrorMsg] = useState('')
-  const [destinatarioRespLocal, setDestinatarioRespLocal] = useState(doc.remitente_nombre ?? '')
+  // Dirigido a / Cargo / Dependencia — con fallback a upp_solicitante si están vacíos
+  const [destinatarioRespLocal, setDestinatarioRespLocal] = useState(
+    doc.remitente_nombre || doc.upp_solicitante || ''
+  )
   const [cargoRespLocal, setCargoRespLocal] = useState(doc.remitente_cargo ?? '')
-  const [dependenciaRespLocal, setDependenciaRespLocal] = useState(doc.remitente_dependencia ?? '')
+  const [dependenciaRespLocal, setDependenciaRespLocal] = useState(
+    doc.remitente_dependencia || doc.dependencia_solicitante || doc.upp_solicitante || ''
+  )
   const refFileRef = useRef<HTMLInputElement>(null)
   const externoFileRef = useRef<HTMLInputElement>(null)
   const wordEditRef = useRef<HTMLInputElement>(null)
@@ -2801,7 +2806,9 @@ function PanelRecibido({
                   </div>
                 </div>
 
-                {/* Fila 2: Dirigido a | Cargo | Dependencia/UPP */}
+                {/* Fila 2: Dirigido a | Cargo | Dependencia/UPP
+                    Si el usuario deja vacío algún campo, se restaura desde:
+                    1) El valor previo del servidor  2) upp_solicitante / dependencia_solicitante */}
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="text-[10px] text-gray-500">Dirigido a</label>
@@ -2811,6 +2818,14 @@ function PanelRecibido({
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
                       value={destinatarioRespLocal} onChange={e => setDestinatarioRespLocal(e.target.value)}
                       onBlur={async () => {
+                        // Si quedó vacío, restaurar desde el valor del servidor
+                        if (!destinatarioRespLocal.trim()) {
+                          const fallback = doc.remitente_nombre || doc.upp_solicitante || ''
+                          setDestinatarioRespLocal(fallback)
+                          if (fallback && fallback !== (doc.remitente_nombre ?? ''))
+                            try { await documentosApi.update(doc.id, { remitente_nombre: fallback }); invalidate() } catch { /* */ }
+                          return
+                        }
                         if (destinatarioRespLocal !== (doc.remitente_nombre ?? ''))
                           try { await documentosApi.update(doc.id, { remitente_nombre: destinatarioRespLocal }); invalidate() } catch { /* */ }
                       }} />
@@ -2823,6 +2838,13 @@ function PanelRecibido({
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
                       value={cargoRespLocal} onChange={e => setCargoRespLocal(e.target.value)}
                       onBlur={async () => {
+                        if (!cargoRespLocal.trim()) {
+                          const fallback = doc.remitente_cargo || ''
+                          setCargoRespLocal(fallback)
+                          if (fallback && fallback !== (doc.remitente_cargo ?? ''))
+                            try { await documentosApi.update(doc.id, { remitente_cargo: fallback }); invalidate() } catch { /* */ }
+                          return
+                        }
                         if (cargoRespLocal !== (doc.remitente_cargo ?? ''))
                           try { await documentosApi.update(doc.id, { remitente_cargo: cargoRespLocal }); invalidate() } catch { /* */ }
                       }} />
@@ -2835,6 +2857,13 @@ function PanelRecibido({
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
                       value={dependenciaRespLocal} onChange={e => setDependenciaRespLocal(e.target.value)}
                       onBlur={async () => {
+                        if (!dependenciaRespLocal.trim()) {
+                          const fallback = doc.remitente_dependencia || doc.dependencia_solicitante || doc.upp_solicitante || ''
+                          setDependenciaRespLocal(fallback)
+                          if (fallback && fallback !== (doc.remitente_dependencia ?? ''))
+                            try { await documentosApi.update(doc.id, { remitente_dependencia: fallback }); invalidate() } catch { /* */ }
+                          return
+                        }
                         if (dependenciaRespLocal !== (doc.remitente_dependencia ?? ''))
                           try { await documentosApi.update(doc.id, { remitente_dependencia: dependenciaRespLocal }); invalidate() } catch { /* */ }
                       }} />
