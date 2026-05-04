@@ -1637,6 +1637,18 @@ function fechaHoyEspanol(): string {
   return `${hoy.getDate()} de ${MESES[hoy.getMonth()]} de ${hoy.getFullYear()}`
 }
 
+/** Convierte "2 de mayo de 2026" → "2 may 2026" para mostrarse en tablas */
+function parseFechaEspanolCorta(texto: string): string {
+  const MAP: Record<string, string> = {
+    enero: 'ene', febrero: 'feb', marzo: 'mar', abril: 'abr',
+    mayo: 'may', junio: 'jun', julio: 'jul', agosto: 'ago',
+    septiembre: 'sep', octubre: 'oct', noviembre: 'nov', diciembre: 'dic',
+  }
+  const m = texto.trim().match(/^(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})$/i)
+  if (!m) return texto.slice(0, 15)
+  return `${m[1]} ${MAP[m[2].toLowerCase()] ?? m[2].slice(0, 3).toLowerCase()} ${m[3]}`
+}
+
 // ── Panel detalle — Recibido ───────────────────────────────────────────────────
 function PanelRecibido({
   doc, areas, onClose, onRefetch, onDelete, initialTab = 'info', hideDocumentVisor = false, onTabChange,
@@ -6534,8 +6546,8 @@ export default function GestionDocumental() {
                     <th className="px-3 py-2.5 text-center text-xs font-semibold" style={{ width: 52, backgroundColor: '#911A3A' }}>No.</th>
                     <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 85, backgroundColor: '#911A3A' }}>Fecha</th>
                     <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 130, backgroundColor: '#911A3A' }}>No. Oficio</th>
-                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 175, backgroundColor: '#911A3A' }}>UPP / Dependencia</th>
                     <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 140, backgroundColor: '#911A3A' }}>Destinatario</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 175, backgroundColor: '#911A3A' }}>UPP / Dependencia</th>
                     <th className="px-3 py-2.5 text-left text-xs font-semibold" style={{ width: 160, backgroundColor: '#911A3A' }}>Asunto</th>
                     <th className="px-3 py-2.5 text-center text-xs font-semibold" style={{ width: 80, backgroundColor: '#911A3A' }}>Tipo</th>
                     <th className="px-3 py-2.5 text-center text-xs font-semibold" style={{ width: 90, backgroundColor: '#911A3A' }}>Estado</th>
@@ -6560,16 +6572,16 @@ export default function GestionDocumental() {
                         onChange={e => setColFiltroEmitidos('oficio', e.target.value)}
                         className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
                     </th>
-                    {/* UPP */}
-                    <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
-                      <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.upp}
-                        onChange={e => setColFiltroEmitidos('upp', e.target.value)}
-                        className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
-                    </th>
                     {/* Destinatario */}
                     <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
                       <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.destinatario}
                         onChange={e => setColFiltroEmitidos('destinatario', e.target.value)}
+                        className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                    </th>
+                    {/* UPP */}
+                    <th className="px-1.5 py-1" style={{ backgroundColor: '#7a1530' }}>
+                      <input type="text" placeholder="Buscar…" value={colFiltrosEmitidos.upp}
+                        onChange={e => setColFiltroEmitidos('upp', e.target.value)}
                         className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
                     </th>
                     {/* Asunto */}
@@ -6669,7 +6681,7 @@ export default function GestionDocumental() {
                         <td className="px-3 py-2.5">
                           <span className="text-[10px] text-gray-500 whitespace-nowrap">
                             {fechaDocRaw
-                              ? (isIsoFecha ? formatDate(fechaDocRaw) : fechaDocRaw.slice(0, 20))
+                              ? (isIsoFecha ? formatDate(fechaDocRaw) : parseFechaEspanolCorta(fechaDocRaw))
                               : doc.creado_en ? formatDate(doc.creado_en) : '—'}
                           </span>
                         </td>
@@ -6679,6 +6691,13 @@ export default function GestionDocumental() {
                             {noOficio || '—'}
                           </span>
                         </td>
+                        {/* Destinatario — nombre + cargo */}
+                        <td className="px-3 py-2.5">
+                          <p className="text-[10px] text-gray-700 font-medium truncate" title={destNombre || ''}>{destNombre || '—'}</p>
+                          {destCargo && (
+                            <p className="text-[9px] text-gray-400 truncate mt-0.5">{destCargo}</p>
+                          )}
+                        </td>
                         {/* UPP / Dependencia — "007-Secretaría de Finanzas..." */}
                         <td className="px-3 py-2.5">
                           <p className="text-[10px] text-gray-600 truncate"
@@ -6687,13 +6706,6 @@ export default function GestionDocumental() {
                               ? `${uppCodigo}-${uppNombre}`
                               : uppNombre || '—'}
                           </p>
-                        </td>
-                        {/* Destinatario — nombre + cargo */}
-                        <td className="px-3 py-2.5">
-                          <p className="text-[10px] text-gray-700 font-medium truncate" title={destNombre || ''}>{destNombre || '—'}</p>
-                          {destCargo && (
-                            <p className="text-[9px] text-gray-400 truncate mt-0.5">{destCargo}</p>
-                          )}
                         </td>
                         {/* Asunto */}
                         <td className="px-3 py-2.5">
