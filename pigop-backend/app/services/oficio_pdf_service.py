@@ -81,10 +81,11 @@ def _get_membrete_activo() -> Optional[str]:
 _MEMBRETE_CONFIG_PATH = LOGOS_DIR / "membrete_config.json"
 
 _MEMBRETE_CONFIG_DEFAULT: dict = {
-    "fontsize":    7,
-    "max_chars":   55,
-    "line_height": 9,
-    "fecha_y":     620,
+    "fontsize":               7,
+    "max_chars":              55,
+    "line_height":            9,
+    "fecha_y":                620,
+    "word_spacer_correction": 30,  # pt de corrección para el espaciador Word (no afecta PDF)
     "campos": [
         {"key": "dependencia", "label": "Dependencia",     "x": 400, "y": 753, "multiline": False, "max_width": 185},
         {"key": "subdep",      "label": "Sub-dependencia", "x": 420, "y": 720, "multiline": False, "max_width": 185},

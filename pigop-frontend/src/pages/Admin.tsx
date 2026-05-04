@@ -1262,13 +1262,14 @@ function PanelConfigMembrete() {
               {/* Parámetros globales */}
               <div>
                 <p className="text-xs font-semibold text-gray-600 mb-2">Parámetros globales</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {(
                     [
-                      { field: 'fontsize'   as const, label: 'Tamaño fuente (pt)' },
-                      { field: 'max_chars'  as const, label: 'Máx. caracteres (línea)' },
-                      { field: 'line_height'as const, label: 'Interlineado (pt)' },
-                      { field: 'fecha_y'   as const, label: 'Fecha — posición Y' },
+                      { field: 'fontsize'              as const, label: 'Tamaño fuente (pt)'       },
+                      { field: 'max_chars'             as const, label: 'Máx. caracteres (línea)'  },
+                      { field: 'line_height'           as const, label: 'Interlineado (pt)'        },
+                      { field: 'fecha_y'               as const, label: 'Fecha — posición Y (PDF)' },
+                      { field: 'word_spacer_correction'as const, label: 'Corrección espacio Word (pt)' },
                     ] as { field: keyof Omit<MembreteConfig,'campos'>; label: string }[]
                   ).map(({ field, label }) => (
                     <label key={field} className="flex flex-col gap-1">
@@ -1343,6 +1344,9 @@ function PanelConfigMembrete() {
                 </div>
                 <p className="text-[10px] text-gray-400 mt-1.5">
                   Coordenadas en puntos (pt). Origen = esquina inferior izquierda. Página carta: 612 × 792 pt.
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  <b>Corrección espacio Word</b>: ajusta cuántos pt se resta al espaciado entre el membrete y la fecha en documentos .docx (por defecto 30). Aumenta si la fecha sigue muy lejos del membrete; reduce si se acerca demasiado.
                 </p>
               </div>
 
