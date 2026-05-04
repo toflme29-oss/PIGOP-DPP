@@ -536,6 +536,16 @@ async def verificar_folio(
     folio_limpio = folio.strip()
     exclude = exclude_id.strip() if exclude_id else None
 
+    # ── 0. Validar formato: consecutivo debe ser exactamente 4 dígitos ────────
+    m_fmt = _re.search(r'/(\d+)/(20\d{2})$', folio_limpio)
+    if m_fmt and len(m_fmt.group(1)) != 4:
+        return {
+            "disponible": False,
+            "folio": folio_limpio,
+            "error": "formato",
+            "mensaje": f"El consecutivo debe tener exactamente 4 dígitos (recibido: '{m_fmt.group(1)}'). Ejemplo: SFA/SF/DPP/0099/2026",
+        }
+
     # ── 1. Coincidencia exacta ────────────────────────────────────────────────
     excl_clause = "AND id != :excl" if exclude else ""
     result = await db.execute(

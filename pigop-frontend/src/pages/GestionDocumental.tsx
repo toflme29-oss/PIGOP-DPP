@@ -1637,6 +1637,7 @@ function PanelRecibido({
   const [folioErrorMsg, setFolioErrorMsg] = useState('')
   const [destinatarioRespLocal, setDestinatarioRespLocal] = useState(doc.remitente_nombre ?? '')
   const [cargoRespLocal, setCargoRespLocal] = useState(doc.remitente_cargo ?? '')
+  const [dependenciaRespLocal, setDependenciaRespLocal] = useState(doc.dependencia_destino ?? '')
   const refFileRef = useRef<HTMLInputElement>(null)
   const externoFileRef = useRef<HTMLInputElement>(null)
   const wordEditRef = useRef<HTMLInputElement>(null)
@@ -2720,6 +2721,15 @@ function PanelRecibido({
                         onChange={e => { setFolioLocal(e.target.value); setFolioErrorMsg('') }}
                         onBlur={async () => {
                           if (!folioLocal || folioLocal === (doc.folio_respuesta ?? '')) return
+                          // Validar formato: el consecutivo debe ser exactamente 4 dígitos
+                          const folioMatch = folioLocal.match(/\/(\d+)\/(20\d{2})$/)
+                          if (folioMatch) {
+                            const consecutivo = folioMatch[1]
+                            if (consecutivo.length !== 4) {
+                              setFolioErrorMsg(`El consecutivo debe tener exactamente 4 dígitos (ej. 0099, no ${consecutivo})`)
+                              return
+                            }
+                          }
                           // Verificar duplicado por consecutivo+año antes de guardar
                           try {
                             const { disponible, folio_existente } = await documentosApi.verificarFolio(folioLocal, doc.id)
@@ -2791,8 +2801,20 @@ function PanelRecibido({
                   </div>
                 </div>
 
-                {/* Fila 2: Destinatario | Cargo */}
-                <div className="grid grid-cols-2 gap-2">
+                {/* Fila 2: Dependencia/UPP | Dirigido a | Cargo */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[10px] text-gray-500">Dependencia / UPP</label>
+                    <input type="text" placeholder="Ej. Secretaría de Finanzas"
+                      disabled={bloqueadoPorFirma}
+                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                      style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
+                      value={dependenciaRespLocal} onChange={e => setDependenciaRespLocal(e.target.value)}
+                      onBlur={async () => {
+                        if (dependenciaRespLocal !== (doc.dependencia_destino ?? ''))
+                          try { await documentosApi.update(doc.id, { dependencia_destino: dependenciaRespLocal }); invalidate() } catch { /* */ }
+                      }} />
+                  </div>
                   <div>
                     <label className="text-[10px] text-gray-500">Dirigido a</label>
                     <input type="text" placeholder="Nombre del destinatario"
@@ -3215,6 +3237,15 @@ function PanelRecibido({
                         if (!okFecha) {
                           setFechaError('Formato inválido. Usa: 20 de abril de 2026')
                           window.alert('La fecha del oficio tiene un formato incorrecto.\nUsa el formato: 20 de abril de 2026')
+                          return
+                        }
+                      }
+                      // Validar formato: el consecutivo debe ser exactamente 4 dígitos
+                      if (folioLocal) {
+                        const folioMatch = folioLocal.match(/\/(\d+)\/(20\d{2})$/)
+                        if (folioMatch && folioMatch[1].length !== 4) {
+                          setFolioErrorMsg(`El consecutivo debe tener exactamente 4 dígitos (ej. 0099, no ${folioMatch[1]})`)
+                          window.alert(`⚠️ El consecutivo del folio debe tener exactamente 4 dígitos.\nEjemplo correcto: SFA/SF/DPP/0099/2026`)
                           return
                         }
                       }
