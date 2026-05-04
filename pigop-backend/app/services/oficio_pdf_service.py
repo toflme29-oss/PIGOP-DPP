@@ -103,8 +103,11 @@ def _get_membrete_config() -> dict:
         if _MEMBRETE_CONFIG_PATH.exists():
             with open(_MEMBRETE_CONFIG_PATH, "r", encoding="utf-8") as f:
                 stored = json.load(f)
+            # Partir de los defaults y sobrescribir con TODO lo almacenado
+            # (sin filtrar por clave) para que campos nuevos funcionen sin
+            # necesidad de actualizar _MEMBRETE_CONFIG_DEFAULT.
             cfg = dict(_MEMBRETE_CONFIG_DEFAULT)
-            cfg.update({k: v for k, v in stored.items() if k in cfg})
+            cfg.update(stored)
             return cfg
     except Exception:
         pass

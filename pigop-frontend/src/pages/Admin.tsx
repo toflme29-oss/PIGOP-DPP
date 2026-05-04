@@ -1207,14 +1207,13 @@ function PanelConfigMembrete() {
   })
 
   useEffect(() => {
-    if (cfgRemota && !cfg) {
-      // Mezclar con defaults locales para campos opcionales que el backend
-      // puede no devolver todavía (ej. word_spacer_correction en deploys viejos)
-      setCfg({
-        word_spacer_correction: 30,
-        ...structuredClone(cfgRemota),
-      })
-    }
+    if (!cfgRemota) return
+    // Sincronizar cfg desde el cache; garantizar defaults para campos opcionales
+    // que backends más viejos pueden no devolver (ej. word_spacer_correction).
+    setCfg({
+      word_spacer_correction: 30,
+      ...structuredClone(cfgRemota),
+    })
   }, [cfgRemota])
 
   const setCampo = (idx: number, field: keyof MembreteCampo, value: unknown) => {
@@ -1236,7 +1235,9 @@ function PanelConfigMembrete() {
     try {
       const res = await documentosApi.saveMembreteConfig(cfg)
       setMsg({ tipo: 'ok', texto: res.mensaje })
-      queryClient.invalidateQueries({ queryKey: ['membrete-config'] })
+      // Actualizar el cache con el cfg completo (incluye campos nuevos que
+      // el backend podría no devolver si no fue reiniciado tras el deploy)
+      queryClient.setQueryData(['membrete-config'], structuredClone(cfg))
     } catch (e: any) {
       setMsg({ tipo: 'err', texto: e?.response?.data?.detail || 'Error al guardar.' })
     } finally {
