@@ -19,6 +19,7 @@ export interface UsuarioAdmin {
   rol: string
   activo: boolean
   cliente_id: string | null
+  area_codigo: string | null
   modulos_acceso: string[]
   ultimo_acceso: string | null
   creado_en: string
@@ -32,6 +33,7 @@ export interface UsuarioCreate {
   cliente_id?: string | null
   activo?: boolean
   modulos_acceso?: string[]
+  area_codigo?: string | null
 }
 
 export interface UsuarioUpdate {
@@ -40,6 +42,7 @@ export interface UsuarioUpdate {
   activo?: boolean
   cliente_id?: string | null
   modulos_acceso?: string[]
+  area_codigo?: string | null
 }
 
 export interface ClienteCreate {

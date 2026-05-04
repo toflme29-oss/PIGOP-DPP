@@ -68,6 +68,7 @@ class UsuarioUpdate(BaseModel):
     activo: Optional[bool] = None
     cliente_id: Optional[UUID] = None
     modulos_acceso: Optional[List[str]] = None
+    area_codigo: Optional[str] = None
 
 
 class UsuarioResponse(UsuarioBase):

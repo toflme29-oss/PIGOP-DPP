@@ -5198,10 +5198,13 @@ function ModalEditarRegistro({ doc, onClose, onSaved }: {
   doc: DocumentoListItem; onClose: () => void; onSaved: () => void
 }) {
   const [form, setForm] = useState({
+    tipo: doc.tipo || 'oficio',
     numero_oficio_origen: doc.numero_oficio_origen || '',
     asunto: doc.asunto || '',
     remitente_nombre: doc.remitente_nombre || '',
+    remitente_cargo: doc.remitente_cargo || '',
     remitente_dependencia: doc.remitente_dependencia || '',
+    descripcion: doc.descripcion || '',
     fecha_documento: doc.fecha_documento || '',
     fecha_recibido: doc.fecha_recibido || '',
     fecha_limite: doc.fecha_limite || '',
@@ -5229,6 +5232,13 @@ function ModalEditarRegistro({ doc, onClose, onSaved }: {
         </div>
         <div className="px-5 py-4 space-y-3 max-h-[70vh] overflow-y-auto">
           <div>
+            <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Tipo de documento</label>
+            <select value={form.tipo} onChange={e => set('tipo', e.target.value)}
+              className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+              {TIPOS.map(t => <option key={t} value={t}>{TIPO_ICONS[t]} {TIPO_LABELS[t]}</option>)}
+            </select>
+          </div>
+          <div>
             <label className="block text-[10px] font-medium text-gray-500 mb-0.5">No. Oficio</label>
             <input value={form.numero_oficio_origen} onChange={e => set('numero_oficio_origen', e.target.value)}
               className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
@@ -5238,17 +5248,28 @@ function ModalEditarRegistro({ doc, onClose, onSaved }: {
             <input value={form.asunto} onChange={e => set('asunto', e.target.value)}
               className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Remitente</label>
-              <input value={form.remitente_nombre} onChange={e => set('remitente_nombre', e.target.value)}
-                className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
-            </div>
-            <div>
-              <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Dependencia</label>
-              <input value={form.remitente_dependencia} onChange={e => set('remitente_dependencia', e.target.value)}
-                className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
-            </div>
+          <div>
+            <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Remitente</label>
+            <input value={form.remitente_nombre} onChange={e => set('remitente_nombre', e.target.value)}
+              className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
+          </div>
+          <div>
+            <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Cargo del remitente</label>
+            <input value={form.remitente_cargo} onChange={e => set('remitente_cargo', e.target.value)}
+              className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Ej. Director General, Jefe de Departamento..." />
+          </div>
+          <div>
+            <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Dependencia</label>
+            <input value={form.remitente_dependencia} onChange={e => set('remitente_dependencia', e.target.value)}
+              className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
+          </div>
+          <div>
+            <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Descripción / resumen</label>
+            <textarea value={form.descripcion} onChange={e => set('descripcion', e.target.value)}
+              rows={3}
+              className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500 resize-none"
+              placeholder="Breve descripción del contenido del documento..." />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>

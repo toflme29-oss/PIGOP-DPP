@@ -28,7 +28,23 @@ import { TablaPermisos } from './AdminPermisos'
 
 // ── Constantes ─────────────────────────────────────────────────────────────────
 const GUINDA = '#911A3A'
-const ROLES = ['superadmin', 'admin_cliente', 'secretaria', 'analista', 'consulta'] as const
+const ROLES = [
+  'superadmin', 'admin_cliente', 'secretaria', 'asesor',
+  'subdirector', 'jefe_depto', 'analista', 'auditor', 'consulta',
+] as const
+// Roles cuya visibilidad se restringe por área — requieren area_codigo
+const ROLES_CON_AREA: string[] = ['subdirector', 'jefe_depto', 'analista']
+// Áreas de la DPP disponibles para asignar
+const AREAS_DPP: { codigo: string; nombre: string }[] = [
+  { codigo: 'DIR',  nombre: 'Dirección de Programación y Presupuesto' },
+  { codigo: 'SEC',  nombre: 'Secretaría de la Dirección' },
+  { codigo: 'SCG',  nombre: 'Subdirección de Control del Ejercicio del Gasto' },
+  { codigo: 'SPF',  nombre: 'Subdirección de Programación y Formulación Presupuestal' },
+  { codigo: 'DREP', nombre: 'Departamento de Registro del Ejercicio Presupuestal' },
+  { codigo: 'DCP',  nombre: 'Departamento de Control Presupuestal' },
+  { codigo: 'DASP', nombre: 'Departamento de Análisis y Seguimiento de Programas' },
+  { codigo: 'DFNP', nombre: 'Departamento de Formulación y Normatividad Presupuestal' },
+]
 const TIPOS_CLIENTE = ['centralizada', 'paraestatal', 'autonoma', 'poder'] as const
 const TIPOS_VALIDOS_IMPORT = ['centralizada', 'paraestatal', 'autonoma', 'poder'] as const
 
@@ -230,6 +246,7 @@ function TablaUsuarios({
   currentUserId,
   onToggle,
   onCambiarRol,
+  onCambiarArea,
 }: {
   usuarios: UsuarioAdmin[]
   clientes: ClienteAdmin[]
@@ -237,8 +254,10 @@ function TablaUsuarios({
   currentUserId: string
   onToggle: (u: UsuarioAdmin) => void
   onCambiarRol: (u: UsuarioAdmin, rol: string) => void
+  onCambiarArea: (u: UsuarioAdmin, area_codigo: string | null) => void
 }) {
   const [openRol, setOpenRol] = useState<string | null>(null)
+  const [openArea, setOpenArea] = useState<string | null>(null)
   const [search, setSearch] = useState('')
 
   const filtered = usuarios.filter(u => {
@@ -281,6 +300,9 @@ function TablaUsuarios({
               </th>
               <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
                 Cliente / Dependencia
+              </th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                Área asignada
               </th>
               <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
                 Módulos
@@ -359,6 +381,61 @@ function TablaUsuarios({
                       <span className="text-gray-300">—</span>
                     )}
                   </span>
+                </td>
+
+                {/* Área asignada */}
+                <td className="px-4 py-3">
+                  {ROLES_CON_AREA.includes(u.rol) ? (
+                    isSuperadmin ? (
+                      <div className="relative">
+                        <button
+                          onClick={() => setOpenArea(openArea === u.id ? null : u.id)}
+                          className="flex items-center gap-1 group"
+                          title="Cambiar área"
+                        >
+                          {u.area_codigo ? (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                              {u.area_codigo}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-red-500 font-medium">⚠ Sin área</span>
+                          )}
+                          <ChevronDown size={11} className="text-gray-400 group-hover:text-gray-600" />
+                        </button>
+                        {openArea === u.id && (
+                          <div className="absolute z-20 top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[280px]">
+                            <button
+                              onClick={() => { onCambiarArea(u, null); setOpenArea(null) }}
+                              className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 text-gray-400 italic"
+                            >
+                              — Sin área —
+                            </button>
+                            {AREAS_DPP.map(a => (
+                              <button
+                                key={a.codigo}
+                                onClick={() => { onCambiarArea(u, a.codigo); setOpenArea(null) }}
+                                className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 flex items-center gap-2"
+                              >
+                                {a.codigo === u.area_codigo && <span className="text-green-500">✓</span>}
+                                <span className="font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded text-[10px]">{a.codigo}</span>
+                                <span className="text-gray-600 truncate">{a.nombre}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      u.area_codigo ? (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                          {u.area_codigo}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-red-500 font-medium">⚠ Sin área</span>
+                      )
+                    )
+                  ) : (
+                    <span className="text-[10px] text-gray-300">—</span>
+                  )}
                 </td>
 
                 {/* Módulos de acceso */}
@@ -683,6 +760,30 @@ function ModalCrearUsuario({
               )}
             </div>
           </div>
+
+          {/* Área — visible solo para roles con visibilidad restringida */}
+          {ROLES_CON_AREA.includes(form.rol) && (
+            <div>
+              <label className="text-xs font-semibold text-gray-700 block mb-1">
+                Área asignada <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={form.area_codigo ?? ''}
+                onChange={e => set('area_codigo', e.target.value || null)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1"
+              >
+                <option value="">— Seleccionar área —</option>
+                {AREAS_DPP.map(a => (
+                  <option key={a.codigo} value={a.codigo}>
+                    {a.codigo} — {a.nombre}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-amber-600 mt-1">
+                El usuario solo verá correspondencia turnada a esta área.
+              </p>
+            </div>
+          )}
 
           {/* Módulos de acceso — visible solo para roles que no son admin/superadmin */}
           {form.rol !== 'superadmin' && form.rol !== 'admin_cliente' && (
@@ -1619,6 +1720,12 @@ export default function Admin() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-usuarios'] }),
   })
 
+  const cambiarAreaMutation = useMutation({
+    mutationFn: ({ id, area_codigo }: { id: string; area_codigo: string | null }) =>
+      usuariosApi.update(id, { area_codigo }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-usuarios'] }),
+  })
+
   const eliminarClienteMutation = useMutation({
     mutationFn: (id: string) => clientesAdminApi.delete(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-clientes'] }),
@@ -1784,6 +1891,7 @@ export default function Admin() {
             currentUserId={user?.id ?? ''}
             onToggle={u => toggleMutation.mutate(u)}
             onCambiarRol={(u, rol) => cambiarRolMutation.mutate({ id: u.id, rol })}
+            onCambiarArea={(u, area_codigo) => cambiarAreaMutation.mutate({ id: u.id, area_codigo })}
           />
         )
       )}
