@@ -958,7 +958,7 @@ class CorrespondenciaService:
                 elif mime_norm in _MIME_VISION:
                     # ── Ruta Vision: PDF / imagen → Gemini Vision ─────────────
                     from google.genai import types
-                    _MODELOS_VISION = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+                    _MODELOS_VISION = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.5-flash-lite"]
                     raw_text = ""
                     for _modelo in _MODELOS_VISION:
                         try:
