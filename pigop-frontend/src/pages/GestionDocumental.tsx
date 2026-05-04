@@ -1630,6 +1630,13 @@ function ModalNuevoEmitido({
   )
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function fechaHoyEspanol(): string {
+  const hoy = new Date()
+  const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
+  return `${hoy.getDate()} de ${MESES[hoy.getMonth()]} de ${hoy.getFullYear()}`
+}
+
 // ── Panel detalle — Recibido ───────────────────────────────────────────────────
 function PanelRecibido({
   doc, areas, onClose, onRefetch, onDelete, initialTab = 'info', hideDocumentVisor = false, onTabChange,
@@ -1669,9 +1676,9 @@ function PanelRecibido({
   const [devolviendo, setDevolviendo] = useState(false)
   const [reenviando, setReenviando] = useState(false)
   const [folioLocal, setFolioLocal] = useState(doc.folio_respuesta ?? '')
-  const [fechaRespLocal, setFechaRespLocal] = useState(doc.fecha_respuesta ?? '')
-  const [elaboroLocal, setElaboro] = useState(doc.referencia_elaboro ?? '')
-  const [revisoLocal, setReviso] = useState(doc.referencia_reviso ?? '')
+  const [fechaRespLocal, setFechaRespLocal] = useState(() => doc.fecha_respuesta || fechaHoyEspanol())
+  const [elaboroLocal, setElaboro] = useState(() => doc.referencia_elaboro || localStorage.getItem('pigop_elaboro') || '')
+  const [revisoLocal, setReviso] = useState(() => doc.referencia_reviso || localStorage.getItem('pigop_reviso') || '')
   const [instruccionesIA, setInstruccionesIA] = useState('')
   const [cargandoReferencia, setCargandoReferencia] = useState(false)
   const [subiendoExterno, setSubiendoExterno] = useState(false)
@@ -2036,6 +2043,19 @@ function PanelRecibido({
     if (field === 'reviso') data.referencia_reviso = value
     try { await documentosApi.update(doc.id, data); invalidate() } catch (e) { window.alert('Error al guardar: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo')) }
   }
+
+  // Auto-guardar defaults (fecha de hoy, elaboró/revisó de localStorage) si el doc no los tiene aún
+  useEffect(() => {
+    const defaults: Record<string, string> = {}
+    if (!doc.fecha_respuesta) defaults.fecha_respuesta = fechaHoyEspanol()
+    const defElaboro = localStorage.getItem('pigop_elaboro') || ''
+    const defReviso  = localStorage.getItem('pigop_reviso')  || ''
+    if (!doc.referencia_elaboro && defElaboro) defaults.referencia_elaboro = defElaboro
+    if (!doc.referencia_reviso  && defReviso)  defaults.referencia_reviso  = defReviso
+    if (Object.keys(defaults).length > 0) {
+      documentosApi.update(doc.id, defaults as any).catch(() => {})
+    }
+  }, [doc.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // const areaActual = doc.area_turno || doc.sugerencia_area_codigo || ''  // reserved for future use
   const fundamento = doc.sugerencia_fundamento || ''
@@ -2852,7 +2872,7 @@ function PanelRecibido({
                       disabled={bloqueadoPorFirma}
                       className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none uppercase disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                      value={elaboroLocal} onChange={e => setElaboro(e.target.value)}
+                      value={elaboroLocal} onChange={e => { setElaboro(e.target.value); localStorage.setItem('pigop_elaboro', e.target.value) }}
                       onBlur={() => elaboroLocal !== (doc.referencia_elaboro ?? '') && guardarFolioRef('elaboro', elaboroLocal)} />
                   </div>
                   {/* Elaboró */}
@@ -2862,7 +2882,7 @@ function PanelRecibido({
                       disabled={bloqueadoPorFirma}
                       className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none uppercase disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                      value={revisoLocal} onChange={e => setReviso(e.target.value)}
+                      value={revisoLocal} onChange={e => { setReviso(e.target.value); localStorage.setItem('pigop_reviso', e.target.value) }}
                       onBlur={() => revisoLocal !== (doc.referencia_reviso ?? '') && guardarFolioRef('reviso', revisoLocal)} />
                   </div>
                 </div>
@@ -3256,7 +3276,7 @@ function PanelRecibido({
                         <input type="text" placeholder="ECJ"
                           className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none"
                           style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                          value={elaboroLocal} onChange={e => setElaboro(e.target.value)}
+                          value={elaboroLocal} onChange={e => { setElaboro(e.target.value); localStorage.setItem('pigop_elaboro', e.target.value) }}
                           onBlur={() => elaboroLocal !== (doc.referencia_elaboro ?? '') && guardarFolioRef('elaboro', elaboroLocal)} />
                       </div>
                       <div>
@@ -3264,7 +3284,7 @@ function PanelRecibido({
                         <input type="text" placeholder="bhs"
                           className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none"
                           style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                          value={revisoLocal} onChange={e => setReviso(e.target.value)}
+                          value={revisoLocal} onChange={e => { setReviso(e.target.value); localStorage.setItem('pigop_reviso', e.target.value) }}
                           onBlur={() => revisoLocal !== (doc.referencia_reviso ?? '') && guardarFolioRef('reviso', revisoLocal)} />
                       </div>
                     </div>
@@ -4178,9 +4198,9 @@ function PanelEmitido({
   const [devolviendo, setDevolviendo] = useState(false)
   // Folio / ref fields con auto-save
   const [folioLocal, setFolioLocal] = useState(doc.folio_respuesta ?? '')
-  const [fechaRespLocal, setFechaRespLocal] = useState(doc.fecha_respuesta ?? '')
-  const [elaboroLocal, setElaboro] = useState(doc.referencia_elaboro ?? '')
-  const [revisoLocal, setReviso] = useState(doc.referencia_reviso ?? '')
+  const [fechaRespLocal, setFechaRespLocal] = useState(() => doc.fecha_respuesta || fechaHoyEspanol())
+  const [elaboroLocal, setElaboro] = useState(() => doc.referencia_elaboro || localStorage.getItem('pigop_elaboro') || '')
+  const [revisoLocal, setReviso] = useState(() => doc.referencia_reviso || localStorage.getItem('pigop_reviso') || '')
   const [editForm, setEditForm] = useState({
     asunto: doc.asunto || '',
     numero_control: doc.numero_control || '',
@@ -4251,6 +4271,19 @@ function PanelEmitido({
     if (field === 'reviso') data.referencia_reviso = value
     try { await documentosApi.update(doc.id, data); invalidate() } catch (e) { window.alert('Error al guardar: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo')) }
   }
+
+  // Auto-guardar defaults al montar si el doc no los tiene aún
+  useEffect(() => {
+    const defaults: Record<string, string> = {}
+    if (!doc.fecha_respuesta) defaults.fecha_respuesta = fechaHoyEspanol()
+    const defElaboro = localStorage.getItem('pigop_elaboro') || ''
+    const defReviso  = localStorage.getItem('pigop_reviso')  || ''
+    if (!doc.referencia_elaboro && defElaboro) defaults.referencia_elaboro = defElaboro
+    if (!doc.referencia_reviso  && defReviso)  defaults.referencia_reviso  = defReviso
+    if (Object.keys(defaults).length > 0) {
+      documentosApi.update(doc.id, defaults as any).catch(() => {})
+    }
+  }, [doc.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleGenerar = async (instrucciones?: string) => {
     setGenerando(true)
@@ -4533,7 +4566,7 @@ function PanelEmitido({
                     <input type="text" placeholder="ECJ"
                       className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none"
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                      value={elaboroLocal} onChange={e => setElaboro(e.target.value)}
+                      value={elaboroLocal} onChange={e => { setElaboro(e.target.value); localStorage.setItem('pigop_elaboro', e.target.value) }}
                       onBlur={() => elaboroLocal !== (doc.referencia_elaboro ?? '') && guardarFolioRef('elaboro', elaboroLocal)} />
                   </div>
                   <div>
@@ -4541,7 +4574,7 @@ function PanelEmitido({
                     <input type="text" placeholder="bhs"
                       className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none"
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                      value={revisoLocal} onChange={e => setReviso(e.target.value)}
+                      value={revisoLocal} onChange={e => { setReviso(e.target.value); localStorage.setItem('pigop_reviso', e.target.value) }}
                       onBlur={() => revisoLocal !== (doc.referencia_reviso ?? '') && guardarFolioRef('reviso', revisoLocal)} />
                   </div>
                 </div>
