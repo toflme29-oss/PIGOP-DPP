@@ -1637,7 +1637,7 @@ function PanelRecibido({
   const [folioErrorMsg, setFolioErrorMsg] = useState('')
   const [destinatarioRespLocal, setDestinatarioRespLocal] = useState(doc.remitente_nombre ?? '')
   const [cargoRespLocal, setCargoRespLocal] = useState(doc.remitente_cargo ?? '')
-  const [dependenciaRespLocal, setDependenciaRespLocal] = useState(doc.dependencia_destino ?? '')
+  const [dependenciaRespLocal, setDependenciaRespLocal] = useState(doc.remitente_dependencia ?? '')
   const refFileRef = useRef<HTMLInputElement>(null)
   const externoFileRef = useRef<HTMLInputElement>(null)
   const wordEditRef = useRef<HTMLInputElement>(null)
@@ -2811,8 +2811,8 @@ function PanelRecibido({
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
                       value={dependenciaRespLocal} onChange={e => setDependenciaRespLocal(e.target.value)}
                       onBlur={async () => {
-                        if (dependenciaRespLocal !== (doc.dependencia_destino ?? ''))
-                          try { await documentosApi.update(doc.id, { dependencia_destino: dependenciaRespLocal }); invalidate() } catch { /* */ }
+                        if (dependenciaRespLocal !== (doc.remitente_dependencia ?? ''))
+                          try { await documentosApi.update(doc.id, { remitente_dependencia: dependenciaRespLocal }); invalidate() } catch { /* */ }
                       }} />
                   </div>
                   <div>
