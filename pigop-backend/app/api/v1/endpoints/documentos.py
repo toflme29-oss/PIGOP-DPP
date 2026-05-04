@@ -2463,9 +2463,12 @@ async def descargar_oficio(
             dest_cargo = ""
             dest_dep = ""
     else:
-        dest_nombre = doc.remitente_nombre or "---"
-        dest_cargo = doc.remitente_cargo or "---"
-        dest_dep = doc.remitente_dependencia or "---"
+        # Para recibidos: usar destinatario_nombre/cargo/dependencia_destino si el usuario
+        # los personalizó (respuesta a alguien distinto al remitente original).
+        # Fallback al remitente del documento original si no se personalizó.
+        dest_nombre = doc.destinatario_nombre or doc.remitente_nombre or "---"
+        dest_cargo  = doc.destinatario_cargo  or doc.remitente_cargo  or "---"
+        dest_dep    = doc.dependencia_destino or doc.remitente_dependencia or "---"
 
     # --- Determinar copias estándar según área ---
     area_codigo = doc.area_turno or "DIR"
@@ -3097,9 +3100,11 @@ async def descargar_oficio_pdf(
             pdf_dest_cargo = ""
             pdf_dest_dep = ""
     else:
-        pdf_dest_nombre = doc.remitente_nombre or "---"
-        pdf_dest_cargo = doc.remitente_cargo or "---"
-        pdf_dest_dep = doc.remitente_dependencia or "---"
+        # Usar destinatario_* si el usuario personalizó la respuesta hacia otra persona.
+        # Fallback al remitente original del documento recibido.
+        pdf_dest_nombre = doc.destinatario_nombre or doc.remitente_nombre or "---"
+        pdf_dest_cargo  = doc.destinatario_cargo  or doc.remitente_cargo  or "---"
+        pdf_dest_dep    = doc.dependencia_destino or doc.remitente_dependencia or "---"
 
     # --- Determinar copias estándar según área ---
     pdf_area = doc.area_turno or "DIR"
