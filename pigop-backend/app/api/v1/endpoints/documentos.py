@@ -368,125 +368,30 @@ async def calibrar_membrete(
         c.setFillColor(rl_colors.HexColor("#666666"))
         c.drawString(2, y + 1, str(y))
 
-    # ── Datos de muestra (mismos que usa el oficio real) ─────────────────────
-    _valores_muestra = {
-        "dependencia": "Secretaría de Finanzas y Administración",
-        "subdep":      "Subsecretaría de Finanzas",
-        "oficina":     "Dir. de Programación y Presupuesto",
-        "nooficio":    "SFA/SF/DPP/0001/2026",
-        "expediente":  "General",
-        "asunto":      "Solicitud de información presupuestal",
-    }
-    _font_name   = MEMBRETE_CAMPOS[0].get("font", "Helvetica") if MEMBRETE_CAMPOS else "Helvetica"
-    _fontsize    = _cfg.get("fontsize", 7)
-    _max_chars   = _cfg.get("max_chars", 55)
-    _line_h      = _cfg.get("line_height", 9)
-
-    from reportlab.pdfbase.pdfmetrics import stringWidth as _sw
-
-    # 3) Texto real de cada campo (gris oscuro, igual al oficio)
-    c.setFont("Helvetica", _fontsize)
-    c.setFillColor(rl_colors.HexColor("#1a1a1a"))
-    for campo in MEMBRETE_CAMPOS:
-        val = _valores_muestra.get(campo["key"], "")
-        if not val:
-            continue
-        cx, cy = campo["x"], campo["y"]
-        if campo.get("multiline"):
-            max_w = campo.get("max_width", 185)
-            words = val.split()
-            lines, current = [], ""
-            for word in words:
-                test = (current + " " + word).strip()
-                if _sw(test, "Helvetica", _fontsize) <= max_w:
-                    current = test
-                else:
-                    if current:
-                        lines.append(current)
-                    current = word
-            if current:
-                lines.append(current)
-            for i, line in enumerate(lines[:3]):
-                c.drawString(cx, cy - i * _line_h, line)
-        else:
-            c.drawString(cx, cy, val[:_max_chars])
-
-    # 3b) Marcar posición de cada campo con cruz roja + etiqueta
-    c.setFont("Helvetica-Bold", 6)
+    # 3) Marcar posición de cada campo con cruz roja + etiqueta Y
     nombres_short = ["Dependencia", "Sub-dep.", "Oficina", "No.oficio", "Expediente", "Asunto"]
+    c.setFont("Helvetica-Bold", 7)
     for campo, nombre in zip(MEMBRETE_CAMPOS, nombres_short):
         x, y = campo["x"], campo["y"]
         c.setStrokeColor(rl_colors.red)
         c.setLineWidth(1)
         c.line(x - 4, y, x + 4, y)
         c.line(x, y - 4, x, y + 4)
-        c.setFillColor(rl_colors.HexColor("#CC0000"))
-        c.drawString(x + 6, y + 2, f"+ {nombre} → x={x}, y={y}")
+        c.setFillColor(rl_colors.HexColor("#0000CC"))
+        c.drawString(x + 6, y - 2, f"{nombre} → x={x}, y={y}")
 
-    # ── Calcular y_asunto_final (última línea del campo asunto) ───────────────
-    asunto_campo = next((c2 for c2 in MEMBRETE_CAMPOS if c2["key"] == "asunto"), None)
-    if asunto_campo:
-        val_asunto = _valores_muestra["asunto"]
-        max_w_asunto = asunto_campo.get("max_width", 185)
-        words = val_asunto.split()
-        lines_asunto, cur = [], ""
-        for word in words:
-            test = (cur + " " + word).strip()
-            if _sw(test, "Helvetica", _fontsize) <= max_w_asunto:
-                cur = test
-            else:
-                if cur:
-                    lines_asunto.append(cur)
-                cur = word
-        if cur:
-            lines_asunto.append(cur)
-        n_lines = min(len(lines_asunto), 3)
-        y_asunto_final = asunto_campo["y"] - (n_lines - 1) * _line_h
-    else:
-        y_asunto_final = MEMBRETE_FECHA_Y + 34  # fallback
-
-    # ── Zona amarilla: espacio entre asunto y fecha ───────────────────────────
-    gap = y_asunto_final - MEMBRETE_FECHA_Y
-    c.setFillColor(rl_colors.HexColor("#FFFF0044"))   # amarillo semi-transparente
-    c.setStrokeColor(rl_colors.HexColor("#CCAA00"))
-    c.setLineWidth(0.5)
-    c.rect(50, MEMBRETE_FECHA_Y, pw - 100, gap, fill=1, stroke=1)
-
-    # Etiqueta del gap
-    c.setFont("Helvetica-Bold", 7)
-    c.setFillColor(rl_colors.HexColor("#886600"))
-    c.drawString(55, MEMBRETE_FECHA_Y + gap / 2 - 3,
-                 f"GAP = {gap:.0f} pt  (asunto y={y_asunto_final:.0f} → fecha y={MEMBRETE_FECHA_Y})")
-
-    # 4) Línea horizontal de la FECHA + texto de muestra
-    c.setStrokeColor(rl_colors.HexColor("#0055CC"))
-    c.setLineWidth(1.2)
-    c.line(40, MEMBRETE_FECHA_Y, pw - 40, MEMBRETE_FECHA_Y)
-
-    # Texto real de la fecha (derecha, font 9 igual al oficio)
+    # 4) Fecha: línea azul + texto de muestra real + etiqueta Y
+    c.setStrokeColor(rl_colors.blue)
+    c.setLineWidth(1)
+    c.line(pw - 0.87*72 - 60, MEMBRETE_FECHA_Y, pw - 0.87*72 + 4, MEMBRETE_FECHA_Y)
+    # Texto de muestra igual al oficio real
     c.setFont("Helvetica", 9)
     c.setFillColor(rl_colors.HexColor("#1a1a1a"))
-    c.drawRightString(pw - 0.87 * 72, MEMBRETE_FECHA_Y, "Morelia, Michoacán, 4 de mayo de 2026")
-
-    # Etiqueta de coordenada
-    c.setFont("Helvetica-Bold", 7)
-    c.setFillColor(rl_colors.HexColor("#0055CC"))
-    c.drawString(42, MEMBRETE_FECHA_Y + 3, f"← FECHA y={MEMBRETE_FECHA_Y}  (modifica 'Fecha — posición Y' en Admin)")
-
-    # 5) Línea donde empieza el cuerpo del oficio (margen superior + espacio_header)
-    # topMargin = 0.6 inch = 43.2 pt → origen del flujo desde arriba → y en PDF = 792 - 43.2 - espacio_header
-    _y_mas_alto = max(campo["y"] for campo in MEMBRETE_CAMPOS)
-    _espacio_header = (792 - _y_mas_alto) + (_y_mas_alto - MEMBRETE_FECHA_Y) + 20
-    _top_margin_pt = 0.6 * 72  # 43.2 pt
-    _y_cuerpo = 792 - _top_margin_pt - _espacio_header
-
-    c.setStrokeColor(rl_colors.HexColor("#009900"))
-    c.setLineWidth(1.2)
-    c.line(40, _y_cuerpo, pw - 40, _y_cuerpo)
+    c.drawRightString(pw - 0.87*72, MEMBRETE_FECHA_Y, "Morelia, Michoacán, 4 de mayo de 2026")
+    # Etiqueta Y
     c.setFont("Helvetica-Bold", 7)
     c.setFillColor(rl_colors.HexColor("#006600"))
-    c.drawString(42, _y_cuerpo + 3,
-                 f"← INICIO CUERPO y={_y_cuerpo:.0f}  (destinatario, párrafos...)")
+    c.drawString(pw - 0.87*72 - 130, MEMBRETE_FECHA_Y - 8, f"Fecha → y={MEMBRETE_FECHA_Y}")
 
     c.save()
     buf.seek(0)

@@ -1303,7 +1303,10 @@ function PanelConfigMembrete() {
                       <tr className="bg-gray-50 border-b border-gray-200">
                         <th className="text-left px-3 py-2 font-semibold text-gray-600 w-36">Campo</th>
                         <th className="text-center px-2 py-2 font-semibold text-gray-600 w-20">X</th>
-                        <th className="text-center px-2 py-2 font-semibold text-gray-600 w-20">Y</th>
+                        <th className="text-center px-2 py-2 font-semibold text-gray-500 w-20 bg-yellow-50">
+                          <span className="text-yellow-700 font-bold">Y ↕</span>
+                          <span className="block text-[9px] font-normal text-yellow-600">posición vertical</span>
+                        </th>
                         <th className="text-center px-2 py-2 font-semibold text-gray-600 w-24">Ancho máx.</th>
                         <th className="text-center px-2 py-2 font-semibold text-gray-600 w-24">Multilínea</th>
                       </tr>
@@ -1320,12 +1323,13 @@ function PanelConfigMembrete() {
                               className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-center w-full focus:outline-none focus:ring-1"
                             />
                           </td>
-                          <td className="px-2 py-1.5">
+                          <td className="px-2 py-1.5 bg-yellow-50">
                             <input
                               type="number"
                               value={campo.y}
                               onChange={e => setCampo(idx, 'y', Number(e.target.value))}
-                              className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-center w-full focus:outline-none focus:ring-1"
+                              className="border border-yellow-300 rounded-lg px-2 py-1 text-xs text-center w-full focus:outline-none focus:ring-1 font-bold"
+                              style={{ '--tw-ring-color': '#ca8a04' } as React.CSSProperties}
                             />
                           </td>
                           <td className="px-2 py-1.5">
@@ -1352,9 +1356,14 @@ function PanelConfigMembrete() {
                 </div>
                 <p className="text-[10px] text-gray-400 mt-1.5">
                   Coordenadas en puntos (pt). Origen = esquina inferior izquierda. Página carta: 612 × 792 pt.
+                  <br />
+                  <span className="text-yellow-700 font-semibold">↕ Columna Y</span>: controla la posición <b>vertical</b> de cada campo.
+                  <b>Sube Y</b> (ej. 654→670) para mover el campo hacia arriba. <b>Baja Y</b> para moverlo hacia abajo.
+                  Úsala junto con el <b>PDF de calibración</b> para encontrar el valor exacto.
                 </p>
                 <p className="text-[10px] text-gray-400 mt-0.5">
-                  <b>Corrección espacio Word</b>: ajusta cuántos pt se resta al espaciado entre el membrete y la fecha en documentos .docx (por defecto 30). Aumenta si la fecha sigue muy lejos del membrete; reduce si se acerca demasiado.
+                  <b>Fecha — posición Y</b>: misma lógica que los campos; súbela para acercar la fecha al remitente.
+                  <b> Corrección espacio Word</b>: ajusta el espaciado en .docx (aumenta si la fecha queda lejos; baja si queda muy cerca).
                 </p>
               </div>
 
