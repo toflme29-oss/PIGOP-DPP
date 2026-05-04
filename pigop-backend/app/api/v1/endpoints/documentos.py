@@ -1555,6 +1555,60 @@ async def registrar_visto_bueno(
         raise BusinessError(f"Error en base de datos: {str(e)}")
 
 
+@router.delete(
+    "/{doc_id}/visto-bueno",
+    response_model=DocumentoResponse,
+    summary="Revertir visto bueno del subdirector",
+)
+async def revertir_visto_bueno(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    if current_user.rol not in ("subdirector", "admin_cliente", "superadmin"):
+        raise ForbiddenError("Solo Subdirectores, Director o superadmin pueden revertir el visto bueno.")
+
+    doc = await crud_documento.get(db, doc_id)
+    if not doc:
+        raise NotFoundError("Documento no encontrado.")
+
+    _assert_acceso(current_user, str(doc.cliente_id))
+
+    if not doc.visto_bueno_subdirector:
+        raise BusinessError("El documento no tiene visto bueno registrado.")
+
+    from datetime import datetime, timezone
+    from app.models.documento import HistorialDocumento
+    try:
+        to_upd: dict = {"visto_bueno_subdirector": False}
+        if hasattr(doc, 'visto_bueno_subdirector_id'):
+            to_upd["visto_bueno_subdirector_id"] = None
+        if hasattr(doc, 'visto_bueno_subdirector_en'):
+            to_upd["visto_bueno_subdirector_en"] = None
+
+        await crud_documento.update(db, db_obj=doc, obj_in=to_upd)
+
+        try:
+            historial = HistorialDocumento(
+                documento_id=doc.id,
+                usuario_id=str(current_user.id),
+                tipo_accion="revertir_visto_bueno",
+                estado_anterior=doc.estado,
+                estado_nuevo=doc.estado,
+                observaciones=f"Visto Bueno revertido por {current_user.nombre_completo or current_user.email}",
+                version=doc.version or 1,
+            )
+            db.add(historial)
+        except Exception:
+            pass
+
+        await db.commit()
+        return await crud_documento.get_with_relations(db, doc_id)
+    except Exception as e:
+        await db.rollback()
+        raise BusinessError(f"Error en base de datos: {str(e)}")
+
+
 # ---------- Procesar OCR -----------------------------------------------------
 
 @router.post(

@@ -676,6 +676,11 @@ export const documentosApi = {
     return res.data
   },
 
+  revertirVistoBueno: async (id: string): Promise<Documento> => {
+    const res = await apiClient.delete(`/documentos/${id}/visto-bueno`)
+    return res.data
+  },
+
   // ── Memorándums ──
   registrarMemorandum: async (data: Record<string, unknown>): Promise<Documento> => {
     const res = await apiClient.post('/documentos/memorandum', data)

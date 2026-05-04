@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import * as XLSX from 'xlsx'
 import { makePermissionChecker } from '../utils/rolePermissions'
 import { usePermissionsVersion } from '../hooks/usePermissionsVersion'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -3859,9 +3860,23 @@ function PanelRecibido({
                 </button>
               )}
               {(!hideDocumentVisor || tab === 'ocr') && doc.visto_bueno_subdirector && doc.area_turno !== 'DIR' && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg">
-                  <CheckCircle2 size={12} className="text-green-600" />
-                  <span className="text-[10px] text-green-700 font-medium">Visto Bueno del Subdirector registrado</span>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg flex-1">
+                    <CheckCircle2 size={12} className="text-green-600" />
+                    <span className="text-[10px] text-green-700 font-medium">Visto Bueno del Subdirector registrado</span>
+                  </div>
+                  {can('visto_bueno') && (
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm('¿Deseas revertir el Visto Bueno de este documento?')) return
+                        try { await documentosApi.revertirVistoBueno(doc.id); invalidate() }
+                        catch (e) { window.alert('Error al revertir V°B°: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo')) }
+                      }}
+                      title="Revertir Visto Bueno"
+                      className="flex items-center gap-1 px-2 py-1.5 text-[10px] rounded-lg border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 transition-colors whitespace-nowrap flex-shrink-0">
+                      <X size={11} /> Revertir V°B°
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -5311,6 +5326,71 @@ function ModalEditarRegistro({ doc, onClose, onSaved }: {
 }
 
 
+// ── Exportar recibidos a Excel (pagina internamente para superar límite 500) ──
+function ExportarExcelRecibidos({ params, totalDocs }: { params: Record<string, unknown>; totalDocs: number }) {
+  const [loading, setLoading] = useState(false)
+
+  const exportar = async () => {
+    setLoading(true)
+    try {
+      const PAGE = 500          // máximo que acepta el backend
+      const total = totalDocs   // ya conocemos el total por el header X-Total-Count
+      const paginas = Math.max(1, Math.ceil(total / PAGE))
+      const peticiones = Array.from({ length: paginas }, (_, i) =>
+        documentosApi.list({ ...params, skip: i * PAGE, limit: PAGE })
+      )
+      const resultados = await Promise.all(peticiones)
+      const todos: DocumentoListItem[] = resultados.flatMap(r => r.items ?? [])
+
+      const filas = todos.map((doc, i) => ({
+        'No.':               total - i,
+        'Tipo':              TIPO_LABELS[doc.tipo] ?? doc.tipo,
+        'Fecha recibido':    doc.fecha_recibido ?? doc.creado_en?.slice(0, 10) ?? '',
+        'No. Oficio':        doc.numero_oficio_origen ?? '',
+        'UPP / Dependencia': doc.upp_solicitante ?? doc.remitente_dependencia ?? '',
+        'Remitente':         doc.remitente_nombre ?? '',
+        'Cargo':             doc.remitente_cargo ?? '',
+        'Asunto':            doc.asunto ?? '',
+        'Descripción':       doc.descripcion ?? '',
+        'Área':              doc.area_turno_nombre ?? '',
+        'Prioridad':         doc.prioridad ?? '',
+        'Estado':            ESTADO_RECIBIDO_CONFIG[doc.estado as keyof typeof ESTADO_RECIBIDO_CONFIG]?.label ?? doc.estado,
+        'V°B° Subdirector':  doc.visto_bueno_subdirector ? 'Sí' : 'No',
+        'Fecha límite':      doc.fecha_limite ?? '',
+        'No. Control':       doc.numero_control ?? '',
+      }))
+
+      const ws = XLSX.utils.json_to_sheet(filas)
+      ws['!cols'] = [
+        { wch: 6 }, { wch: 14 }, { wch: 14 }, { wch: 24 }, { wch: 32 },
+        { wch: 30 }, { wch: 30 }, { wch: 42 }, { wch: 42 }, { wch: 30 },
+        { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 22 },
+      ]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Correspondencia recibida')
+      const fecha = new Date().toISOString().slice(0, 10)
+      XLSX.writeFile(wb, `correspondencia_recibida_${fecha}.xlsx`)
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      window.alert('Error al exportar: ' + (msg ?? String(e)))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <button
+      onClick={exportar}
+      disabled={loading}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg font-medium border border-green-300 text-green-700 hover:bg-green-50 transition-colors whitespace-nowrap disabled:opacity-60">
+      {loading
+        ? <><RefreshCw size={12} className="animate-spin" /> Exportando…</>
+        : <><Download size={12} /> Exportar Excel</>}
+    </button>
+  )
+}
+
+
 // ── Página principal ───────────────────────────────────────────────────────────
 export default function GestionDocumental() {
   const { user } = useAuth()
@@ -5322,7 +5402,7 @@ export default function GestionDocumental() {
   const [filtroArea, setFiltroArea] = useState('')
   const [filtroUrgente, setFiltroUrgente] = useState(false)
   const [showColFiltros, setShowColFiltros] = useState(false)
-  const [colFiltros, setColFiltros] = useState({ fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' })
+  const [colFiltros, setColFiltros] = useState({ no: '', tipo: '', fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' })
   const setColFiltro = (k: keyof typeof colFiltros, v: string) => setColFiltros(p => ({ ...p, [k]: v }))
   const [showColFiltrosEmitidos, setShowColFiltrosEmitidos] = useState(false)
   const [colFiltrosEmitidos, setColFiltrosEmitidos] = useState({ no: '', fecha: '', oficio: '', upp: '', destinatario: '', asunto: '', tipo: '', estado: '' })
@@ -5384,7 +5464,11 @@ export default function GestionDocumental() {
   const params = {
     flujo:               tab === 'memorandums' ? 'recibido' : tab === 'recibidos' ? 'recibido' : 'emitido',
     incluir_respuestas:  tab === 'emitidos' ? true : undefined,
-    tipo:                tab === 'memorandums' ? 'memorandum' as string : undefined,
+    // Para memorandums el tipo siempre es 'memorandum'; para recibidos/emitidos se usa el filtro de columna
+    tipo:                tab === 'memorandums' ? 'memorandum' as string
+                       : (tab === 'recibidos' && colFiltros.tipo) ? colFiltros.tipo
+                       : (tab === 'emitidos'  && colFiltrosEmitidos.tipo) ? colFiltrosEmitidos.tipo
+                       : undefined,
     busqueda:            busquedaDebounced || undefined,
     estado:              filtroEstado || undefined,
     area_turno:          filtroArea || undefined,
@@ -5433,12 +5517,12 @@ export default function GestionDocumental() {
   const docsMetricas = metricasResult?.items ?? []
 
   // Reset page cuando cambian filtros
-  useEffect(() => { setPage(0) }, [tab, busquedaDebounced, filtroEstado, filtroArea, filtroUrgente, fechaDesdeDebounced, fechaHastaDebounced, pageSize])
+  useEffect(() => { setPage(0) }, [tab, busquedaDebounced, filtroEstado, filtroArea, filtroUrgente, fechaDesdeDebounced, fechaHastaDebounced, pageSize, colFiltros.tipo, colFiltrosEmitidos.tipo])
 
   // Anchos fijos de columnas
   const colW: Record<string, number> = {
-    fecha: 80, oficio: 130, upp: 170, remitente: 180,
-    asunto: 220, area: 180, atencion: 80, check: 80, estado: 80,
+    no: 44, tipo: 90, fecha: 80, oficio: 130, upp: 170, remitente: 180,
+    asunto: 210, area: 170, atencion: 80, check: 80, estado: 80,
   }
 
   const { data: areas = [] } = useQuery({
@@ -5849,7 +5933,7 @@ export default function GestionDocumental() {
           <div className="flex gap-0">
             {([['recibidos', 'Correspondencia recibida', InboxIcon], ['emitidos', 'Documentos emitidos', SendIcon], ['memorandums', 'MEMORANDUMS', FileText], ['oficios', 'Control de Oficios', Mail]] as const).map(([key, label, Icon]) => (
               <button key={key}
-                onClick={() => { setTab(key); setSelectedId(null); setFiltroEstado(''); setFiltroArea(''); setFiltroUrgente(false); setColFiltros({ fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' }) }}
+                onClick={() => { setTab(key); setSelectedId(null); setFiltroEstado(''); setFiltroArea(''); setFiltroUrgente(false); setColFiltros({ no: '', tipo: '', fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' }) }}
                 className={clsx(
                   'flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors',
                   tab === key ? 'border-[#911A3A] text-[#911A3A]' : 'border-transparent text-gray-500 hover:text-gray-700',
@@ -6160,6 +6244,9 @@ export default function GestionDocumental() {
                 </button>
               )}
             </div>
+            {tab === 'recibidos' && (
+              <ExportarExcelRecibidos params={params} totalDocs={totalDocs} />
+            )}
             {tab === 'emitidos' && (
               <button onClick={async () => {
                 const token = localStorage.getItem('access_token')
@@ -6228,7 +6315,7 @@ export default function GestionDocumental() {
               </button>
             )}
             {tab === 'recibidos' && (
-              <button onClick={() => { setShowColFiltros(p => !p); if (showColFiltros) setColFiltros({ fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' }) }}
+              <button onClick={() => { setShowColFiltros(p => !p); if (showColFiltros) setColFiltros({ no: '', tipo: '', fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' }) }}
                 title="Filtros por columna"
                 className={clsx('px-2 py-1.5 text-xs border rounded-lg transition-colors',
                   showColFiltros || Object.values(colFiltros).some(Boolean)
@@ -6332,6 +6419,8 @@ export default function GestionDocumental() {
                     <tr className="text-white" style={{ backgroundColor: '#911A3A' }}>
                       {multiSelectMode && <th className="px-2 py-2.5 w-8" style={{ backgroundColor: '#911A3A' }} />}
                       {([
+                        ['no', 'No.', 'center'],
+                        ['tipo', 'Tipo', 'left'],
                         ['fecha', 'Fecha', 'left'],
                         ['oficio', 'No. Oficio', 'left'],
                         ['upp', 'UPP', 'left'],
@@ -6343,7 +6432,7 @@ export default function GestionDocumental() {
                         ['estado', 'Estado', 'center'],
                       ] as const).map(([key, label, align]) => (
                         <th key={key} className={`px-3 py-2.5 text-${align} text-xs font-semibold`}
-                          style={{ width: colW[key], minWidth: 50, backgroundColor: '#911A3A' }}>
+                          style={{ width: colW[key], minWidth: 40, backgroundColor: '#911A3A' }}>
                           {label}
                         </th>
                       ))}
@@ -6352,6 +6441,26 @@ export default function GestionDocumental() {
                     {/* Fila de filtros por columna */}
                     <tr className={showColFiltros ? 'bg-[#7a1530]' : 'hidden'}>
                       {multiSelectMode && <th className="px-2 py-1 w-8" />}
+                      {/* No. */}
+                      <th className="px-1.5 py-1" style={{ width: colW['no'] }}>
+                        <input type="text" placeholder="#" value={colFiltros.no}
+                          onChange={e => setColFiltro('no', e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          className="w-full px-1 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25 text-center" />
+                      </th>
+                      {/* Tipo */}
+                      <th className="px-1.5 py-1" style={{ width: colW['tipo'] }}>
+                        <select value={colFiltros.tipo}
+                          onChange={e => setColFiltro('tipo', e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          className="w-full px-1 py-0.5 text-[9px] rounded bg-white/15 text-white border border-white/20 focus:outline-none focus:bg-white/25"
+                          style={{ colorScheme: 'dark' }}>
+                          <option value="" className="text-gray-900 bg-white">Todos</option>
+                          {TIPOS.map(t => (
+                            <option key={t} value={t} className="text-gray-900 bg-white">{TIPO_LABELS[t]}</option>
+                          ))}
+                        </select>
+                      </th>
                       {/* Fecha */}
                       <th className="px-1.5 py-1" style={{ width: colW['fecha'] }}>
                         <input type="text" placeholder="ej: 28, abr, 2026" value={colFiltros.fecha}
@@ -6415,7 +6524,7 @@ export default function GestionDocumental() {
                       <th className="px-1.5 py-1 text-center">
                         {Object.values(colFiltros).some(Boolean) && (
                           <button
-                            onClick={() => setColFiltros({ fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' })}
+                            onClick={() => setColFiltros({ no: '', tipo: '', fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' })}
                             title="Limpiar filtros de columna"
                             className="text-[9px] text-white/70 hover:text-white underline">
                             Limpiar
@@ -6425,15 +6534,18 @@ export default function GestionDocumental() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {docs.filter(doc => {
+                    {docs.filter((doc, rawIdx) => {
                       const fechaIso = doc.fecha_recibido || doc.creado_en?.slice(0, 10) || ''
                       const fechaDisplay = formatDate(fechaIso).toLowerCase()
                       const uppLabel = (formatUpp(doc.upp_solicitante_codigo, doc.upp_solicitante, doc.remitente_dependencia) || doc.remitente_dependencia || doc.upp_solicitante || '').toLowerCase()
                       const area = (doc.area_turno_nombre || '').toLowerCase()
                       const cf = colFiltros
                       const pasaUrgente = !filtroUrgente || (doc.prioridad !== 'normal' && doc.prioridad != null && !['firmado', 'archivado', 'de_conocimiento'].includes(doc.estado))
+                      const numGlobal = totalDocs - (page * pageSize + rawIdx)
                       return (
                         pasaUrgente &&
+                        (!cf.no        || String(numGlobal).includes(cf.no.trim())) &&
+                        (!cf.tipo      || doc.tipo === cf.tipo) &&
                         (!cf.fecha     || fechaDisplay.includes(cf.fecha.toLowerCase()) || fechaIso.includes(cf.fecha)) &&
                         (!cf.oficio    || (doc.numero_oficio_origen || '').toLowerCase().includes(cf.oficio.toLowerCase())) &&
                         (!cf.upp       || uppLabel.includes(cf.upp.toLowerCase())) &&
@@ -6446,6 +6558,10 @@ export default function GestionDocumental() {
                       const cfg = ESTADO_RECIBIDO_CONFIG[doc.estado as keyof typeof ESTADO_RECIBIDO_CONFIG]
                       const canSelect = (doc.estado === 'en_atencion' || doc.estado === 'respondido') && doc.has_borrador === true && !doc.firmado_digitalmente
                       const isToday = doc.fecha_recibido === localToday() || doc.creado_en?.slice(0, 10) === localToday()
+                      // Número global de registro: posición real en el total de documentos
+                      // El más reciente (top de lista) recibe el número más alto (totalDocs)
+                      const docOrigIdx = docs.indexOf(doc)
+                      const folioNum = totalDocs - (page * pageSize + docOrigIdx)
                       return (
                         <tr key={doc.id}
                           onClick={() => {
@@ -6478,6 +6594,19 @@ export default function GestionDocumental() {
                               </div>
                             </td>
                           )}
+                          {/* No. folio de registro */}
+                          <td className="px-2 py-2.5 text-center">
+                            <span className="text-[10px] font-semibold text-gray-500 tabular-nums">
+                              {folioNum}
+                            </span>
+                          </td>
+                          {/* Tipo de documento */}
+                          <td className="px-2 py-2.5">
+                            <span className="inline-flex items-center gap-1 text-[10px] text-gray-600 whitespace-nowrap">
+                              <span>{TIPO_ICONS[doc.tipo]}</span>
+                              <span className="truncate">{TIPO_LABELS[doc.tipo]}</span>
+                            </span>
+                          </td>
                           {/* Fecha */}
                           <td className="px-3 py-2.5">
                             <span className="text-[10px] text-gray-400 whitespace-nowrap">
