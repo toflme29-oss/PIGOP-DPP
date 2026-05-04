@@ -1883,6 +1883,14 @@ function PanelRecibido({
     // Limpiar PDF anterior para forzar recarga tras generación
     setPdfUrl(null)
     try {
+      // Guardar folio y fecha en BD ANTES de generar para que aparezcan en el documento.
+      // El botón Auto solo llena el campo local sin persistir; aquí lo persistimos.
+      const updateData: Record<string, string> = {}
+      if (folioLocal && folioLocal !== (doc.folio_respuesta ?? '')) updateData.folio_respuesta = folioLocal
+      if (fechaRespLocal && fechaRespLocal !== (doc.fecha_respuesta ?? '')) updateData.fecha_respuesta = fechaRespLocal
+      if (Object.keys(updateData).length > 0) {
+        try { await documentosApi.update(doc.id, updateData as never) } catch { /* si falla, continuar igual */ }
+      }
       // Si el documento está en 'turnado', avanzar automáticamente a 'en_atencion'
       if (doc.estado === 'turnado') {
         try { await documentosApi.cambiarEstado(doc.id, 'en_atencion' as never) } catch { /* si falla, continuar */ }
@@ -4335,6 +4343,13 @@ function PanelEmitido({
   const handleGenerar = async (instrucciones?: string) => {
     setGenerando(true)
     try {
+      // Guardar folio y fecha en BD ANTES de generar para que aparezcan en el documento
+      const updateData: Record<string, string> = {}
+      if (folioLocal && folioLocal !== (doc.folio_respuesta ?? '')) updateData.folio_respuesta = folioLocal
+      if (fechaRespLocal && fechaRespLocal !== (doc.fecha_respuesta ?? '')) updateData.fecha_respuesta = fechaRespLocal
+      if (Object.keys(updateData).length > 0) {
+        try { await documentosApi.update(doc.id, updateData as never) } catch { /* si falla, continuar */ }
+      }
       await documentosApi.generarBorrador(doc.id, instrucciones || aiPrompt || undefined)
       invalidate()
       setTab('contenido')
