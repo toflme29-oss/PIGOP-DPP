@@ -775,13 +775,8 @@ function ModalRegistrarRecibido({
                   </p>
                   <p className="text-[10px] text-orange-600">
                     El servicio de inteligencia artificial procesó el archivo pero no extrajo los campos.
-                    Capture los datos manualmente en los campos de abajo.
+                    Por favor capture los datos manualmente en los campos de abajo.
                   </p>
-                  {ocrErrorMsg && (
-                    <p className="text-[9px] text-orange-500 font-mono bg-orange-100 rounded px-2 py-1 break-all">
-                      {ocrErrorMsg}
-                    </p>
-                  )}
                 </div>
               )}
 
