@@ -2801,20 +2801,8 @@ function PanelRecibido({
                   </div>
                 </div>
 
-                {/* Fila 2: Dependencia/UPP | Dirigido a | Cargo */}
+                {/* Fila 2: Dirigido a | Cargo | Dependencia/UPP */}
                 <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="text-[10px] text-gray-500">Dependencia / UPP</label>
-                    <input type="text" placeholder="Ej. Secretaría de Finanzas"
-                      disabled={bloqueadoPorFirma}
-                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
-                      style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                      value={dependenciaRespLocal} onChange={e => setDependenciaRespLocal(e.target.value)}
-                      onBlur={async () => {
-                        if (dependenciaRespLocal !== (doc.remitente_dependencia ?? ''))
-                          try { await documentosApi.update(doc.id, { remitente_dependencia: dependenciaRespLocal }); invalidate() } catch { /* */ }
-                      }} />
-                  </div>
                   <div>
                     <label className="text-[10px] text-gray-500">Dirigido a</label>
                     <input type="text" placeholder="Nombre del destinatario"
@@ -2837,6 +2825,18 @@ function PanelRecibido({
                       onBlur={async () => {
                         if (cargoRespLocal !== (doc.remitente_cargo ?? ''))
                           try { await documentosApi.update(doc.id, { remitente_cargo: cargoRespLocal }); invalidate() } catch { /* */ }
+                      }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-500">Dependencia / UPP</label>
+                    <input type="text" placeholder="Ej. Secretaría de Finanzas"
+                      disabled={bloqueadoPorFirma}
+                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                      style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
+                      value={dependenciaRespLocal} onChange={e => setDependenciaRespLocal(e.target.value)}
+                      onBlur={async () => {
+                        if (dependenciaRespLocal !== (doc.remitente_dependencia ?? ''))
+                          try { await documentosApi.update(doc.id, { remitente_dependencia: dependenciaRespLocal }); invalidate() } catch { /* */ }
                       }} />
                   </div>
                 </div>
