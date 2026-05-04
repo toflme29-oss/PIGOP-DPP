@@ -1277,7 +1277,7 @@ function PanelConfigMembrete() {
                       { field: 'max_chars'             as const, label: 'Máx. caracteres (línea)'  },
                       { field: 'line_height'           as const, label: 'Interlineado (pt)'        },
                       { field: 'fecha_y'               as const, label: 'Fecha — posición Y (PDF)' },
-                      { field: 'word_spacer_correction'as const, label: 'Corrección espacio Word (pt)' },
+                      { field: 'word_spacer_correction'as const, label: 'Separación remitente→fecha Word (pt)' },
                     ] as { field: keyof Omit<MembreteConfig,'campos'>; label: string }[]
                   ).map(({ field, label }) => (
                     <label key={field} className="flex flex-col gap-1">
@@ -1357,13 +1357,12 @@ function PanelConfigMembrete() {
                 <p className="text-[10px] text-gray-400 mt-1.5">
                   Coordenadas en puntos (pt). Origen = esquina inferior izquierda. Página carta: 612 × 792 pt.
                   <br />
-                  <span className="text-yellow-700 font-semibold">↕ Columna Y</span>: controla la posición <b>vertical</b> de cada campo.
-                  <b>Sube Y</b> (ej. 654→670) para mover el campo hacia arriba. <b>Baja Y</b> para moverlo hacia abajo.
-                  Úsala junto con el <b>PDF de calibración</b> para encontrar el valor exacto.
+                  <span className="text-yellow-700 font-semibold">↕ Columna Y</span>: posición vertical de cada campo.
+                  <b>Aumenta Y</b> para subir el campo; <b>reduce Y</b> para bajarlo. Usa el PDF de calibración para ver el número exacto.
                 </p>
                 <p className="text-[10px] text-gray-400 mt-0.5">
-                  <b>Fecha — posición Y</b>: misma lógica que los campos; súbela para acercar la fecha al remitente.
-                  <b> Corrección espacio Word</b>: ajusta el espaciado en .docx (aumenta si la fecha queda lejos; baja si queda muy cerca).
+                  <b>Fecha — posición Y</b>: súbela (ej. 620→638) para acercar la fecha al remitente en PDF.
+                  <b> Separación remitente→fecha Word</b>: valor recomendado <b>30</b> (normal) o <b>5</b> si subiste la fecha a 638+. El valor <b>600 es incorrecto</b> — ponlo en 30.
                 </p>
               </div>
 
