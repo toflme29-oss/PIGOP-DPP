@@ -4373,6 +4373,25 @@ function PanelEmitido({
   }
 
   const handleCambiarEstado = async (estado: string) => {
+    // Al enviar a firma validar coherencia cronológica de fecha vs consecutivo
+    if (estado === 'en_revision' && folioLocal && fechaRespLocal) {
+      try {
+        const { coherente, conflictos } = await documentosApi.verificarCoherenciaFecha(folioLocal, fechaRespLocal, doc.id)
+        if (!coherente && conflictos && conflictos.length > 0) {
+          const c = conflictos[0]
+          const miConsec = Number(folioLocal.match(/\/0*(\d+)\/20\d{2}$/)?.[1] ?? 0)
+          const mayor = c.consecutivo < miConsec
+          window.alert(
+            `⚠️ Incoherencia cronológica detectada.\n\n` +
+            `El folio ${folioLocal} tiene fecha "${fechaRespLocal}"\n` +
+            `pero el folio ${c.folio} con consecutivo ${mayor ? 'menor' : 'mayor'} tiene fecha "${c.fecha}".\n\n` +
+            `Un consecutivo ${mayor ? 'mayor' : 'menor'} no puede tener una fecha ${mayor ? 'anterior' : 'posterior'}.\n` +
+            `Corrige la fecha del oficio antes de enviar a firma.`
+          )
+          return
+        }
+      } catch { /* Si falla la verificación remota, no bloquear */ }
+    }
     try {
       await documentosApi.cambiarEstado(doc.id, estado as never)
       invalidate()
