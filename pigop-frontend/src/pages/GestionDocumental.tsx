@@ -1695,6 +1695,10 @@ function PanelRecibido({
   const refFileRef = useRef<HTMLInputElement>(null)
   const externoFileRef = useRef<HTMLInputElement>(null)
   const wordEditRef = useRef<HTMLInputElement>(null)
+  // Catálogo de dependencias para validar la Dependencia/UPP del oficio de respuesta
+  const { data: catalogoDeps = [] } = useQuery({
+    queryKey: ['clientes-catalogo'], queryFn: clientesApi.list, staleTime: 5 * 60_000,
+  })
   // ── Roles reales de la DPP ──
   // Director = admin_cliente (firma, revisa, devuelve)
   // Roles del módulo de Gestión Documental (v4)
@@ -2905,22 +2909,39 @@ function PanelRecibido({
                       }} />
                   </div>
                   <div>
-                    <label className="text-[10px] text-gray-500">Dependencia / UPP</label>
-                    <input type="text" placeholder="Ej. Secretaría de Finanzas"
-                      disabled={bloqueadoPorFirma}
-                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
-                      style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                      value={dependenciaRespLocal} onChange={e => setDependenciaRespLocal(e.target.value)}
-                      onBlur={async () => {
-                        if (!dependenciaRespLocal.trim()) {
-                          const fallback = doc.dependencia_destino || doc.remitente_dependencia || doc.dependencia_solicitante || doc.upp_solicitante || ''
-                          setDependenciaRespLocal(fallback)
-                          if (fallback) try { await documentosApi.update(doc.id, { dependencia_destino: fallback }); invalidate() } catch { /* */ }
-                          return
-                        }
-                        if (dependenciaRespLocal !== (doc.dependencia_destino ?? ''))
-                          try { await documentosApi.update(doc.id, { dependencia_destino: dependenciaRespLocal }); invalidate() } catch { /* */ }
-                      }} />
+                    <label className="text-[10px] text-gray-500">
+                      Dependencia / UPP
+                      {dependenciaRespLocal && catalogoDeps.length > 0 &&
+                        !catalogoDeps.some(c => c.activo && c.nombre.toLowerCase() === dependenciaRespLocal.toLowerCase()) && (
+                        <span className="ml-1 text-red-500">⚠ No en catálogo</span>
+                      )}
+                    </label>
+                    {bloqueadoPorFirma ? (
+                      <input type="text" disabled value={dependenciaRespLocal}
+                        className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs bg-gray-100 text-gray-500 cursor-not-allowed" />
+                    ) : (
+                      <select
+                        className={`w-full border rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none bg-white ${
+                          dependenciaRespLocal && catalogoDeps.length > 0 &&
+                          !catalogoDeps.some(c => c.activo && c.nombre.toLowerCase() === dependenciaRespLocal.toLowerCase())
+                            ? 'border-red-400'
+                            : 'border-gray-300'
+                        }`}
+                        style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
+                        value={dependenciaRespLocal}
+                        onChange={async e => {
+                          const val = e.target.value
+                          setDependenciaRespLocal(val)
+                          if (val !== (doc.dependencia_destino ?? ''))
+                            try { await documentosApi.update(doc.id, { dependencia_destino: val }); invalidate() } catch { /* */ }
+                        }}
+                      >
+                        <option value="">— Selecciona dependencia —</option>
+                        {catalogoDeps.filter(c => c.activo).map(c => (
+                          <option key={c.id} value={c.nombre}>{c.nombre}</option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                 </div>
 
@@ -3348,6 +3369,20 @@ function PanelRecibido({
                         window.alert(`⚠️ Corrige el folio antes de enviar a firma:\n${folioErrorMsg}`)
                         return
                       }
+                      // Validar que Dependencia/UPP esté seleccionada y en el catálogo
+                      if (!dependenciaRespLocal.trim()) {
+                        window.alert('⚠️ Debes seleccionar una Dependencia/UPP antes de enviar a firma.')
+                        return
+                      }
+                      if (catalogoDeps.length > 0) {
+                        const enCatalogo = catalogoDeps.some(
+                          c => c.activo && c.nombre.toLowerCase() === dependenciaRespLocal.trim().toLowerCase()
+                        )
+                        if (!enCatalogo) {
+                          window.alert(`⚠️ La dependencia "${dependenciaRespLocal}" no está registrada en el catálogo.\nSelecciona una dependencia válida antes de enviar a firma.`)
+                          return
+                        }
+                      }
                       try {
                         setEnviandoFirma(true)
                         await documentosApi.cambiarEstado(doc.id, 'respondido' as never)
@@ -3357,7 +3392,7 @@ function PanelRecibido({
                       } catch (e) { window.alert('Error al enviar para firma: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo'))
                       } finally { setEnviandoFirma(false) }
                     }}
-                      disabled={doc.estado === 'respondido' || enviandoFirma || !!fechaError || !!folioErrorMsg}
+                      disabled={doc.estado === 'respondido' || enviandoFirma || !!fechaError || !!folioErrorMsg || !dependenciaRespLocal.trim() || (catalogoDeps.length > 0 && !catalogoDeps.some(c => c.activo && c.nombre.toLowerCase() === dependenciaRespLocal.trim().toLowerCase()))}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-lg font-medium text-white disabled:opacity-50 transition-colors"
                       style={{ backgroundColor: GUINDA }}>
                       {enviandoFirma
