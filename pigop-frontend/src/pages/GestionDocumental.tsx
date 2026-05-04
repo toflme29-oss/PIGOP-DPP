@@ -378,6 +378,24 @@ function ModalRegistrarRecibido({
         (result.clasificacion.tipo_documento as string)?.toLowerCase() === 'memorandum' ||
         !!str('numero_memorandum')
 
+      // Intentar hacer match de la dependencia IA contra el catálogo
+      const matchDep = (() => {
+        if (!remitenteDep) return prev => prev.remitente_dependencia || ''
+        const norm = remitenteDep.toLowerCase().replace(/[^a-záéíóúñ0-9\s]/gi, '')
+        // 1. Coincidencia exacta
+        const exacto = catalogoDepend.find(c => c.activo && c.nombre.toLowerCase() === remitenteDep.toLowerCase())
+        if (exacto) return () => exacto.nombre
+        // 2. Coincidencia parcial (el nombre del catálogo contiene la detección IA o viceversa)
+        const parcial = catalogoDepend.find(c => {
+          if (!c.activo) return false
+          const cn = c.nombre.toLowerCase().replace(/[^a-záéíóúñ0-9\s]/gi, '')
+          return cn.includes(norm) || norm.includes(cn)
+        })
+        if (parcial) return () => parcial.nombre
+        // 3. Sin match — dejar el valor de IA para que el usuario corrija
+        return () => remitenteDep
+      })()
+
       setForm(prev => ({
         ...prev,
         tipo: esMemorandum ? 'memorandum' : prev.tipo,
@@ -385,7 +403,7 @@ function ModalRegistrarRecibido({
         numero_oficio_origen: numeroOficio || prev.numero_oficio_origen,
         remitente_nombre:     remitenteNom || prev.remitente_nombre,
         remitente_cargo:      remitenteCar || prev.remitente_cargo,
-        remitente_dependencia: remitenteDep || prev.remitente_dependencia,
+        remitente_dependencia: matchDep(prev) || prev.remitente_dependencia,
         fecha_documento:      fechaDoc     || prev.fecha_documento,
         descripcion:          descripcion  || prev.descripcion,
         // File info
@@ -435,6 +453,22 @@ function ModalRegistrarRecibido({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setErr('')
     if (!form.asunto.trim()) { setErr('El asunto es obligatorio.'); return }
+    // Validar que la dependencia esté registrada en el catálogo
+    const depVal = (form.remitente_dependencia ?? '').trim()
+    if (catalogoDepend.length > 0) {
+      const depNorm = depVal.toLowerCase()
+      const enCatalogo = catalogoDepend.some(
+        c => c.activo && c.nombre.toLowerCase() === depNorm
+      )
+      if (!enCatalogo) {
+        setErr(
+          depVal
+            ? `La dependencia "${depVal}" no existe en el catálogo. Selecciona una dependencia registrada.`
+            : 'Debes seleccionar una dependencia del catálogo antes de registrar.'
+        )
+        return
+      }
+    }
     try { await mutation.mutateAsync({ ...form, cliente_id: form.cliente_id || clienteId }) }
     catch (e: unknown) { setErr((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Error al registrar.') }
   }
@@ -868,14 +902,20 @@ function ModalRegistrarRecibido({
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
                     Dependencia <span className="text-green-600 text-[10px] font-normal">(IA)</span>
+                    {(form.remitente_dependencia ?? '') && !catalogoDepend.some(c => c.activo && c.nombre.toLowerCase() === (form.remitente_dependencia ?? '').toLowerCase()) && (
+                      <span className="ml-1 text-red-500 text-[10px]">⚠ No registrada en catálogo</span>
+                    )}
                   </label>
-                  <input
-                    list="depend-catalog"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    placeholder="Buscar o escribir dependencia…"
+                  <select
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
                     value={form.remitente_dependencia ?? ''}
                     onChange={e => set('remitente_dependencia', e.target.value)}
-                  />
+                  >
+                    <option value="">— Selecciona dependencia —</option>
+                    {catalogoDepend.filter(c => c.activo).map(c => (
+                      <option key={c.id} value={c.nombre}>{c.nombre}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -990,13 +1030,16 @@ function ModalRegistrarRecibido({
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Dependencia</label>
-                  <input
-                    list="depend-catalog"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    placeholder="Buscar o escribir dependencia…"
+                  <select
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
                     value={form.remitente_dependencia ?? ''}
                     onChange={e => set('remitente_dependencia', e.target.value)}
-                  />
+                  >
+                    <option value="">— Selecciona dependencia —</option>
+                    {catalogoDepend.filter(c => c.activo).map(c => (
+                      <option key={c.id} value={c.nombre}>{c.nombre}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
