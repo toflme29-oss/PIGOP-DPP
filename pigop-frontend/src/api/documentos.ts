@@ -724,6 +724,17 @@ export const documentosApi = {
     return res.data
   },
 
+  verificarCoherenciaFecha: async (
+    folio: string,
+    fecha: string,
+    excludeId?: string,
+  ): Promise<{ coherente: boolean; conflictos?: { folio: string; fecha: string; consecutivo: number; razon: string }[] }> => {
+    const res = await apiClient.get('/documentos/verificar-coherencia-fecha', {
+      params: { folio, fecha, ...(excludeId ? { exclude_id: excludeId } : {}) },
+    })
+    return res.data
+  },
+
   /** Obtener PDF del oficio como blob URL (para visor embebido) */
   obtenerOficioPdfUrl: async (id: string): Promise<string> => {
     const res = await apiClient.get(`/documentos/${id}/descargar-oficio-pdf`, {

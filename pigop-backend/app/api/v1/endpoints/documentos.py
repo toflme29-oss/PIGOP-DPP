@@ -592,6 +592,103 @@ async def verificar_folio(
     return {"disponible": True, "folio": folio_limpio}
 
 
+@router.get("/verificar-coherencia-fecha", summary="Verifica coherencia cronológica entre folio y fecha")
+async def verificar_coherencia_fecha(
+    folio: str = Query(..., description="Folio del documento, ej: SFA/SF/DPP/1263/2026"),
+    fecha: str = Query(..., description="Fecha del oficio en español, ej: 20 de abril de 2026"),
+    exclude_id: str = Query(None, description="ID del documento actual (excluirlo de la búsqueda)"),
+    db: AsyncSession = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """
+    Verifica que un folio con consecutivo N tenga una fecha >= a todos los documentos
+    con consecutivo < N del mismo año, y fecha <= a los de consecutivo > N.
+
+    Retorna { coherente: false, conflictos: [...] } si hay incoherencia cronológica.
+    """
+    import re as _re
+    from datetime import date as _date
+    from sqlalchemy import text as sql_text
+
+    MESES_ES = {
+        'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4,
+        'mayo': 5, 'junio': 6, 'julio': 7, 'agosto': 8,
+        'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12,
+    }
+
+    def _parse_fecha(texto: str):
+        m = _re.match(r'^(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})$', texto.strip(), _re.IGNORECASE)
+        if not m:
+            return None
+        mes = MESES_ES.get(m.group(2).lower())
+        if not mes:
+            return None
+        try:
+            return _date(int(m.group(3)), mes, int(m.group(1)))
+        except ValueError:
+            return None
+
+    # Parsear folio actual
+    mf = _re.search(r'/0*(\d+)/(20\d{2})$', folio.strip())
+    if not mf:
+        return {"coherente": True}
+
+    consecutivo_actual = int(mf.group(1))
+    anio = mf.group(2)
+    fecha_actual = _parse_fecha(fecha)
+    if not fecha_actual:
+        return {"coherente": True}  # No se puede parsear → no bloquear
+
+    excl_clause = "AND id != :excl" if exclude_id else ""
+    params: dict = {"anio_patron": f"%/{anio}", **({"excl": exclude_id} if exclude_id else {})}
+
+    result = await db.execute(
+        sql_text(
+            f"SELECT id, folio_respuesta, fecha_respuesta FROM documentos_oficiales "
+            f"WHERE folio_respuesta LIKE :anio_patron "
+            f"AND fecha_respuesta IS NOT NULL AND fecha_respuesta != '' "
+            f"{excl_clause}"
+        ),
+        params,
+    )
+    rows = result.fetchall()
+
+    conflictos = []
+    for row in rows:
+        otro_folio = row[1] or ''
+        mf2 = _re.search(r'/0*(\d+)/(20\d{2})$', otro_folio)
+        if not mf2:
+            continue
+        otro_consec = int(mf2.group(1))
+        otra_fecha = _parse_fecha(row[2])
+        if not otra_fecha:
+            continue
+
+        # Nuestro consecutivo > otro → nuestra fecha debe ser >= otra fecha
+        if consecutivo_actual > otro_consec and fecha_actual < otra_fecha:
+            conflictos.append({
+                "folio": otro_folio,
+                "fecha": row[2],
+                "consecutivo": otro_consec,
+                "razon": f"El folio {folio} (consecutivo {consecutivo_actual}) tiene fecha anterior a {otro_folio} (consecutivo {otro_consec})",
+            })
+        # Nuestro consecutivo < otro → nuestra fecha debe ser <= otra fecha
+        elif consecutivo_actual < otro_consec and fecha_actual > otra_fecha:
+            conflictos.append({
+                "folio": otro_folio,
+                "fecha": row[2],
+                "consecutivo": otro_consec,
+                "razon": f"El folio {folio} (consecutivo {consecutivo_actual}) tiene fecha posterior a {otro_folio} (consecutivo {otro_consec})",
+            })
+
+    if conflictos:
+        # Ordenar por consecutivo para mostrar el conflicto más cercano primero
+        conflictos.sort(key=lambda x: abs(x["consecutivo"] - consecutivo_actual))
+        return {"coherente": False, "conflictos": conflictos}
+
+    return {"coherente": True}
+
+
 # ---------- Catalogo de areas ------------------------------------------------
 
 @router.get("/areas", summary="Catalogo de areas DPP para turno")

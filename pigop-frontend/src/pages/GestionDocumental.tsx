@@ -3401,6 +3401,24 @@ function PanelRecibido({
                         window.alert(`⚠️ Corrige el folio antes de enviar a firma:\n${folioErrorMsg}`)
                         return
                       }
+                      // Validar coherencia cronológica: consecutivo mayor → fecha mayor
+                      if (folioLocal && fechaRespLocal) {
+                        try {
+                          const { coherente, conflictos } = await documentosApi.verificarCoherenciaFecha(folioLocal, fechaRespLocal, doc.id)
+                          if (!coherente && conflictos && conflictos.length > 0) {
+                            const c = conflictos[0]
+                            const mayor = c.consecutivo < Number(folioLocal.match(/\/0*(\d+)\/20\d{2}$/)?.[1] ?? 0)
+                            window.alert(
+                              `⚠️ Incoherencia cronológica detectada.\n\n` +
+                              `El folio ${folioLocal} tiene fecha "${fechaRespLocal}"\n` +
+                              `pero el folio ${c.folio} con consecutivo ${mayor ? 'menor' : 'mayor'} tiene fecha "${c.fecha}".\n\n` +
+                              `Un consecutivo ${mayor ? 'mayor' : 'menor'} no puede tener una fecha ${mayor ? 'anterior' : 'posterior'}.\n` +
+                              `Corrige la fecha del oficio antes de enviar a firma.`
+                            )
+                            return
+                          }
+                        } catch { /* Si falla la verificación remota, no bloquear */ }
+                      }
                       // Validar que Dependencia/UPP esté seleccionada y en el catálogo
                       if (!dependenciaRespLocal.trim()) {
                         window.alert('⚠️ Debes seleccionar una Dependencia/UPP antes de enviar a firma.')
