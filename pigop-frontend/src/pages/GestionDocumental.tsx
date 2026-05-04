@@ -2816,7 +2816,15 @@ function PanelRecibido({
                         className={`flex-1 min-w-0 border rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none font-mono disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed ${folioErrorMsg ? 'border-red-400' : 'border-gray-300'}`}
                         style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
                         value={folioLocal}
-                        onChange={e => { setFolioLocal(e.target.value); setFolioErrorMsg('') }}
+                        onChange={e => {
+                          const val = e.target.value
+                          setFolioLocal(val)
+                          setFolioErrorMsg('')
+                          // Si el usuario borra el campo, limpiar también en BD para no inflar el consecutivo
+                          if (!val && doc.folio_respuesta) {
+                            documentosApi.update(doc.id, { folio_respuesta: '' }).catch(() => {})
+                          }
+                        }}
                         onBlur={async () => {
                           if (!folioLocal || folioLocal === (doc.folio_respuesta ?? '')) return
                           // Validar formato: el consecutivo debe ser exactamente 4 dígitos
@@ -2843,10 +2851,12 @@ function PanelRecibido({
                         <button
                           onClick={async () => {
                             try {
+                              // Solo llenar el campo local — NO guardar en BD todavía.
+                              // El guardado ocurre en onBlur para no inflar el consecutivo
+                              // si el usuario borra el campo y vuelve a hacer clic.
                               const { folio } = await documentosApi.siguienteFolio(doc.tipo?.toUpperCase() || 'OFICIO', doc.area_turno || undefined)
                               setFolioLocal(folio)
-                              await documentosApi.update(doc.id, { folio_respuesta: folio })
-                              invalidate()
+                              setFolioErrorMsg('')
                             } catch { /* */ }
                           }}
                           className="flex items-center gap-1 px-2 py-1 text-[9px] font-medium rounded-md border transition-colors whitespace-nowrap flex-shrink-0"
@@ -3253,16 +3263,23 @@ function PanelRecibido({
                         <input type="text" placeholder="SFA/SF/DPP/SPFP/0001/2026"
                           className="flex-1 border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none font-mono"
                           style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                          value={folioLocal} onChange={e => setFolioLocal(e.target.value)}
+                          value={folioLocal}
+                          onChange={e => {
+                            const val = e.target.value
+                            setFolioLocal(val)
+                            // Si el usuario borra el campo, limpiar en BD para no inflar el consecutivo
+                            if (!val && doc.folio_respuesta) {
+                              documentosApi.update(doc.id, { folio_respuesta: '' }).catch(() => {})
+                            }
+                          }}
                           onBlur={() => folioLocal !== (doc.folio_respuesta ?? '') && guardarFolioRef('folio', folioLocal)} />
                         {!folioLocal && (
                           <button
                             onClick={async () => {
                               try {
+                                // Solo llenar el campo local — NO guardar en BD todavía.
                                 const { folio } = await documentosApi.siguienteFolio(doc.tipo?.toUpperCase() || 'OFICIO', doc.area_turno || undefined)
                                 setFolioLocal(folio)
-                                await documentosApi.update(doc.id, { folio_respuesta: folio })
-                                invalidate()
                               } catch { /* */ }
                             }}
                             className="flex items-center gap-1 px-2 py-1 text-[9px] font-medium rounded-md border transition-colors whitespace-nowrap"
@@ -4580,16 +4597,23 @@ function PanelEmitido({
                     <input type="text" placeholder="SFA/SF/DPP/0001/2026"
                       className="flex-1 border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-1 focus:outline-none font-mono"
                       style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
-                      value={folioLocal} onChange={e => setFolioLocal(e.target.value)}
+                      value={folioLocal}
+                      onChange={e => {
+                        const val = e.target.value
+                        setFolioLocal(val)
+                        // Si el usuario borra el campo, limpiar en BD para no inflar el consecutivo
+                        if (!val && doc.folio_respuesta) {
+                          documentosApi.update(doc.id, { folio_respuesta: '' }).catch(() => {})
+                        }
+                      }}
                       onBlur={() => folioLocal !== (doc.folio_respuesta ?? '') && guardarFolioRef('folio', folioLocal)} />
                     {!folioLocal && (
                       <button
                         onClick={async () => {
                           try {
+                            // Solo llenar el campo local — NO guardar en BD todavía.
                             const { folio } = await documentosApi.siguienteFolio(doc.tipo?.toUpperCase() || 'OFICIO', undefined)
                             setFolioLocal(folio)
-                            await documentosApi.update(doc.id, { folio_respuesta: folio })
-                            invalidate()
                           } catch { /* */ }
                         }}
                         className="flex items-center gap-1 px-2 py-1 text-[9px] font-medium rounded-md border transition-colors whitespace-nowrap"
