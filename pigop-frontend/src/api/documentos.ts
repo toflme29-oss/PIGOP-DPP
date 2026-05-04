@@ -96,12 +96,12 @@ export interface DocumentoListItem {
   has_borrador:     boolean
   folio_respuesta:  string | null
   fecha_respuesta:  string | null
+  descripcion:      string | null
   creado_en:        string
 }
 
 export interface Documento extends DocumentoListItem {
   cliente_id:            string
-  descripcion:           string | null
   datos_extraidos_ia:    Record<string, unknown> | null
   sugerencia_area_codigo: string | null
   sugerencia_area_nombre: string | null
@@ -730,7 +730,7 @@ export const documentosApi = {
     folio: string,
     fecha: string,
     excludeId?: string,
-  ): Promise<{ coherente: boolean; conflictos?: { folio: string; fecha: string; consecutivo: number; razon: string }[] }> => {
+  ): Promise<{ coherente: boolean; conflictos?: { folio: string; fecha: string; consecutivo: number; razon: string; fecha_estimada?: boolean }[] }> => {
     const res = await apiClient.get('/documentos/verificar-coherencia-fecha', {
       params: { folio, fecha, ...(excludeId ? { exclude_id: excludeId } : {}) },
     })

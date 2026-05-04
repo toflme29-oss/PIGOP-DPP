@@ -380,7 +380,7 @@ function ModalRegistrarRecibido({
 
       // Intentar hacer match de la dependencia IA contra el catálogo
       const matchDep = (() => {
-        if (!remitenteDep) return prev => prev.remitente_dependencia || ''
+        if (!remitenteDep) return (prev: typeof form) => prev.remitente_dependencia || ''
         const norm = remitenteDep.toLowerCase().replace(/[^a-záéíóúñ0-9\s]/gi, '')
         // 1. Coincidencia exacta
         const exacto = catalogoDepend.find(c => c.activo && c.nombre.toLowerCase() === remitenteDep.toLowerCase())

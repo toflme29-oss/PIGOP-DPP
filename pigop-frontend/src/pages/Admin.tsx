@@ -1312,9 +1312,9 @@ function PanelConfigMembrete() {
     // Sincronizar cfg desde el cache; garantizar defaults para campos opcionales
     // que backends más viejos pueden no devolver (ej. word_spacer_correction).
     setCfg({
-      word_spacer_correction: 30,
-      cuerpo_y: 557,
       ...structuredClone(cfgRemota),
+      word_spacer_correction: cfgRemota.word_spacer_correction ?? 30,
+      cuerpo_y: cfgRemota.cuerpo_y ?? 557,
     })
   }, [cfgRemota])
 
