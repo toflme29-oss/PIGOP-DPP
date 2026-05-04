@@ -1860,6 +1860,10 @@ function PanelRecibido({
     // Limpiar PDF anterior para forzar recarga tras generación
     setPdfUrl(null)
     try {
+      // Si el documento está en 'turnado', avanzar automáticamente a 'en_atencion'
+      if (doc.estado === 'turnado') {
+        try { await documentosApi.cambiarEstado(doc.id, 'en_atencion' as never) } catch { /* si falla, continuar */ }
+      }
       await documentosApi.generarBorrador(doc.id, instrucciones || instruccionesIA || undefined)
       invalidate()
       // Recargar PDF del borrador recién generado
@@ -1891,6 +1895,10 @@ function PanelRecibido({
     setPdfUrl(null)
     setAlertasExterno([])
     try {
+      // Si el documento está en 'turnado', avanzar automáticamente a 'en_atencion'
+      if (doc.estado === 'turnado') {
+        try { await documentosApi.cambiarEstado(doc.id, 'en_atencion' as never) } catch { /* si falla, continuar */ }
+      }
       await documentosApi.subirOficioExterno(doc.id, file)
       invalidate()
       // Recarga PDF tras un breve delay (espera conversión DOCX→PDF)
