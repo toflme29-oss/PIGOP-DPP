@@ -958,16 +958,27 @@ class CorrespondenciaService:
                 elif mime_norm in _MIME_VISION:
                     # ── Ruta Vision: PDF / imagen → Gemini Vision ─────────────
                     from google.genai import types
-                    resp = client.models.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=[
-                            types.Part.from_bytes(data=image_bytes, mime_type=mime_norm),
-                            _PROMPT_OCR_OFICIO,
-                        ],
-                    )
-                    raw_text = resp.text or ""
-                    logger.info(f"[OCR] Respuesta Gemini Vision (primeros 500 chars): {raw_text[:500]}")
-                    datos = gemini_service._parse_json_response(raw_text)
+                    _MODELOS_VISION = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+                    raw_text = ""
+                    for _modelo in _MODELOS_VISION:
+                        try:
+                            logger.info(f"[OCR] Intentando modelo {_modelo}...")
+                            resp = client.models.generate_content(
+                                model=_modelo,
+                                contents=[
+                                    types.Part.from_bytes(data=image_bytes, mime_type=mime_norm),
+                                    _PROMPT_OCR_OFICIO,
+                                ],
+                            )
+                            raw_text = resp.text or ""
+                            if raw_text.strip():
+                                logger.info(f"[OCR] Modelo {_modelo} respondió OK ({len(raw_text)} chars).")
+                                break
+                            else:
+                                logger.warning(f"[OCR] Modelo {_modelo} devolvió respuesta vacía, probando siguiente.")
+                        except Exception as _em:
+                            logger.warning(f"[OCR] Modelo {_modelo} falló: {type(_em).__name__}: {_em}. Probando siguiente.")
+                    datos = gemini_service._parse_json_response(raw_text) if raw_text else {}
                     if not datos or datos.get("raw_response") or datos.get("error"):
                         logger.warning(f"[OCR] Parseo fallido o vacío. raw_text completo:\n{raw_text[:2000]}")
                     else:

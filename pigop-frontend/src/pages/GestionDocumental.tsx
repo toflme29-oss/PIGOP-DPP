@@ -769,14 +769,19 @@ function ModalRegistrarRecibido({
 
               {/* Aviso cuando la IA no pudo extraer campos */}
               {ocrFalló && (
-                <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+                <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 space-y-1">
                   <p className="text-xs font-semibold text-orange-700 flex items-center gap-1.5">
                     ⚠️ La IA no pudo leer los datos del documento
                   </p>
-                  <p className="text-[10px] text-orange-600 mt-0.5">
-                    El servicio de inteligencia artificial procesó el archivo pero no extrajo los campos (puede ser un error temporal o un problema con el API de Gemini).
-                    Por favor capture los datos manualmente en los campos de abajo.
+                  <p className="text-[10px] text-orange-600">
+                    El servicio de inteligencia artificial procesó el archivo pero no extrajo los campos.
+                    Capture los datos manualmente en los campos de abajo.
                   </p>
+                  {ocrErrorMsg && (
+                    <p className="text-[9px] text-orange-500 font-mono bg-orange-100 rounded px-2 py-1 break-all">
+                      {ocrErrorMsg}
+                    </p>
+                  )}
                 </div>
               )}
 
