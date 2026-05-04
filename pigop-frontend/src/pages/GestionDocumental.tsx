@@ -5561,49 +5561,79 @@ export default function GestionDocumental() {
     enabled:  !!floatingDocId,
   })
   const [floatingActiveTab, setFloatingActiveTab] = useState<string>('info')
+  // Refs para evitar recargas innecesarias cuando el valor no cambió
+  const prevFloatingPdfUrlRef   = useRef<string | null>(null)
+  const prevFloatingBorradorRef = useRef<string | null | undefined>(undefined)
+  const prevFloatingTablaRef    = useRef<unknown>(undefined)
+  const prevFloatingExternoRef  = useRef<string | null | undefined>(undefined)
+  const floatingLoadingRef      = useRef(false) // evita peticiones paralelas
 
-  const loadFloatingPdf = useCallback((docId: string, activeTab: string) => {
-    setFloatingPdfLoading(true)
+  const loadFloatingPdf = useCallback((docId: string, activeTab: string, force = false) => {
+    // Si ya hay una carga en progreso y no se fuerza, no lanzar otra
+    if (floatingLoadingRef.current && !force) return
+    floatingLoadingRef.current = true
+    // Solo mostrar spinner si no hay URL previa (primera carga)
+    // Si ya hay URL, la mantenemos visible y la actualizamos silenciosamente
+    setFloatingPdfLoading(prev => prev || floatingPdfUrl === null)
     const loader = activeTab === 'ocr'
       ? documentosApi.obtenerOficioPdfUrl(docId)
       : documentosApi.obtenerArchivoOriginalUrl(docId)
     loader
-      .then(url => setFloatingPdfUrl(url))
-      .catch(() => setFloatingPdfUrl(null))
-      .finally(() => setFloatingPdfLoading(false))
-  }, [])
+      .then(url => {
+        // Solo actualizar si la URL cambió (evita parpadeo por recarga innecesaria)
+        if (url !== prevFloatingPdfUrlRef.current) {
+          prevFloatingPdfUrlRef.current = url
+          setFloatingPdfUrl(url)
+        }
+      })
+      .catch(() => { setFloatingPdfUrl(null); prevFloatingPdfUrlRef.current = null })
+      .finally(() => { setFloatingPdfLoading(false); floatingLoadingRef.current = false })
+  }, [floatingPdfUrl])
 
   useEffect(() => {
-    if (!floatingDocId) { setFloatingPdfUrl(null); return }
-    loadFloatingPdf(floatingDocId, floatingActiveTab)
+    if (!floatingDocId) {
+      setFloatingPdfUrl(null)
+      prevFloatingPdfUrlRef.current = null
+      prevFloatingBorradorRef.current = undefined
+      prevFloatingTablaRef.current = undefined
+      prevFloatingExternoRef.current = undefined
+      return
+    }
+    loadFloatingPdf(floatingDocId, floatingActiveTab, true)
   }, [floatingDocId])
 
   const handleFloatingTabChange = useCallback((newTab: string) => {
     setFloatingActiveTab(newTab)
-    if (floatingDocId) loadFloatingPdf(floatingDocId, newTab)
+    if (floatingDocId) loadFloatingPdf(floatingDocId, newTab, true)
   }, [floatingDocId, loadFloatingPdf])
 
-  // Recargar PDF de respuesta siempre que cambie el borrador (incluyendo regeneraciones)
+  // Recargar PDF solo cuando el contenido del borrador realmente cambia
   const floatingDocBorrador = floatingDoc?.borrador_respuesta
   useEffect(() => {
+    if (floatingDocBorrador === prevFloatingBorradorRef.current) return
+    prevFloatingBorradorRef.current = floatingDocBorrador
     if (floatingDocId && floatingDocBorrador) {
-      loadFloatingPdf(floatingDocId, 'ocr')
+      loadFloatingPdf(floatingDocId, 'ocr', true)
     }
   }, [floatingDocBorrador])
 
-  // Recargar PDF flotante cuando cambia la tabla (imagen o datos Excel)
+  // Recargar solo cuando cambia la tabla (imagen o datos Excel)
   const floatingDocTabla = floatingDoc?.tabla_imagen_nombre ?? floatingDoc?.tabla_datos_json
   useEffect(() => {
+    if (floatingDocTabla === prevFloatingTablaRef.current) return
+    prevFloatingTablaRef.current = floatingDocTabla
     if (floatingDocId && floatingDocBorrador) {
-      loadFloatingPdf(floatingDocId, 'ocr')
+      loadFloatingPdf(floatingDocId, 'ocr', true)
     }
   }, [floatingDocTabla])
 
-  // Recargar PDF flotante cuando cambia el oficio externo
+  // Recargar solo cuando cambia el oficio externo
   const floatingDocExterno = floatingDoc?.oficio_externo_nombre
   useEffect(() => {
+    if (floatingDocExterno === prevFloatingExternoRef.current) return
+    prevFloatingExternoRef.current = floatingDocExterno
     if (floatingDocId) {
-      loadFloatingPdf(floatingDocId, 'ocr')
+      loadFloatingPdf(floatingDocId, 'ocr', true)
     }
   }, [floatingDocExterno])
 
@@ -6931,19 +6961,27 @@ export default function GestionDocumental() {
                       : floatingDoc.asunto}
                 </span>
               </div>
-              <div className="flex-1 overflow-hidden">
-                {floatingPdfLoading ? (
+              <div className="flex-1 overflow-hidden relative">
+                {floatingPdfUrl ? (
+                  <>
+                    <iframe
+                      src={floatingPdfUrl}
+                      title="Vista previa"
+                      className="w-full h-full"
+                      style={{ border: 'none' }}
+                    />
+                    {/* Overlay translúcido sólo en recarga silenciosa — no desmonta el iframe */}
+                    {floatingPdfLoading && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/50 pointer-events-none">
+                        <RotateCcw size={20} className="animate-spin text-gray-400 opacity-60" />
+                      </div>
+                    )}
+                  </>
+                ) : floatingPdfLoading ? (
                   <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-400">
                     <RotateCcw size={28} className="animate-spin" />
                     <p className="text-xs">Cargando documento...</p>
                   </div>
-                ) : floatingPdfUrl ? (
-                  <iframe
-                    src={floatingPdfUrl}
-                    title="Vista previa"
-                    className="w-full h-full"
-                    style={{ border: 'none' }}
-                  />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-300">
                     <FileText size={40} />
