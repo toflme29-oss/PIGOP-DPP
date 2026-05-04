@@ -6561,10 +6561,18 @@ export default function GestionDocumental() {
                       : (doc.fecha_documento || null)
                     const isIsoFecha = fechaDocRaw ? /^\d{4}-\d{2}-\d{2}/.test(fechaDocRaw) : false
                     const noOficio = esRespuesta ? doc.folio_respuesta : doc.numero_control
-                    const destNombre = esRespuesta ? doc.remitente_nombre : doc.destinatario_nombre
-                    const destCargo  = esRespuesta ? doc.remitente_cargo  : doc.destinatario_cargo
+                    // Para respuestas: usar destinatario_* si el usuario lo personalizó,
+                    // sino caer al remitente original del documento recibido
+                    const destNombre = esRespuesta
+                      ? (doc.destinatario_nombre || doc.remitente_nombre)
+                      : doc.destinatario_nombre
+                    const destCargo  = esRespuesta
+                      ? (doc.destinatario_cargo  || doc.remitente_cargo)
+                      : doc.destinatario_cargo
                     const uppCodigo  = doc.upp_solicitante_codigo
-                    const uppNombre  = esRespuesta ? doc.remitente_dependencia : (doc.dependencia_destino || doc.upp_solicitante)
+                    const uppNombre  = esRespuesta
+                      ? (doc.dependencia_destino || doc.remitente_dependencia)
+                      : (doc.dependencia_destino || doc.upp_solicitante)
                     // Extraer solo el número del folio: "SFA/SF/DPP/0002/2026" → "0002"
                     const numFolio = noOficio ? (noOficio.split('/').slice(-2, -1)[0] ?? '—') : '—'
                     return (
