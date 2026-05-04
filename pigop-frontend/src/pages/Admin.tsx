@@ -1207,7 +1207,14 @@ function PanelConfigMembrete() {
   })
 
   useEffect(() => {
-    if (cfgRemota && !cfg) setCfg(structuredClone(cfgRemota))
+    if (cfgRemota && !cfg) {
+      // Mezclar con defaults locales para campos opcionales que el backend
+      // puede no devolver todavía (ej. word_spacer_correction en deploys viejos)
+      setCfg({
+        word_spacer_correction: 30,
+        ...structuredClone(cfgRemota),
+      })
+    }
   }, [cfgRemota])
 
   const setCampo = (idx: number, field: keyof MembreteCampo, value: unknown) => {
@@ -1276,7 +1283,7 @@ function PanelConfigMembrete() {
                       <span className="text-[10px] text-gray-500">{label}</span>
                       <input
                         type="number"
-                        value={cfg[field]}
+                        value={cfg[field] ?? 0}
                         onChange={e => setGlobal(field, Number(e.target.value))}
                         className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs text-center w-full focus:outline-none focus:ring-1"
                         style={{ '--tw-ring-color': GUINDA } as React.CSSProperties}
