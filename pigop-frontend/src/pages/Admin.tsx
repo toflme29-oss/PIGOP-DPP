@@ -1277,7 +1277,7 @@ function PanelConfigMembrete() {
                       { field: 'max_chars'             as const, label: 'Máx. caracteres (línea)'  },
                       { field: 'line_height'           as const, label: 'Interlineado (pt)'        },
                       { field: 'fecha_y'               as const, label: 'Fecha — posición Y (PDF)' },
-                      { field: 'word_spacer_correction'as const, label: 'Separación remitente→fecha Word (pt)' },
+                      { field: 'word_spacer_correction'as const, label: 'Posición Y — separación remitente (Word)' },
                     ] as { field: keyof Omit<MembreteConfig,'campos'>; label: string }[]
                   ).map(({ field, label }) => (
                     <label key={field} className="flex flex-col gap-1">
