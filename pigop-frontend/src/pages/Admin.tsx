@@ -1212,6 +1212,7 @@ function PanelConfigMembrete() {
     // que backends más viejos pueden no devolver (ej. word_spacer_correction).
     setCfg({
       word_spacer_correction: 30,
+      cuerpo_y: 557,
       ...structuredClone(cfgRemota),
     })
   }, [cfgRemota])
@@ -1277,7 +1278,7 @@ function PanelConfigMembrete() {
                       { field: 'max_chars'             as const, label: 'Máx. caracteres (línea)'  },
                       { field: 'line_height'           as const, label: 'Interlineado (pt)'        },
                       { field: 'fecha_y'               as const, label: 'Fecha — posición Y (PDF)' },
-                      { field: 'word_spacer_correction'as const, label: 'Posición Y — separación remitente (Word)' },
+                      { field: 'cuerpo_y'               as const, label: 'Inicio cuerpo — posición Y' },
                     ] as { field: keyof Omit<MembreteConfig,'campos'>; label: string }[]
                   ).map(({ field, label }) => (
                     <label key={field} className="flex flex-col gap-1">
@@ -1361,8 +1362,8 @@ function PanelConfigMembrete() {
                   <b>Aumenta Y</b> para subir el campo; <b>reduce Y</b> para bajarlo. Usa el PDF de calibración para ver el número exacto.
                 </p>
                 <p className="text-[10px] text-gray-400 mt-0.5">
-                  <b>Fecha — posición Y</b>: súbela (ej. 620→638) para acercar la fecha al remitente en PDF.
-                  <b> Separación remitente→fecha Word</b>: valor recomendado <b>30</b> (normal) o <b>5</b> si subiste la fecha a 638+. El valor <b>600 es incorrecto</b> — ponlo en 30.
+                  <b>Fecha — posición Y</b>: posición de la línea de fecha en el PDF (origen = abajo). Sube para acercarla al remitente.
+                  <b> Inicio cuerpo — posición Y</b>: controla dónde empieza el destinatario y el texto del oficio. La línea verde del PDF de calibración muestra su posición actual. <b>Valor típico: 540–560.</b>
                 </p>
               </div>
 

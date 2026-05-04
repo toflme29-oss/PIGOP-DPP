@@ -85,7 +85,8 @@ _MEMBRETE_CONFIG_DEFAULT: dict = {
     "max_chars":              55,
     "line_height":            9,
     "fecha_y":                620,
-    "word_spacer_correction": 30,  # pt de corrección para el espaciador Word (no afecta PDF)
+    "cuerpo_y":               557,  # posición Y (desde abajo) donde inicia el cuerpo del oficio en PDF
+    "word_spacer_correction": 30,   # pt de corrección para el espaciador Word (no afecta PDF)
     "campos": [
         {"key": "dependencia", "label": "Dependencia",     "x": 400, "y": 753, "multiline": False, "max_width": 185},
         {"key": "subdep",      "label": "Sub-dependencia", "x": 420, "y": 720, "multiline": False, "max_width": 185},
@@ -253,8 +254,15 @@ class OficioPdfService:
 
         if membrete_activo:
             # ── Con membrete: el encabezado se dibuja vía canvas (absoluto) ─
-            y_mas_alto = max(c["y"] for c in _cfg_campos)
-            espacio_header = (792 - y_mas_alto) + (y_mas_alto - _cfg_fecha_y) + 20
+            _cfg_cuerpo_y = _cfg.get("cuerpo_y", None)
+            if _cfg_cuerpo_y is not None:
+                # Usar posición Y del cuerpo directamente
+                _TOP_MARGIN_PT = 0.6 * 72  # 43.2 pt (igual que doc topMargin)
+                espacio_header = max(792 - _TOP_MARGIN_PT - _cfg_cuerpo_y, 1.0)
+            else:
+                # Fórmula legacy desde fecha_y
+                y_mas_alto = max(c["y"] for c in _cfg_campos)
+                espacio_header = (792 - y_mas_alto) + (y_mas_alto - _cfg_fecha_y) + 20
             elements.append(Spacer(1, espacio_header))
 
         else:

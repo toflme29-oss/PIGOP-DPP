@@ -16,6 +16,7 @@ export interface MembreteConfig {
   max_chars: number
   line_height: number
   fecha_y: number
+  cuerpo_y: number
   word_spacer_correction: number
   campos: MembreteCampo[]
 }
