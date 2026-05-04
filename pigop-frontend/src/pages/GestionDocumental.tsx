@@ -5677,7 +5677,7 @@ export default function GestionDocumental() {
   if (isLoading) return <PageSpinner />
 
   return (
-    <div className="flex h-full bg-gray-50 relative">
+    <div className="flex h-full bg-gray-50 relative overflow-hidden">
       {/* Toast de confirmación */}
       {toast && (
         <div className={clsx(
@@ -5690,7 +5690,7 @@ export default function GestionDocumental() {
         </div>
       )}
       {/* ── Panel izquierdo (lista) — oculto cuando hay detalle seleccionado */}
-      <div className={clsx('flex flex-col', selectedId ? 'hidden' : 'flex-1')}>
+      <div className={clsx('flex flex-col overflow-hidden', selectedId ? 'hidden' : 'flex-1')}>
 
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-4 pt-4 pb-0">

@@ -561,9 +561,21 @@ export default function Layout() {
       )}
 
       {/* ── Contenido principal ────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto min-h-0">
-        <div className="max-w-screen-2xl mx-auto">
-          <Outlet />
+      <main className="flex-1 overflow-hidden min-h-0 flex flex-col">
+        <div className={clsx(
+          'flex-1 min-h-0',
+          // Páginas que manejan su propio scroll interno (flex layout)
+          location.pathname.startsWith('/gestion-documental')
+            ? 'flex flex-col overflow-hidden'
+            : 'overflow-y-auto',
+        )}>
+          <div className={clsx(
+            location.pathname.startsWith('/gestion-documental')
+              ? 'h-full flex flex-col'
+              : 'max-w-screen-2xl mx-auto',
+          )}>
+            <Outlet />
+          </div>
         </div>
       </main>
     </div>
