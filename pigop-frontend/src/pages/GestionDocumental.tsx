@@ -3433,12 +3433,19 @@ function PanelRecibido({
                           if (!coherente && conflictos && conflictos.length > 0) {
                             const c = conflictos[0]
                             const mayor = c.consecutivo < Number(folioLocal.match(/\/0*(\d+)\/20\d{2}$/)?.[1] ?? 0)
+                            const esEstimada = c.fecha_estimada === true
                             window.alert(
                               `⚠️ Incoherencia cronológica detectada.\n\n` +
                               `El folio ${folioLocal} tiene fecha "${fechaRespLocal}"\n` +
-                              `pero el folio ${c.folio} con consecutivo ${mayor ? 'menor' : 'mayor'} tiene fecha "${c.fecha}".\n\n` +
+                              `pero el folio ${c.folio} (consecutivo ${mayor ? 'menor' : 'mayor'}) ` +
+                              (esEstimada
+                                ? `no tiene fecha del oficio asignada. Según su fecha de ingreso al sistema, este documento es posterior a la fecha que estás asignando.`
+                                : `tiene fecha "${c.fecha}".`) +
+                              `\n\n` +
                               `Un consecutivo ${mayor ? 'mayor' : 'menor'} no puede tener una fecha ${mayor ? 'anterior' : 'posterior'}.\n` +
-                              `Corrige la fecha del oficio antes de enviar a firma.`
+                              (esEstimada
+                                ? `Asigna primero la fecha del oficio al folio ${c.folio} o corrige la fecha de este documento.`
+                                : `Corrige la fecha del oficio antes de enviar a firma.`)
                             )
                             return
                           }
@@ -4413,12 +4420,19 @@ function PanelEmitido({
           const c = conflictos[0]
           const miConsec = Number(folioLocal.match(/\/0*(\d+)\/20\d{2}$/)?.[1] ?? 0)
           const mayor = c.consecutivo < miConsec
+          const esEstimada = c.fecha_estimada === true
           window.alert(
             `⚠️ Incoherencia cronológica detectada.\n\n` +
             `El folio ${folioLocal} tiene fecha "${fechaRespLocal}"\n` +
-            `pero el folio ${c.folio} con consecutivo ${mayor ? 'menor' : 'mayor'} tiene fecha "${c.fecha}".\n\n` +
+            `pero el folio ${c.folio} (consecutivo ${mayor ? 'menor' : 'mayor'}) ` +
+            (esEstimada
+              ? `no tiene fecha del oficio asignada. Según su fecha de ingreso al sistema, este documento es posterior a la fecha que estás asignando.`
+              : `tiene fecha "${c.fecha}".`) +
+            `\n\n` +
             `Un consecutivo ${mayor ? 'mayor' : 'menor'} no puede tener una fecha ${mayor ? 'anterior' : 'posterior'}.\n` +
-            `Corrige la fecha del oficio antes de enviar a firma.`
+            (esEstimada
+              ? `Asigna primero la fecha del oficio al folio ${c.folio} o corrige la fecha de este documento.`
+              : `Corrige la fecha del oficio antes de enviar a firma.`)
           )
           return
         }

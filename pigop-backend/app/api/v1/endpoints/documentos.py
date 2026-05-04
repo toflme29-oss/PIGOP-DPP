@@ -645,11 +645,13 @@ async def verificar_coherencia_fecha(
     excl_clause = "AND id != :excl" if exclude_id else ""
     params: dict = {"anio_patron": f"%/{anio}", **({"excl": exclude_id} if exclude_id else {})}
 
+    # Incluir TODOS los documentos con folio en el año (con o sin fecha_respuesta).
+    # Cuando fecha_respuesta está vacía usamos creado_en como fecha mínima proxy:
+    # un documento no puede tener una respuesta fechada ANTES de que entrara al sistema.
     result = await db.execute(
         sql_text(
-            f"SELECT id, folio_respuesta, fecha_respuesta FROM documentos_oficiales "
+            f"SELECT id, folio_respuesta, fecha_respuesta, creado_en FROM documentos_oficiales "
             f"WHERE folio_respuesta LIKE :anio_patron "
-            f"AND fecha_respuesta IS NOT NULL AND fecha_respuesta != '' "
             f"{excl_clause}"
         ),
         params,
@@ -658,29 +660,48 @@ async def verificar_coherencia_fecha(
 
     conflictos = []
     for row in rows:
-        otro_folio = row[1] or ''
+        otro_folio    = row[1] or ''
+        fecha_resp_db = row[2] or ''
+        creado_en_db  = row[3]   # ISO datetime string ej: "2026-04-29T..."
+
         mf2 = _re.search(r'/0*(\d+)/(20\d{2})$', otro_folio)
         if not mf2:
             continue
         otro_consec = int(mf2.group(1))
-        otra_fecha = _parse_fecha(row[2])
-        if not otra_fecha:
+
+        # Intentar parsear fecha_respuesta; si está vacía usar creado_en como proxy
+        otra_fecha = _parse_fecha(fecha_resp_db) if fecha_resp_db.strip() else None
+        fecha_estimada = False
+        if otra_fecha is None and creado_en_db:
+            # creado_en puede ser "2026-04-29" o "2026-04-29T10:30:00..."
+            creado_str = str(creado_en_db)[:10]
+            try:
+                from datetime import date as _date2
+                partes_iso = creado_str.split('-')
+                otra_fecha = _date2(int(partes_iso[0]), int(partes_iso[1]), int(partes_iso[2]))
+                fecha_estimada = True
+            except Exception:
+                pass
+
+        if otra_fecha is None:
             continue
 
         # Nuestro consecutivo > otro → nuestra fecha debe ser >= otra fecha
         if consecutivo_actual > otro_consec and fecha_actual < otra_fecha:
             conflictos.append({
                 "folio": otro_folio,
-                "fecha": row[2],
+                "fecha": fecha_resp_db if fecha_resp_db.strip() else f"~{str(otra_fecha)} (fecha estimada por creación)",
                 "consecutivo": otro_consec,
+                "fecha_estimada": fecha_estimada,
                 "razon": f"El folio {folio} (consecutivo {consecutivo_actual}) tiene fecha anterior a {otro_folio} (consecutivo {otro_consec})",
             })
         # Nuestro consecutivo < otro → nuestra fecha debe ser <= otra fecha
         elif consecutivo_actual < otro_consec and fecha_actual > otra_fecha:
             conflictos.append({
                 "folio": otro_folio,
-                "fecha": row[2],
+                "fecha": fecha_resp_db if fecha_resp_db.strip() else f"~{str(otra_fecha)} (fecha estimada por creación)",
                 "consecutivo": otro_consec,
+                "fecha_estimada": fecha_estimada,
                 "razon": f"El folio {folio} (consecutivo {consecutivo_actual}) tiene fecha posterior a {otro_folio} (consecutivo {otro_consec})",
             })
 
