@@ -86,7 +86,11 @@ class OficioGeneratorService:
             # ── Espaciador preciso para que la fecha quede justo debajo ─────
             fecha_y     = cfg.get("fecha_y", 620)
             _TOP_MARGIN = 1.5 * 28.3465          # ≈ 42.52 pt
-            space_pt    = max((792 - fecha_y) - _TOP_MARGIN, 1.0)
+            # Corrección Word: la imagen de membrete es un ancla flotante en el
+            # encabezado y no empuja el cuerpo, por lo que el espaciador calculado
+            # tiende a generar un exceso visual respecto al PDF.
+            _WORD_CORRECTION = cfg.get("word_spacer_correction", 30)  # pt
+            space_pt    = max((792 - fecha_y) - _TOP_MARGIN - _WORD_CORRECTION, 1.0)
             p_space = doc.add_paragraph()
             p_space.paragraph_format.space_before = Pt(0)
             p_space.paragraph_format.space_after  = Pt(0)
