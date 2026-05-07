@@ -358,8 +358,13 @@ class OficioPdfService:
             elements.append(Paragraph(safe, s_justify))
 
         def _render_text(text: str) -> None:
-            """Renderiza texto como párrafos separados por uno o más saltos de línea."""
+            """Renderiza texto como párrafos separados por uno o más saltos de línea.
+            Siempre elimina el marcador [TABLA] para que no aparezca como texto literal."""
             if not text or not text.strip():
+                return
+            # Eliminar marcador [TABLA] del texto renderizado (la imagen se inserta aparte)
+            text = _re.sub(r'\[TABLA\]', '', text, flags=_re.IGNORECASE).strip()
+            if not text:
                 return
             # Dividir por 2+ saltos de línea primero; si no separa, por 1 salto
             chunks = _re.split(r'\n{2,}', text)

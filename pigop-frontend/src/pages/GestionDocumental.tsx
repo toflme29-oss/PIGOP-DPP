@@ -1702,6 +1702,58 @@ function PanelRecibido({
   const [fechaError, setFechaError] = useState('')
   const [folioErrorMsg, setFolioErrorMsg] = useState('')
   const [posicionTabla, setPosicionTabla] = useState('')
+  const [aplicandoPosicion, setAplicandoPosicion] = useState(false)
+
+  /** Parsea el número de párrafo desde texto en español. "primer párrafo" → 1 */
+  const parsearNumeroPárrafo = (texto: string): number | null => {
+    const map: Record<string, number> = {
+      'primer': 1, 'primero': 1, 'primera': 1, '1er': 1, 'uno': 1,
+      'segundo': 2, 'segunda': 2, '2do': 2, 'dos': 2,
+      'tercer': 3, 'tercero': 3, 'tercera': 3, '3er': 3, 'tres': 3,
+      'cuarto': 4, 'cuarta': 4, '4to': 4, 'cuatro': 4,
+      'quinto': 5, 'quinta': 5, '5to': 5, 'cinco': 5,
+      'sexto': 6, 'sexta': 6, 'seis': 6,
+    }
+    const lower = texto.toLowerCase()
+    const numMatch = lower.match(/\b(\d+)\b/)
+    if (numMatch) return parseInt(numMatch[1], 10)
+    for (const [key, val] of Object.entries(map)) {
+      if (lower.includes(key)) return val
+    }
+    return null
+  }
+
+  /** Inserta [TABLA] en el borrador_respuesta después del párrafo N y recarga el PDF */
+  const aplicarPosicionTabla = async () => {
+    const borrador = doc.borrador_respuesta
+    if (!borrador) { window.alert('⚠️ Primero genera el oficio con IA para poder posicionar la tabla.'); return }
+    const n = parsearNumeroPárrafo(posicionTabla)
+    if (!n) { window.alert('⚠️ Especifica el número del párrafo. Ej: "después del primer párrafo", "después del 2"'); return }
+    setAplicandoPosicion(true)
+    try {
+      // Limpiar cualquier [TABLA] previo
+      const textoLimpio = borrador.replace(/\[TABLA\]\n*/gi, '').trim()
+      // Separar en párrafos
+      const parrafos = textoLimpio.split(/\n\n+/).filter(p => p.trim())
+      if (parrafos.length === 0) { window.alert('⚠️ El borrador no tiene párrafos identificables.'); return }
+      const insertarEn = Math.min(n, parrafos.length) // insertar después del párrafo n (o al final si n > total)
+      const parrafosConTabla = [
+        ...parrafos.slice(0, insertarEn),
+        '[TABLA]',
+        ...parrafos.slice(insertarEn),
+      ]
+      const nuevoTexto = parrafosConTabla.join('\n\n')
+      await documentosApi.update(doc.id, { borrador_respuesta: nuevoTexto } as never)
+      invalidate()
+      setTimeout(() => {
+        if (hideDocumentVisor) { onPdfRefresh?.() }
+        else { documentosApi.obtenerOficioPdfUrl(doc.id).then(url => setPdfUrl(url)).catch(() => {}) }
+      }, 500)
+    } catch (e) {
+      window.alert('Error al aplicar posición: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo'))
+    } finally { setAplicandoPosicion(false) }
+  }
+
   // Dirigido a / Cargo / Dependencia — campos propios de la RESPUESTA (no tocan el remitente original)
   // Usan destinatario_nombre/cargo y dependencia_destino; fallback al remitente si aún no se personalizaron
   const [destinatarioRespLocal, setDestinatarioRespLocal] = useState(
@@ -3225,16 +3277,28 @@ function PanelRecibido({
                           className="w-full flex items-center justify-center gap-1 py-1.5 text-[9px] rounded-lg font-medium border border-amber-400 text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed">
                           <Upload size={9} /> Cambiar tabla
                         </button>
-                        {/* Campo de posición de la tabla — solo aplica al generar con IA */}
+                        {/* Campo de posición de la tabla */}
                         <div className="space-y-0.5">
-                          <p className="text-[8px] text-amber-700 font-medium">Posición al generar con IA (opcional)</p>
-                          <input
-                            type="text"
-                            value={posicionTabla}
-                            onChange={e => setPosicionTabla(e.target.value)}
-                            placeholder="ej: después del primer párrafo"
-                            className="w-full border border-amber-300 rounded-md px-2 py-1 text-[9px] focus:ring-1 focus:ring-amber-400 focus:outline-none bg-white placeholder-amber-400"
-                          />
+                          <p className="text-[8px] text-amber-700 font-medium">Posición en el documento (opcional)</p>
+                          <div className="flex gap-1">
+                            <input
+                              type="text"
+                              value={posicionTabla}
+                              onChange={e => setPosicionTabla(e.target.value)}
+                              placeholder="ej: después del primer párrafo"
+                              className="flex-1 min-w-0 border border-amber-300 rounded-md px-2 py-1 text-[9px] focus:ring-1 focus:ring-amber-400 focus:outline-none bg-white placeholder-amber-400"
+                            />
+                            <button
+                              onClick={aplicarPosicionTabla}
+                              disabled={aplicandoPosicion || !posicionTabla.trim() || !doc.borrador_respuesta}
+                              className="flex items-center gap-0.5 px-2 py-1 text-[9px] rounded-md font-medium border border-amber-500 text-amber-700 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap transition-colors"
+                              title={!doc.borrador_respuesta ? 'Primero genera el oficio con IA' : 'Aplicar posición y actualizar PDF'}>
+                              {aplicandoPosicion
+                                ? <RotateCcw size={9} className="animate-spin" />
+                                : <><ArrowRight size={9} /> Aplicar</>}
+                            </button>
+                          </div>
+                          <p className="text-[8px] text-amber-500">También aplica al generar con IA</p>
                         </div>
                       </div>
                     ) : (
