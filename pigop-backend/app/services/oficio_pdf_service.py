@@ -344,44 +344,65 @@ class OficioPdfService:
         elements.append(Spacer(1, 14))
 
         # ── Cuerpo ──────────────────────────────────────────────────────────
-        body_text = "\n\n".join(
-            s for s in [seccion_fundamento, seccion_referencia,
-                        seccion_objeto, seccion_cierre]
-            if s and s.strip()
-        )
-        if body_text:
-            for paragraph_text in body_text.split("\n\n"):
-                paragraph_text = paragraph_text.strip()
-                if not paragraph_text:
-                    continue
-                # Escapar caracteres especiales de reportlab
-                safe_text = (
-                    paragraph_text
-                    .replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;")
-                )
-                elements.append(Paragraph(safe_text, s_justify))
+        # Orden correcto cuando hay tabla:
+        #   [fundamento] [referencia] [objeto]  → TABLA → [cierre/despedida]
+        # Sin tabla: se comporta igual que antes.
+        tiene_tabla = (tabla_datos_json and len(tabla_datos_json) > 0) or bool(tabla_imagen_path)
 
-        # ── Tabla Excel o imagen (si se subió) ──────────────────────────
-        if tabla_datos_json and len(tabla_datos_json) > 0:
-            elements.append(Spacer(1, 8))
-            self._add_tabla_datos_pdf(elements, doc, tabla_datos_json)
-            elements.append(Spacer(1, 8))
-        elif tabla_imagen_path:
-            import os
-            if os.path.exists(tabla_imagen_path):
+        def _append_paragraph(text: str) -> None:
+            safe = (text.replace("&", "&amp;")
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;"))
+            elements.append(Paragraph(safe, s_justify))
+
+        def _render_seccion(text: str) -> None:
+            """Renderiza una sección como párrafos separados por doble salto."""
+            if not text or not text.strip():
+                return
+            for p in text.split("\n\n"):
+                p = p.strip()
+                if p:
+                    _append_paragraph(p)
+
+        if tiene_tabla:
+            # Renderizar secciones del cuerpo ANTES de la tabla
+            _render_seccion(seccion_fundamento)
+            _render_seccion(seccion_referencia)
+            _render_seccion(seccion_objeto)
+
+            # ── Tabla (entre cuerpo y cierre) ────────────────────────────
+            if tabla_datos_json and len(tabla_datos_json) > 0:
                 elements.append(Spacer(1, 8))
-                tabla_img = Image(tabla_imagen_path)
-                # Escalar al ancho disponible manteniendo proporción
-                max_w = doc.width
-                iw, ih = tabla_img.imageWidth, tabla_img.imageHeight
-                if iw > 0 and ih > 0:
-                    ratio = min(max_w / iw, 1.0)
-                    tabla_img._restrictSize(iw * ratio, ih * ratio)
-                tabla_img.hAlign = "CENTER"
-                elements.append(tabla_img)
+                self._add_tabla_datos_pdf(elements, doc, tabla_datos_json)
                 elements.append(Spacer(1, 8))
+            elif tabla_imagen_path:
+                import os
+                if os.path.exists(tabla_imagen_path):
+                    elements.append(Spacer(1, 8))
+                    tabla_img = Image(tabla_imagen_path)
+                    max_w = doc.width
+                    iw, ih = tabla_img.imageWidth, tabla_img.imageHeight
+                    if iw > 0 and ih > 0:
+                        ratio = min(max_w / iw, 1.0)
+                        tabla_img._restrictSize(iw * ratio, ih * ratio)
+                    tabla_img.hAlign = "CENTER"
+                    elements.append(tabla_img)
+                    elements.append(Spacer(1, 8))
+
+            # Renderizar cierre/despedida DESPUÉS de la tabla
+            _render_seccion(seccion_cierre)
+        else:
+            # Sin tabla: comportamiento original
+            body_text = "\n\n".join(
+                s for s in [seccion_fundamento, seccion_referencia,
+                            seccion_objeto, seccion_cierre]
+                if s and s.strip()
+            )
+            if body_text:
+                for p in body_text.split("\n\n"):
+                    p = p.strip()
+                    if p:
+                        _append_paragraph(p)
 
         elements.append(Spacer(1, 14))
 

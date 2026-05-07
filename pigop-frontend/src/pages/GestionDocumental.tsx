@@ -1652,8 +1652,8 @@ function parseFechaEspanolCorta(texto: string): string {
 
 // ── Panel detalle — Recibido ───────────────────────────────────────────────────
 function PanelRecibido({
-  doc, areas, onClose, onRefetch, onDelete, initialTab = 'info', hideDocumentVisor = false, onTabChange,
-}: { doc: Documento; areas: AreaDPP[]; onClose: () => void; onRefetch: () => void; onDelete?: () => void; initialTab?: 'info' | 'ocr' | 'documento' | 'historial'; hideDocumentVisor?: boolean; onTabChange?: (tab: string) => void }) {
+  doc, areas, onClose, onRefetch, onDelete, initialTab = 'info', hideDocumentVisor = false, onTabChange, onPdfRefresh,
+}: { doc: Documento; areas: AreaDPP[]; onClose: () => void; onRefetch: () => void; onDelete?: () => void; initialTab?: 'info' | 'ocr' | 'documento' | 'historial'; hideDocumentVisor?: boolean; onTabChange?: (tab: string) => void; onPdfRefresh?: () => void }) {
   const { user } = useAuth()
   const permissionsVersion = usePermissionsVersion()
   const qc = useQueryClient()
@@ -1880,6 +1880,18 @@ function PanelRecibido({
   }
 
   const handleBorrador = async (instrucciones?: string) => {
+    if (!folioLocal.trim()) {
+      window.alert('⚠️ Debes ingresar el folio de respuesta antes de generar el oficio.')
+      return
+    }
+    if (folioErrorMsg) {
+      window.alert(`⚠️ Corrige el folio antes de generar:\n${folioErrorMsg}`)
+      return
+    }
+    if (fechaError) {
+      window.alert(`⚠️ Corrige la fecha antes de generar:\n${fechaError}`)
+      return
+    }
     setGenerando(true)
     // Limpiar PDF anterior para forzar recarga tras generación
     setPdfUrl(null)
@@ -1911,6 +1923,10 @@ function PanelRecibido({
   }
 
   const handleCargarReferencia = async (file: File) => {
+    if (!folioLocal.trim()) {
+      window.alert('⚠️ Debes ingresar el folio de respuesta antes de subir un documento de referencia.')
+      return
+    }
     setCargandoReferencia(true)
     try { await documentosApi.cargarReferencia(doc.id, file); invalidate() }
     catch (e) { window.alert('Error al cargar referencia: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo')) }
@@ -1923,6 +1939,10 @@ function PanelRecibido({
   }
 
   const handleSubirOficioExterno = async (file: File) => {
+    if (!folioLocal.trim()) {
+      window.alert('⚠️ Debes ingresar el folio de respuesta antes de subir el oficio externo.')
+      return
+    }
     setSubiendoExterno(true)
     setPdfUrl(null)
     setAlertasExterno([])
@@ -1973,9 +1993,13 @@ function PanelRecibido({
 
   // Helper: limpia el PDF actual y lo recarga tras un delay para reflejar cambios
   const recargarPdf = (delay = 900) => {
-    setPdfUrl(null)
+    if (!hideDocumentVisor) setPdfUrl(null)
     setTimeout(async () => {
-      try { const url = await documentosApi.obtenerOficioPdfUrl(doc.id); setPdfUrl(url) } catch { /* */ }
+      if (hideDocumentVisor) {
+        onPdfRefresh?.()
+      } else {
+        try { const url = await documentosApi.obtenerOficioPdfUrl(doc.id); setPdfUrl(url) } catch { /* */ }
+      }
     }, delay)
   }
 
@@ -2063,6 +2087,50 @@ function PanelRecibido({
     if (field === 'elaboro') data.referencia_elaboro = value
     if (field === 'reviso') data.referencia_reviso = value
     try { await documentosApi.update(doc.id, data); invalidate() } catch (e) { window.alert('Error al guardar: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo')) }
+  }
+
+  // Guarda todos los campos del encabezado y refresca el PDF SIN llamar a la IA
+  const [actualizandoEncabezado, setActualizandoEncabezado] = useState(false)
+  const actualizarEncabezadoPdf = async () => {
+    // Validar campos antes de proceder
+    if (!folioLocal.trim()) {
+      window.alert('⚠️ Debes ingresar el folio de respuesta antes de actualizar el PDF.')
+      return
+    }
+    if (folioErrorMsg) {
+      window.alert(`⚠️ Corrige el folio antes de actualizar:\n${folioErrorMsg}`)
+      return
+    }
+    if (fechaError) {
+      window.alert(`⚠️ Corrige la fecha antes de actualizar:\n${fechaError}`)
+      return
+    }
+    setActualizandoEncabezado(true)
+    if (!hideDocumentVisor) setPdfUrl(null)
+    try {
+      const data: Record<string, string> = {}
+      if (folioLocal)            data.folio_respuesta     = folioLocal
+      if (fechaRespLocal)        data.fecha_respuesta     = fechaRespLocal
+      if (elaboroLocal)          data.referencia_elaboro  = elaboroLocal
+      if (revisoLocal)           data.referencia_reviso   = revisoLocal
+      if (destinatarioRespLocal) data.destinatario_nombre = destinatarioRespLocal
+      if (cargoRespLocal)        data.destinatario_cargo  = cargoRespLocal
+      if (dependenciaRespLocal)  data.dependencia_destino = dependenciaRespLocal
+      await documentosApi.update(doc.id, data as never)
+      invalidate()
+      // Refrescar PDF con nuevo encabezado pero mismo cuerpo (sin IA)
+      setTimeout(async () => {
+        if (hideDocumentVisor) {
+          // El PDF se muestra en el panel derecho del padre — notificar para recargar
+          onPdfRefresh?.()
+        } else {
+          try { const url = await documentosApi.obtenerOficioPdfUrl(doc.id); setPdfUrl(url) }
+          catch { /* silencioso */ }
+        }
+      }, 500)
+    } catch (e) {
+      window.alert('Error al actualizar: ' + ((e as any)?.response?.data?.detail || 'Intente de nuevo'))
+    } finally { setActualizandoEncabezado(false) }
   }
 
   // Auto-guardar defaults (fecha de hoy, elaboró/revisó de localStorage) si el doc no los tiene aún
@@ -2996,6 +3064,20 @@ function PanelRecibido({
                   </div>
                 </div>
 
+                {/* ── Botón actualizar encabezado (sin IA) — solo cuando ya hay cuerpo generado ── */}
+                {doc.borrador_respuesta && !doc.borrador_respuesta.startsWith('[OFICIO EXTERNO:') && !bloqueadoPorFirma && (
+                  <button
+                    onClick={actualizarEncabezadoPdf}
+                    disabled={actualizandoEncabezado || !!fechaError || !!folioErrorMsg || !folioLocal.trim()}
+                    className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[10px] rounded-lg font-medium border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ borderColor: GUINDA, color: GUINDA }}
+                    title={!folioLocal.trim() ? 'Ingresa el folio de respuesta primero' : fechaError ? `Corrige la fecha: ${fechaError}` : folioErrorMsg ? `Corrige el folio: ${folioErrorMsg}` : 'Aplica los cambios del encabezado al PDF sin regenerar el cuerpo con IA'}>
+                    {actualizandoEncabezado
+                      ? <><RotateCcw size={11} className="animate-spin" /> Actualizando PDF...</>
+                      : <><RotateCcw size={11} /> Actualizar PDF con datos del encabezado</>}
+                  </button>
+                )}
+
                 {/* ── Alertas de discrepancia entre oficio externo y datos del formulario ── */}
                 {alertasExterno.length > 0 && (
                   <div className="mt-2 space-y-1.5">
@@ -3128,7 +3210,7 @@ function PanelRecibido({
                         </div>
                         <input id={`tabla-change-${doc.id}`} type="file" accept="image/png,image/jpeg,image/webp,.xlsx,.xls" className="hidden"
                           onChange={async e => { const f = e.target.files?.[0]; if (f) { try { await documentosApi.cargarTablaImagen(doc.id, f); invalidate(); recargarPdf() } catch {} }; if (e.target) e.target.value = '' }} />
-                        <button onClick={() => document.getElementById(`tabla-change-${doc.id}`)?.click()}
+                        <button onClick={() => { if (!folioLocal.trim()) { window.alert('⚠️ Debes ingresar el folio de respuesta antes de subir una tabla.'); return }; document.getElementById(`tabla-change-${doc.id}`)?.click() }}
                           disabled={bloqueadoPorFirma}
                           className="w-full flex items-center justify-center gap-1 py-1.5 text-[9px] rounded-lg font-medium border border-amber-400 text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed">
                           <Upload size={9} /> Cambiar tabla
@@ -3138,7 +3220,7 @@ function PanelRecibido({
                       <>
                         <input id={`tabla-img-${doc.id}`} type="file" accept="image/png,image/jpeg,image/webp,.xlsx,.xls" className="hidden"
                           onChange={async e => { const f = e.target.files?.[0]; if (f) { try { await documentosApi.cargarTablaImagen(doc.id, f); invalidate(); recargarPdf() } catch {} }; if (e.target) e.target.value = '' }} />
-                        <button onClick={() => document.getElementById(`tabla-img-${doc.id}`)?.click()}
+                        <button onClick={() => { if (!folioLocal.trim()) { window.alert('⚠️ Debes ingresar el folio de respuesta antes de subir una tabla.'); return }; document.getElementById(`tabla-img-${doc.id}`)?.click() }}
                           disabled={bloqueadoPorFirma}
                           className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium border border-amber-400 text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
                           title={bloqueadoPorFirma ? 'No se puede modificar mientras el oficio está en proceso de firma' : undefined}>
@@ -3185,10 +3267,10 @@ function PanelRecibido({
                       placeholder="Instrucciones (ej: 'Contestar en sentido negativo', 'Usa el oficio adjunto como base')..."
                       className="w-full border border-blue-200 rounded-lg px-2 py-2 text-[10px] resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
                     />
-                    <button onClick={() => handleBorrador(instruccionesIA)} disabled={generando || bloqueadoPorFirma}
+                    <button onClick={() => handleBorrador(instruccionesIA)} disabled={generando || bloqueadoPorFirma || !folioLocal.trim() || !!folioErrorMsg || !!fechaError}
                       className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] rounded-lg font-medium text-white transition-colors mt-auto disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ backgroundColor: GUINDA }}
-                      title={bloqueadoPorFirma ? 'No se puede regenerar mientras el oficio está en proceso de firma' : undefined}>
+                      title={bloqueadoPorFirma ? 'No se puede regenerar mientras el oficio está en proceso de firma' : !folioLocal.trim() ? 'Ingresa el folio de respuesta primero' : folioErrorMsg ? `Corrige el folio: ${folioErrorMsg}` : fechaError ? `Corrige la fecha: ${fechaError}` : undefined}>
                       {generando
                         ? <><RotateCcw size={11} className="animate-spin" /> Generando...</>
                         : <><Wand2 size={11} /> Generar oficio de respuesta</>}
@@ -5395,7 +5477,7 @@ function ExportarExcelRecibidos({ params, totalDocs }: { params: Record<string, 
 export default function GestionDocumental() {
   const { user } = useAuth()
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'recibidos' | 'emitidos' | 'oficios' | 'memorandums'>('recibidos')
+  const [tab, setTab] = useState<'recibidos' | 'emitidos'>('recibidos')
   const [busqueda, setBusqueda] = useState('')
   const [busquedaDebounced, setBusquedaDebounced] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
@@ -5462,11 +5544,9 @@ export default function GestionDocumental() {
   const [pageSize, setPageSize] = useState(15)
 
   const params = {
-    flujo:               tab === 'memorandums' ? 'recibido' : tab === 'recibidos' ? 'recibido' : 'emitido',
+    flujo:               tab === 'recibidos' ? 'recibido' : 'emitido',
     incluir_respuestas:  tab === 'emitidos' ? true : undefined,
-    // Para memorandums el tipo siempre es 'memorandum'; para recibidos/emitidos se usa el filtro de columna
-    tipo:                tab === 'memorandums' ? 'memorandum' as string
-                       : (tab === 'recibidos' && colFiltros.tipo) ? colFiltros.tipo
+    tipo:                (tab === 'recibidos' && colFiltros.tipo) ? colFiltros.tipo
                        : (tab === 'emitidos'  && colFiltrosEmitidos.tipo) ? colFiltrosEmitidos.tipo
                        : undefined,
     busqueda:            busquedaDebounced || undefined,
@@ -5664,6 +5744,8 @@ export default function GestionDocumental() {
     queryKey: ['documento', floatingDocId],
     queryFn:  () => floatingDocId ? documentosApi.get(floatingDocId) : null,
     enabled:  !!floatingDocId,
+    placeholderData: undefined,
+    staleTime: 0,
   })
   const [floatingActiveTab, setFloatingActiveTab] = useState<string>('info')
   // Refs para evitar recargas innecesarias cuando el valor no cambió
@@ -5673,72 +5755,97 @@ export default function GestionDocumental() {
   const prevFloatingExternoRef  = useRef<string | null | undefined>(undefined)
   const floatingLoadingRef      = useRef(false) // evita peticiones paralelas
 
-  const loadFloatingPdf = useCallback((docId: string, activeTab: string, force = false) => {
-    // Si ya hay una carga en progreso y no se fuerza, no lanzar otra
-    if (floatingLoadingRef.current && !force) return
+  // Ref que guarda el ID del documento cuya carga está en curso.
+  // Evita que respuestas async obsoletas (doc anterior) sobreescriban el estado actual.
+  const floatingLoadingForRef = useRef<string | null>(null)
+
+  const loadFloatingPdf = useCallback((docId: string, activeTab: string) => {
+    floatingLoadingForRef.current = docId
     floatingLoadingRef.current = true
-    // Solo mostrar spinner si no hay URL previa (primera carga)
-    // Si ya hay URL, la mantenemos visible y la actualizamos silenciosamente
-    setFloatingPdfLoading(prev => prev || floatingPdfUrl === null)
+    setFloatingPdfLoading(true)
     const loader = activeTab === 'ocr'
       ? documentosApi.obtenerOficioPdfUrl(docId)
       : documentosApi.obtenerArchivoOriginalUrl(docId)
     loader
       .then(url => {
-        // Solo actualizar si la URL cambió (evita parpadeo por recarga innecesaria)
+        // Ignorar respuesta si ya se cambió a otro documento
+        if (floatingLoadingForRef.current !== docId) return
         if (url !== prevFloatingPdfUrlRef.current) {
           prevFloatingPdfUrlRef.current = url
           setFloatingPdfUrl(url)
         }
       })
-      .catch(() => { setFloatingPdfUrl(null); prevFloatingPdfUrlRef.current = null })
-      .finally(() => { setFloatingPdfLoading(false); floatingLoadingRef.current = false })
-  }, [floatingPdfUrl])
+      .catch(() => {
+        if (floatingLoadingForRef.current !== docId) return
+        setFloatingPdfUrl(null)
+        prevFloatingPdfUrlRef.current = null
+      })
+      .finally(() => {
+        if (floatingLoadingForRef.current === docId) {
+          setFloatingPdfLoading(false)
+          floatingLoadingRef.current = false
+        }
+      })
+  }, [])
 
   useEffect(() => {
     if (!floatingDocId) {
+      // Limpiar todo al cerrar
+      floatingLoadingForRef.current = null
       setFloatingPdfUrl(null)
+      setFloatingPdfLoading(false)
       prevFloatingPdfUrlRef.current = null
       prevFloatingBorradorRef.current = undefined
       prevFloatingTablaRef.current = undefined
       prevFloatingExternoRef.current = undefined
       return
     }
-    loadFloatingPdf(floatingDocId, floatingActiveTab, true)
+    // Al abrir un nuevo documento: limpiar URL anterior inmediatamente para evitar
+    // que el iframe muestre el PDF del documento anterior mientras carga el nuevo
+    setFloatingPdfUrl(null)
+    prevFloatingPdfUrlRef.current = null
+    prevFloatingBorradorRef.current = undefined
+    prevFloatingTablaRef.current = undefined
+    prevFloatingExternoRef.current = undefined
+    loadFloatingPdf(floatingDocId, floatingActiveTab)
   }, [floatingDocId])
 
   const handleFloatingTabChange = useCallback((newTab: string) => {
     setFloatingActiveTab(newTab)
-    if (floatingDocId) loadFloatingPdf(floatingDocId, newTab, true)
+    if (floatingDocId) loadFloatingPdf(floatingDocId, newTab)
   }, [floatingDocId, loadFloatingPdf])
 
   // Recargar PDF solo cuando el contenido del borrador realmente cambia
+  // (no disparar al montar — prevFloatingBorradorRef se inicializa en el effect de floatingDocId)
   const floatingDocBorrador = floatingDoc?.borrador_respuesta
   useEffect(() => {
+    if (prevFloatingBorradorRef.current === undefined) return // primera carga, ya maneja el effect principal
     if (floatingDocBorrador === prevFloatingBorradorRef.current) return
     prevFloatingBorradorRef.current = floatingDocBorrador
     if (floatingDocId && floatingDocBorrador) {
-      loadFloatingPdf(floatingDocId, 'ocr', true)
+      loadFloatingPdf(floatingDocId, 'ocr')
     }
   }, [floatingDocBorrador])
 
   // Recargar solo cuando cambia la tabla (imagen o datos Excel)
   const floatingDocTabla = floatingDoc?.tabla_imagen_nombre ?? floatingDoc?.tabla_datos_json
   useEffect(() => {
+    if (prevFloatingTablaRef.current === undefined) return
     if (floatingDocTabla === prevFloatingTablaRef.current) return
     prevFloatingTablaRef.current = floatingDocTabla
     if (floatingDocId && floatingDocBorrador) {
-      loadFloatingPdf(floatingDocId, 'ocr', true)
+      loadFloatingPdf(floatingDocId, 'ocr')
     }
   }, [floatingDocTabla])
 
   // Recargar solo cuando cambia el oficio externo
   const floatingDocExterno = floatingDoc?.oficio_externo_nombre
   useEffect(() => {
+    if (prevFloatingExternoRef.current === undefined) return
     if (floatingDocExterno === prevFloatingExternoRef.current) return
     prevFloatingExternoRef.current = floatingDocExterno
     if (floatingDocId) {
-      loadFloatingPdf(floatingDocId, 'ocr', true)
+      loadFloatingPdf(floatingDocId, 'ocr')
     }
   }, [floatingDocExterno])
 
@@ -5920,7 +6027,7 @@ export default function GestionDocumental() {
                   {multiSelectMode ? 'Cancelar selección' : 'Firma por lote'}
                 </button>
               )}
-              {tab !== 'oficios' && canCrearDocumento && (
+              {canCrearDocumento && (
                 <Button size="sm" onClick={() => tab === 'recibidos' ? setShowModalRecibido(true) : setShowModalEmitido(true)}>
                   <Plus size={13} />
                   {tab === 'recibidos' ? 'Registrar recibido' : 'Nuevo emitido'}
@@ -5931,7 +6038,7 @@ export default function GestionDocumental() {
 
           {/* Tabs */}
           <div className="flex gap-0">
-            {([['recibidos', 'Correspondencia recibida', InboxIcon], ['emitidos', 'Documentos emitidos', SendIcon], ['memorandums', 'MEMORANDUMS', FileText], ['oficios', 'Control de Oficios', Mail]] as const).map(([key, label, Icon]) => (
+            {([['recibidos', 'Correspondencia recibida', InboxIcon], ['emitidos', 'Documentos emitidos', SendIcon]] as const).map(([key, label, Icon]) => (
               <button key={key}
                 onClick={() => { setTab(key); setSelectedId(null); setFiltroEstado(''); setFiltroArea(''); setFiltroUrgente(false); setColFiltros({ no: '', tipo: '', fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' }) }}
                 className={clsx(
@@ -5944,12 +6051,7 @@ export default function GestionDocumental() {
           </div>
         </div>
 
-        {tab === 'oficios' ? (
-          /* ── Tab: Control de Oficios (registro y exportación) ── */
-          <div className="flex-1 overflow-y-auto p-4">
-            <ControlOficios />
-          </div>
-        ) : tab === 'memorandums' ? (<>
+        {false ? (<>
           {/* ── Tab: MEMORANDUMS ── */}
           {/* Métricas memorándums */}
           <div className="px-4 py-2 bg-white border-b border-gray-100 space-y-2">
@@ -7083,8 +7185,20 @@ export default function GestionDocumental() {
         </div>
       )}
 
+      {/* ── Loading overlay mientras carga el documento seleccionado ── */}
+      {floatingDocId && (!floatingDoc || floatingDoc.id !== floatingDocId) && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="flex items-center justify-center rounded-2xl shadow-2xl bg-white" style={{ width: '92vw', height: '92vh' }}>
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-2 border-[#911A3A] border-t-transparent rounded-full animate-spin" />
+              <p className="text-xs text-gray-500">Cargando documento...</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Floating viewer: Turnar / Respuesta / Historial ─────────────────── */}
-      {floatingDocId && floatingDoc && (
+      {floatingDocId && floatingDoc && floatingDoc.id === floatingDocId && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
           <div className="flex overflow-hidden rounded-2xl shadow-2xl bg-white" style={{ width: '92vw', height: '92vh' }}>
             {/* Izquierda: Panel con tabs de acciones */}
@@ -7097,6 +7211,7 @@ export default function GestionDocumental() {
                 initialTab={floatingDocTab}
                 hideDocumentVisor={true}
                 onTabChange={handleFloatingTabChange}
+                onPdfRefresh={() => loadFloatingPdf(floatingDoc.id, 'ocr')}
               />
             </div>
             {/* Derecha: Vista previa — recibido (Turnar) o respuesta (Respuesta) */}
