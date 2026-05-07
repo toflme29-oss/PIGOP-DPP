@@ -3264,7 +3264,7 @@ function PanelRecibido({
                       rows={6}
                       value={instruccionesIA}
                       onChange={e => setInstruccionesIA(e.target.value)}
-                      placeholder="Instrucciones (ej: 'Contestar en sentido negativo', 'Usa el oficio adjunto como base')..."
+                      placeholder="Instrucciones (ej: 'Contestar en sentido negativo', 'Pon la tabla después del primer párrafo', 'Usa el oficio adjunto como base')..."
                       className="w-full border border-blue-200 rounded-lg px-2 py-2 text-[10px] resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
                     />
                     <button onClick={() => handleBorrador(instruccionesIA)} disabled={generando || bloqueadoPorFirma || !folioLocal.trim() || !!folioErrorMsg || !!fechaError}

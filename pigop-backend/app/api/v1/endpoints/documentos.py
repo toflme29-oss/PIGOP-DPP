@@ -1911,6 +1911,11 @@ async def generar_borrador(
         )
     else:
         resumen_ocr = (doc.datos_extraidos_ia or {}).get("cuerpo_resumen", "")
+        # Detectar si el documento tiene tabla adjunta para avisar a la IA
+        _doc_tiene_tabla = bool(
+            (hasattr(doc, 'tabla_imagen_url') and doc.tabla_imagen_url) or
+            (hasattr(doc, 'tabla_datos_json') and doc.tabla_datos_json)
+        )
         borrador = await correspondencia_service.generar_borrador_respuesta(
             numero_oficio_origen=doc.numero_oficio_origen or "---",
             fecha_recibido=doc.fecha_recibido or doc.fecha_documento or "---",
@@ -1925,6 +1930,7 @@ async def generar_borrador(
             contenido_referencia=contenido_ref,
             referencia_archivo_bytes=ref_bytes,
             referencia_mime_type=ref_mime,
+            tiene_tabla=_doc_tiene_tabla,
         )
 
     updated = await crud_documento.guardar_borrador(db, db_obj=doc, borrador=borrador)

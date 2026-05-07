@@ -398,40 +398,49 @@ class OficioPdfService:
 
         if body_text:
             if tiene_tabla:
-                # Buscar el inicio del bloque de cierre/despedida usando regex
-                # para no depender del tipo de separador de párrafos
-                _COLA_RE = _re.compile(
-                    r'(?:^|\n)'                          # inicio de línea
-                    r'(?:'
-                    r'sin otro particular'
-                    r'|sin m[aá]s por el momento'
-                    r'|sin otro m[aá]s'
-                    r'|me despido de usted'
-                    r'|quedo de usted'
-                    r'|quedo a sus [oó]rdenes'
-                    r'|lo anterior para su conocimiento'
-                    r'|lo anterior para'
-                    r'|por lo anterior'
-                    r'|lo anteriormente'
-                    r')',
-                    _re.IGNORECASE,
-                )
-                m = _COLA_RE.search(body_text)
-                if m:
-                    # Calcular el inicio real del párrafo de cola
-                    # (puede comenzar con '\n', lo ajustamos)
-                    split_pos = m.start()
-                    if body_text[split_pos] == '\n':
-                        split_pos += 1
-                    main_text = body_text[:split_pos].strip()
-                    cola_text = body_text[split_pos:].strip()
+                # 1️⃣ Primero: buscar marcador explícito [TABLA] puesto por la IA
+                _MARCADOR_RE = _re.compile(r'\[TABLA\]', _re.IGNORECASE)
+                m_marcador = _MARCADOR_RE.search(body_text)
+
+                if m_marcador:
+                    # La IA colocó [TABLA] en la posición indicada por el usuario
+                    main_text = body_text[:m_marcador.start()].strip()
+                    cola_text = body_text[m_marcador.end():].strip()
                     _render_text(main_text)
                     _insertar_tabla()
                     _render_text(cola_text)
                 else:
-                    # Sin coincidencia: poner tabla al final del cuerpo
-                    _render_text(body_text)
-                    _insertar_tabla()
+                    # 2️⃣ Fallback: detectar párrafo de despedida con regex y poner tabla antes
+                    _COLA_RE = _re.compile(
+                        r'(?:^|\n)'
+                        r'(?:'
+                        r'sin otro particular'
+                        r'|sin m[aá]s por el momento'
+                        r'|sin otro m[aá]s'
+                        r'|me despido de usted'
+                        r'|quedo de usted'
+                        r'|quedo a sus [oó]rdenes'
+                        r'|lo anterior para su conocimiento'
+                        r'|lo anterior para'
+                        r'|por lo anterior'
+                        r'|lo anteriormente'
+                        r')',
+                        _re.IGNORECASE,
+                    )
+                    m_cola = _COLA_RE.search(body_text)
+                    if m_cola:
+                        split_pos = m_cola.start()
+                        if body_text[split_pos] == '\n':
+                            split_pos += 1
+                        main_text = body_text[:split_pos].strip()
+                        cola_text = body_text[split_pos:].strip()
+                        _render_text(main_text)
+                        _insertar_tabla()
+                        _render_text(cola_text)
+                    else:
+                        # Sin coincidencia: tabla al final del cuerpo
+                        _render_text(body_text)
+                        _insertar_tabla()
             else:
                 _render_text(body_text)
 

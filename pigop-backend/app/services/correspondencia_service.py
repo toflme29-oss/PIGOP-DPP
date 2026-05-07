@@ -744,6 +744,7 @@ Determina el tipo según las instrucciones del Director y el contenido del ofici
    | dato 1 | dato 2 | dato 3 |
    Reproduce FIELMENTE todas las columnas, filas y datos. NO omitas ni simplifiques tablas.
 10. Si las instrucciones piden incluir la fecha con un valor específico, USA ESA FECHA en el texto del oficio.
+11. MARCADOR DE TABLA: Si las instrucciones del Director indican una posición específica para la tabla/cuadro adjunto (por ejemplo: "pon la tabla después del primer párrafo", "coloca el cuadro antes de la conclusión", etc.), escribe el marcador exacto [TABLA] en esa posición dentro del texto. Si no se indica posición específica, NO escribas [TABLA] — el sistema lo colocará automáticamente antes del párrafo de cierre.
 
 Redacta ÚNICAMENTE el cuerpo del oficio de respuesta:"""
 
@@ -1055,6 +1056,7 @@ class CorrespondenciaService:
         contenido_referencia: str = "",
         referencia_archivo_bytes: bytes | None = None,
         referencia_mime_type: str = "",
+        tiene_tabla: bool = False,
     ) -> str:
         """
         Genera un borrador de oficio de respuesta usando Gemini.
@@ -1087,6 +1089,14 @@ class CorrespondenciaService:
             .replace("{fundamento_legal}", fundamento_legal)
             .replace("{ejemplo_modelo}", ejemplo_modelo)
         )
+
+        if tiene_tabla:
+            prompt += (
+                "\n\n⚠️ AVISO: El usuario ha adjuntado una TABLA/CUADRO como imagen."
+                " Si las instrucciones del Director indican dónde colocarla, escribe el marcador"
+                " [TABLA] exactamente en esa posición del texto."
+                " Si no se indica posición, NO escribas [TABLA]."
+            )
 
         if instrucciones:
             prompt += f"\n\nINSTRUCCIONES DEL DIRECTOR (RESPETAR ESTRICTAMENTE):\n{instrucciones}"
