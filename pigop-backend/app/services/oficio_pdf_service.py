@@ -344,9 +344,11 @@ class OficioPdfService:
         elements.append(Spacer(1, 14))
 
         # ── Cuerpo ──────────────────────────────────────────────────────────
-        # Orden correcto cuando hay tabla:
-        #   [fundamento] [referencia] [objeto]  → TABLA → [cierre/despedida]
-        # Sin tabla: se comporta igual que antes.
+        # Orden cuando hay tabla:
+        #   [párrafos principales] → TABLA → [párrafos de cierre/despedida]
+        # Sin tabla: comportamiento original.
+        import re as _re
+
         tiene_tabla = (tabla_datos_json and len(tabla_datos_json) > 0) or bool(tabla_imagen_path)
 
         def _append_paragraph(text: str) -> None:
@@ -355,22 +357,20 @@ class OficioPdfService:
                         .replace(">", "&gt;"))
             elements.append(Paragraph(safe, s_justify))
 
-        def _render_seccion(text: str) -> None:
-            """Renderiza una sección como párrafos separados por doble salto."""
+        def _render_text(text: str) -> None:
+            """Renderiza texto como párrafos separados por uno o más saltos de línea."""
             if not text or not text.strip():
                 return
-            for p in text.split("\n\n"):
-                p = p.strip()
-                if p:
-                    _append_paragraph(p)
+            # Dividir por 2+ saltos de línea primero; si no separa, por 1 salto
+            chunks = _re.split(r'\n{2,}', text)
+            if len(chunks) == 1:
+                chunks = _re.split(r'\n', text)
+            for chunk in chunks:
+                chunk = chunk.strip()
+                if chunk:
+                    _append_paragraph(chunk)
 
-        if tiene_tabla:
-            # Renderizar secciones del cuerpo ANTES de la tabla
-            _render_seccion(seccion_fundamento)
-            _render_seccion(seccion_referencia)
-            _render_seccion(seccion_objeto)
-
-            # ── Tabla (entre cuerpo y cierre) ────────────────────────────
+        def _insertar_tabla() -> None:
             if tabla_datos_json and len(tabla_datos_json) > 0:
                 elements.append(Spacer(1, 8))
                 self._add_tabla_datos_pdf(elements, doc, tabla_datos_json)
@@ -389,20 +389,51 @@ class OficioPdfService:
                     elements.append(tabla_img)
                     elements.append(Spacer(1, 8))
 
-            # Renderizar cierre/despedida DESPUÉS de la tabla
-            _render_seccion(seccion_cierre)
-        else:
-            # Sin tabla: comportamiento original
-            body_text = "\n\n".join(
-                s for s in [seccion_fundamento, seccion_referencia,
-                            seccion_objeto, seccion_cierre]
-                if s and s.strip()
-            )
-            if body_text:
-                for p in body_text.split("\n\n"):
-                    p = p.strip()
-                    if p:
-                        _append_paragraph(p)
+        # Texto completo del cuerpo
+        body_text = "\n\n".join(
+            s for s in [seccion_fundamento, seccion_referencia,
+                        seccion_objeto, seccion_cierre]
+            if s and s.strip()
+        )
+
+        if body_text:
+            if tiene_tabla:
+                # Buscar el inicio del bloque de cierre/despedida usando regex
+                # para no depender del tipo de separador de párrafos
+                _COLA_RE = _re.compile(
+                    r'(?:^|\n)'                          # inicio de línea
+                    r'(?:'
+                    r'sin otro particular'
+                    r'|sin m[aá]s por el momento'
+                    r'|sin otro m[aá]s'
+                    r'|me despido de usted'
+                    r'|quedo de usted'
+                    r'|quedo a sus [oó]rdenes'
+                    r'|lo anterior para su conocimiento'
+                    r'|lo anterior para'
+                    r'|por lo anterior'
+                    r'|lo anteriormente'
+                    r')',
+                    _re.IGNORECASE,
+                )
+                m = _COLA_RE.search(body_text)
+                if m:
+                    # Calcular el inicio real del párrafo de cola
+                    # (puede comenzar con '\n', lo ajustamos)
+                    split_pos = m.start()
+                    if body_text[split_pos] == '\n':
+                        split_pos += 1
+                    main_text = body_text[:split_pos].strip()
+                    cola_text = body_text[split_pos:].strip()
+                    _render_text(main_text)
+                    _insertar_tabla()
+                    _render_text(cola_text)
+                else:
+                    # Sin coincidencia: poner tabla al final del cuerpo
+                    _render_text(body_text)
+                    _insertar_tabla()
+            else:
+                _render_text(body_text)
 
         elements.append(Spacer(1, 14))
 
