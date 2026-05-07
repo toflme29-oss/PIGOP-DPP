@@ -1701,6 +1701,7 @@ function PanelRecibido({
   const [alertasExterno, setAlertasExterno] = useState<string[]>([])
   const [fechaError, setFechaError] = useState('')
   const [folioErrorMsg, setFolioErrorMsg] = useState('')
+  const [posicionTabla, setPosicionTabla] = useState('')
   // Dirigido a / Cargo / Dependencia — campos propios de la RESPUESTA (no tocan el remitente original)
   // Usan destinatario_nombre/cargo y dependencia_destino; fallback al remitente si aún no se personalizaron
   const [destinatarioRespLocal, setDestinatarioRespLocal] = useState(
@@ -1908,7 +1909,16 @@ function PanelRecibido({
       if (doc.estado === 'turnado') {
         try { await documentosApi.cambiarEstado(doc.id, 'en_atencion' as never) } catch { /* si falla, continuar */ }
       }
-      await documentosApi.generarBorrador(doc.id, instrucciones || instruccionesIA || undefined)
+      // Si hay tabla con posición específica, inyectarla al prompt automáticamente
+      const tieneTabla = !!(doc.tabla_imagen_nombre || doc.tabla_datos_json)
+      let instruccionesFinales = instrucciones || instruccionesIA || ''
+      if (tieneTabla && posicionTabla.trim()) {
+        const instrPosicion = `Coloca la tabla/cuadro adjunto ${posicionTabla.trim()}`
+        instruccionesFinales = instruccionesFinales
+          ? `${instruccionesFinales}\n${instrPosicion}`
+          : instrPosicion
+      }
+      await documentosApi.generarBorrador(doc.id, instruccionesFinales || undefined)
       invalidate()
       // Recargar PDF del borrador recién generado
       setTimeout(async () => {
@@ -3215,6 +3225,17 @@ function PanelRecibido({
                           className="w-full flex items-center justify-center gap-1 py-1.5 text-[9px] rounded-lg font-medium border border-amber-400 text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed">
                           <Upload size={9} /> Cambiar tabla
                         </button>
+                        {/* Campo de posición de la tabla — solo aplica al generar con IA */}
+                        <div className="space-y-0.5">
+                          <p className="text-[8px] text-amber-700 font-medium">Posición al generar con IA (opcional)</p>
+                          <input
+                            type="text"
+                            value={posicionTabla}
+                            onChange={e => setPosicionTabla(e.target.value)}
+                            placeholder="ej: después del primer párrafo"
+                            className="w-full border border-amber-300 rounded-md px-2 py-1 text-[9px] focus:ring-1 focus:ring-amber-400 focus:outline-none bg-white placeholder-amber-400"
+                          />
+                        </div>
                       </div>
                     ) : (
                       <>
@@ -3264,7 +3285,7 @@ function PanelRecibido({
                       rows={6}
                       value={instruccionesIA}
                       onChange={e => setInstruccionesIA(e.target.value)}
-                      placeholder="Instrucciones (ej: 'Contestar en sentido negativo', 'Pon la tabla después del primer párrafo', 'Usa el oficio adjunto como base')..."
+                      placeholder="Instrucciones (ej: 'Contestar en sentido negativo', 'Usa el oficio adjunto como base')..."
                       className="w-full border border-blue-200 rounded-lg px-2 py-2 text-[10px] resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
                     />
                     <button onClick={() => handleBorrador(instruccionesIA)} disabled={generando || bloqueadoPorFirma || !folioLocal.trim() || !!folioErrorMsg || !!fechaError}
