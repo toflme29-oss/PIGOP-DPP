@@ -3128,16 +3128,18 @@ function PanelRecibido({
 
                 {/* ── Botón actualizar encabezado (sin IA) — solo cuando ya hay cuerpo generado ── */}
                 {doc.borrador_respuesta && !doc.borrador_respuesta.startsWith('[OFICIO EXTERNO:') && !bloqueadoPorFirma && (
-                  <button
-                    onClick={actualizarEncabezadoPdf}
-                    disabled={actualizandoEncabezado || !!fechaError || !!folioErrorMsg || !folioLocal.trim()}
-                    className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[10px] rounded-lg font-medium border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ borderColor: GUINDA, color: GUINDA }}
-                    title={!folioLocal.trim() ? 'Ingresa el folio de respuesta primero' : fechaError ? `Corrige la fecha: ${fechaError}` : folioErrorMsg ? `Corrige el folio: ${folioErrorMsg}` : 'Aplica los cambios del encabezado al PDF sin regenerar el cuerpo con IA'}>
-                    {actualizandoEncabezado
-                      ? <><RotateCcw size={11} className="animate-spin" /> Actualizando PDF...</>
-                      : <><RotateCcw size={11} /> Actualizar PDF con datos del encabezado</>}
-                  </button>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={actualizarEncabezadoPdf}
+                      disabled={actualizandoEncabezado || !!fechaError || !!folioErrorMsg || !folioLocal.trim()}
+                      className="flex items-center gap-1.5 px-4 py-1 text-xs rounded-lg font-medium border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ borderColor: GUINDA, color: GUINDA }}
+                      title={!folioLocal.trim() ? 'Ingresa el folio de respuesta primero' : fechaError ? `Corrige la fecha: ${fechaError}` : folioErrorMsg ? `Corrige el folio: ${folioErrorMsg}` : 'Aplica los cambios del encabezado al PDF sin regenerar el cuerpo con IA'}>
+                      {actualizandoEncabezado
+                        ? <><RotateCcw size={11} className="animate-spin" /> Actualizando...</>
+                        : <><RotateCcw size={11} /> Actualizar encabezado</>}
+                    </button>
+                  </div>
                 )}
 
                 {/* ── Alertas de discrepancia entre oficio externo y datos del formulario ── */}
@@ -3285,14 +3287,15 @@ function PanelRecibido({
                               type="text"
                               value={posicionTabla}
                               onChange={e => setPosicionTabla(e.target.value)}
+                              disabled={bloqueadoPorFirma}
                               placeholder="ej: después del primer párrafo"
-                              className="flex-1 min-w-0 border border-amber-300 rounded-md px-2 py-1 text-[9px] focus:ring-1 focus:ring-amber-400 focus:outline-none bg-white placeholder-amber-400"
+                              className="flex-1 min-w-0 border border-amber-300 rounded-md px-2 py-1 text-[9px] focus:ring-1 focus:ring-amber-400 focus:outline-none bg-white placeholder-amber-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-gray-100"
                             />
                             <button
                               onClick={aplicarPosicionTabla}
-                              disabled={aplicandoPosicion || !posicionTabla.trim() || !doc.borrador_respuesta}
+                              disabled={bloqueadoPorFirma || aplicandoPosicion || !posicionTabla.trim() || !doc.borrador_respuesta}
                               className="flex items-center gap-0.5 px-2 py-1 text-[9px] rounded-md font-medium border border-amber-500 text-amber-700 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap transition-colors"
-                              title={!doc.borrador_respuesta ? 'Primero genera el oficio con IA' : 'Aplicar posición y actualizar PDF'}>
+                              title={bloqueadoPorFirma ? 'No disponible durante el proceso de firma' : !doc.borrador_respuesta ? 'Primero genera el oficio con IA' : 'Aplicar posición y actualizar PDF'}>
                               {aplicandoPosicion
                                 ? <RotateCcw size={9} className="animate-spin" />
                                 : <><ArrowRight size={9} /> Aplicar</>}
