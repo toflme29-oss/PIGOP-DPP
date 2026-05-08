@@ -115,17 +115,19 @@ function DestinatarioAutocomplete({ form, set }: {
           </div>
         )}
       </div>
-      <div>
-        <label className="block text-[10px] text-gray-500 mb-1">Cargo / Área</label>
-        <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-          placeholder="Delegada Administrativa"
-          value={form.destinatario_cargo ?? ''} onChange={e => set('destinatario_cargo', e.target.value)} />
-      </div>
-      <div>
-        <label className="block text-[10px] text-gray-500 mb-1">Dependencia / Entidad</label>
-        <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-          placeholder="Secretaría de Finanzas y Administración"
-          value={form.dependencia_destino ?? ''} onChange={e => set('dependencia_destino', e.target.value)} />
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-[10px] text-gray-500 mb-1">Cargo / Área</label>
+          <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+            placeholder="Delegada Administrativa"
+            value={form.destinatario_cargo ?? ''} onChange={e => set('destinatario_cargo', e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-[10px] text-gray-500 mb-1">Dependencia / Entidad</label>
+          <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+            placeholder="Secretaría de Finanzas y Administración"
+            value={form.dependencia_destino ?? ''} onChange={e => set('dependencia_destino', e.target.value)} />
+        </div>
       </div>
       <p className="text-[9px] text-gray-400">En el oficio aparecerá: Nombre → Cargo → Dependencia → PRESENTE.</p>
     </div>
@@ -1169,36 +1171,53 @@ function ModalNuevoEmitido({
   const [err, setErr] = useState('')
   const [archivoSubir, setArchivoSubir] = useState<File | null>(null)
   const fileRefModal = useRef<HTMLInputElement>(null)
+  const docxContainerRef = useRef<HTMLDivElement>(null)
   const [directoDirector, setDirectoDirector] = useState(false)
   const [yaFirmadoAutografa, setYaFirmadoAutografa] = useState(false)
   const set = (k: keyof DocumentoEmitidoCreate, v: unknown) => setForm(p => ({ ...p, [k]: v }))
 
-  // ── OCR manual: se dispara al hacer clic en el botón "Analizar con IA" ──────
-  const ejecutarOCR = async () => {
-    if (!archivoSubir) return
+  // ── OCR: acepta archivo explícito (auto) o usa archivoSubir (botón manual) ──
+  const ejecutarOCR = async (archivoParam?: File) => {
+    const archivo = archivoParam ?? archivoSubir
+    if (!archivo) return
     setExtrayendoOCR(true); setOcrOk(false); setOcrFalló(false); setOcrErrorMsg('')
     try {
-      const result = await documentosApi.previewOCR(archivoSubir)
+      const result = await documentosApi.previewOCR(archivo)
       let raw: Record<string, unknown> = result.datos_extraidos ?? {}
+      console.log('[OCR-Emitido] datos_extraidos:', raw)
 
       // Si el backend devolvió error de Gemini, reportarlo
       if (raw['error'] && typeof raw['error'] === 'string') {
+        console.error('[OCR-Emitido] error del backend:', raw['error'])
         setOcrFalló(true)
         setOcrErrorMsg(`Error del servicio IA: ${raw['error']}`)
         return
       }
 
-      // Re-parsear si el backend devolvió raw_response
+      // Re-parsear si el backend devolvió raw_response (Gemini a veces incluye comentarios //)
       if (raw['raw_response'] && typeof raw['raw_response'] === 'string') {
+        console.log('[OCR-Emitido] raw_response (primeros 500 chars):', (raw['raw_response'] as string).slice(0, 500))
+        const limpiarJson = (t: string): string => {
+          // Quitar comentarios de línea // ... (fuera de strings)
+          let limpio = t.replace(/\/\/[^\n"]*(?=\n|,|}|])/g, '')
+          // Quitar comas finales antes de } o ]
+          limpio = limpio.replace(/,\s*([}\]])/g, '$1')
+          return limpio
+        }
         try {
           const txt = (raw['raw_response'] as string).trim()
           const s = txt.indexOf('{'); const e2 = txt.lastIndexOf('}')
           if (s !== -1 && e2 > s) {
-            const p = JSON.parse(txt.slice(s, e2 + 1))
+            const fragment = txt.slice(s, e2 + 1)
+            let p: unknown
+            try { p = JSON.parse(fragment) } catch { p = JSON.parse(limpiarJson(fragment)) }
             if (p && typeof p === 'object') raw = p as Record<string, unknown>
           }
         } catch { /* mantener raw */ }
       }
+
+      // Log de todas las keys que devolvió Gemini para diagnóstico
+      console.log('[OCR-Emitido] keys en raw:', Object.keys(raw), '| valores no-nulos:', Object.entries(raw).filter(([,v]) => v !== null && v !== undefined && v !== '').map(([k]) => k))
 
       const str = (...keys: string[]): string => {
         for (const k of keys) {
@@ -1212,12 +1231,15 @@ function ModalNuevoEmitido({
         return ''
       }
 
-      const asunto      = str('asunto', 'subject', 'tema', 'titulo')
+      const asuntoExplicito = str('asunto', 'subject', 'tema', 'titulo')
+      const descripcion     = str('cuerpo_resumen', 'resumen', 'cuerpo', 'descripcion', 'contenido', 'proposito')
+      // Si el campo asunto está vacío, derivarlo del cuerpo (primeras 120 caracteres)
+      const asunto = asuntoExplicito ||
+        (descripcion ? descripcion.replace(/\s+/g, ' ').slice(0, 120).trim() + (descripcion.length > 120 ? '…' : '') : '')
       const fecha       = str('fecha_documento', 'fecha', 'fecha_oficio', 'date')
       const destNombre  = str('destinatario_nombre', 'destinatario', 'para', 'dirigido_a')
       const destCargo   = str('destinatario_cargo', 'cargo_destinatario')
       const destDep     = str('destinatario_dependencia', 'dependencia_destino', 'remitente_dependencia', 'dependencia', 'institucion')
-      const descripcion = str('cuerpo_resumen', 'resumen', 'cuerpo', 'descripcion', 'contenido')
       const numeroOficio = str('numero_oficio', 'numero_control', 'folio', 'clave_oficio', 'numero')
       // Detectar tipo de documento desde la IA
       const tipoRaw = str('tipo_documento', 'tipo', 'document_type', 'clase')
@@ -1235,7 +1257,11 @@ function ModalNuevoEmitido({
           if (f.rol === 'revisó' || f.rol === 'reviso') reviso = f.nombre || ''
         }
       }
-      const camposExtraídos = [asunto, fecha, destNombre, destCargo, destDep].filter(Boolean)
+      // Incluir campos adicionales para que cualquier dato extraído cuente como éxito
+      const remitente    = str('remitente_nombre', 'firmante', 'autor')
+      const numOficio    = str('numero_oficio', 'numero_control', 'folio', 'clave_oficio', 'numero')
+      const camposExtraídos = [asunto, fecha, destNombre, destCargo, destDep, elaboro, reviso, remitente, numOficio, descripcion].filter(Boolean)
+      console.log('[OCR-Emitido] campos encontrados:', { asunto, fecha, destNombre, destCargo, destDep, elaboro, reviso, remitente, numOficio, descripcionLen: descripcion?.length })
       setForm(prev => ({
         ...prev,
         asunto:              asunto        || prev.asunto,
@@ -1251,6 +1277,7 @@ function ModalNuevoEmitido({
       }))
       setOcrOk(camposExtraídos.length > 0)
       if (camposExtraídos.length === 0) {
+        console.warn('[OCR-Emitido] Sin campos reconocibles. raw completo:', raw)
         setOcrFalló(true)
         setOcrErrorMsg('La IA procesó el documento pero no encontró campos reconocibles. Verifique que el PDF tenga texto legible.')
       }
@@ -1258,6 +1285,7 @@ function ModalNuevoEmitido({
       const resp = (e as { response?: { data?: { detail?: string }; status?: number } })?.response
       const msg  = resp?.data?.detail ?? (e instanceof Error ? e.message : 'Error de conexión con el servidor')
       const status = resp?.status
+      console.error('[OCR-Emitido] excepción HTTP:', status, msg, e)
       setOcrFalló(true)
       setOcrErrorMsg(`Error ${status ? `HTTP ${status}: ` : ''}${msg}`)
     } finally {
@@ -1352,7 +1380,7 @@ function ModalNuevoEmitido({
     catch (e: unknown) { setErr((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Error al crear.') }
   }
 
-  const hasPdfPreviewEmitido = modo === 'subir' && !!pdfPreviewUrlEmitido
+  const hasPdfPreviewEmitido = modo === 'subir' && !!archivoSubir
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -1373,13 +1401,37 @@ function ModalNuevoEmitido({
         </div>
         <div className="flex flex-1 overflow-hidden rounded-b-2xl">
         <div className={clsx('overflow-y-auto flex-shrink-0', hasPdfPreviewEmitido ? 'w-[42%] border-r border-gray-100 rounded-bl-2xl' : 'w-full rounded-b-2xl')}>
+        {/* Input de archivo siempre en DOM para poder abrirlo desde la pantalla de elección */}
+        <input ref={fileRefModal} type="file" accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp,.doc,.docx"
+          className="hidden"
+          onChange={async e => {
+            const f = e.target.files?.[0]
+            if (f) {
+              setModo('subir')
+              setArchivoSubir(f)
+              setOcrOk(false); setOcrFalló(false); setOcrErrorMsg('')
+              if (pdfPreviewUrlEmitido) URL.revokeObjectURL(pdfPreviewUrlEmitido)
+              if (f.type === 'application/pdf' || f.type.startsWith('image/')) {
+                setPdfPreviewUrlEmitido(URL.createObjectURL(f))
+              } else if (f.name.toLowerCase().endsWith('.docx') || f.name.toLowerCase().endsWith('.doc')) {
+                setPdfPreviewUrlEmitido(null)
+                try {
+                  const pdfBlob = await documentosApi.convertDocxToPdf(f)
+                  setPdfPreviewUrlEmitido(URL.createObjectURL(pdfBlob))
+                } catch { /* modal sigue expandido sin preview */ }
+              } else {
+                setPdfPreviewUrlEmitido(null)
+              }
+              ejecutarOCR(f)
+            }
+          }} />
 
         {/* ── Pantalla de elección ── */}
         {modo === 'elegir' && (
           <div className="px-6 py-6 space-y-4">
             <p className="text-xs text-gray-500 text-center">Seleccione cómo desea crear el documento</p>
             <div className="grid grid-cols-1 gap-3">
-              <button onClick={() => setModo('subir')}
+              <button onClick={() => fileRefModal.current?.click()}
                 className="group flex items-start gap-4 p-4 border-2 border-gray-200 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-all text-left">
                 <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-blue-50 group-hover:bg-blue-100 transition-colors">
                   <Upload size={20} className="text-blue-600" />
@@ -1424,22 +1476,6 @@ function ModalNuevoEmitido({
             {/* Zona de subida de archivo (solo en modo subir) */}
             {modo === 'subir' && (
               <div className="space-y-2">
-                <input ref={fileRefModal} type="file" accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp,.doc,.docx"
-                  className="hidden"
-                  onChange={e => {
-                    const f = e.target.files?.[0]
-                    if (f) {
-                      setArchivoSubir(f)
-                      setOcrOk(false); setOcrFalló(false); setOcrErrorMsg('')
-                      // Generar URL de vista previa
-                      if (pdfPreviewUrlEmitido) URL.revokeObjectURL(pdfPreviewUrlEmitido)
-                      if (f.type === 'application/pdf' || f.type.startsWith('image/')) {
-                        setPdfPreviewUrlEmitido(URL.createObjectURL(f))
-                      } else {
-                        setPdfPreviewUrlEmitido(null)
-                      }
-                    }
-                  }} />
                 {archivoSubir ? (
                   <div className="space-y-2">
                     {/* Fila del archivo */}
@@ -1456,21 +1492,26 @@ function ModalNuevoEmitido({
                         : <button type="button" onClick={() => { setArchivoSubir(null); setOcrOk(false); setOcrFalló(false); setOcrErrorMsg('') }} className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
                       }
                     </div>
-                    {/* Botón analizar / estado OCR */}
-                    {!ocrOk && (
-                      <button type="button" onClick={ejecutarOCR} disabled={extrayendoOCR}
-                        className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 border-dashed border-purple-300 text-xs font-medium text-purple-700 hover:bg-purple-50 hover:border-purple-400 transition-all disabled:opacity-60">
-                        {extrayendoOCR
-                          ? <><RotateCcw size={13} className="animate-spin" /> Analizando con IA…</>
-                          : <><Wand2 size={13} /> ✨ Analizar con IA y llenar campos automáticamente</>}
-                      </button>
+                    {/* Estado OCR automático */}
+                    {extrayendoOCR && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-50 border border-purple-100">
+                        <RotateCcw size={12} className="animate-spin text-purple-500 flex-shrink-0" />
+                        <span className="text-[11px] text-purple-700 font-medium">Extrayendo datos con IA…</span>
+                      </div>
                     )}
-                    {/* Error detallado */}
-                    {ocrFalló && ocrErrorMsg && (
-                      <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
-                        <p className="text-[10px] text-orange-700 font-semibold mb-0.5">⚠️ No se pudieron extraer los datos:</p>
-                        <p className="text-[10px] text-orange-600">{ocrErrorMsg}</p>
-                        <p className="text-[10px] text-gray-500 mt-1">Puede capturar los datos manualmente en los campos de abajo.</p>
+                    {/* Error: mostrar solo botón de reintento pequeño */}
+                    {!extrayendoOCR && ocrFalló && (
+                      <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] text-orange-700 font-medium">⚠️ No se pudieron extraer datos automáticamente.</p>
+                          <button type="button" onClick={() => ejecutarOCR()}
+                            className="flex-shrink-0 text-[10px] px-2 py-1 rounded font-medium text-orange-700 hover:bg-orange-100 border border-orange-300 whitespace-nowrap">
+                            Reintentar
+                          </button>
+                        </div>
+                        {ocrErrorMsg && (
+                          <p className="text-[9px] text-orange-600 break-all">{ocrErrorMsg}</p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1647,6 +1688,14 @@ function ModalNuevoEmitido({
               )}
             </div>
 
+            {/* Notas adicionales */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">📝 Notas adicionales <span className="text-gray-400 font-normal">(opcional)</span></label>
+              <textarea rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-y min-h-[70px]"
+                placeholder="Observaciones, contexto, instrucciones especiales..."
+                value={form.descripcion ?? ''} onChange={e => set('descripcion', e.target.value)} />
+            </div>
+
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
               <button type="button" onClick={onClose}
                 className="px-4 py-2 text-sm text-gray-600 rounded-lg border border-gray-300 hover:bg-gray-50">Cancelar</button>
@@ -1670,12 +1719,21 @@ function ModalNuevoEmitido({
               <span className="text-xs font-medium text-gray-600 truncate">{archivoSubir?.name}</span>
             </div>
             <div className="flex-1 overflow-hidden">
-              <iframe
-                src={pdfPreviewUrlEmitido ?? undefined}
-                title="Vista previa del documento"
-                className="w-full h-full"
-                style={{ border: 'none' }}
-              />
+              {pdfPreviewUrlEmitido ? (
+                <iframe
+                  src={pdfPreviewUrlEmitido}
+                  title="Vista previa del documento"
+                  className="w-full h-full"
+                  style={{ border: 'none' }}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-8">
+                  <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
+                    <RotateCcw size={20} className="text-blue-400 animate-spin" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-600">Convirtiendo a PDF…</p>
+                </div>
+              )}
             </div>
           </div>
         )}

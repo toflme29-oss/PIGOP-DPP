@@ -448,7 +448,7 @@ class GeminiService:
     # ── Helpers ────────────────────────────────────────────────────────────────
 
     def _parse_json_response(self, text: str) -> dict:
-        """Extrae y parsea JSON de la respuesta de Gemini (maneja markdown y thinking)."""
+        """Extrae y parsea JSON de la respuesta de Gemini (maneja markdown, thinking y comentarios)."""
         if not text:
             return {}
 
@@ -469,18 +469,35 @@ class GeminiService:
         start = text.find("{")
         end   = text.rfind("}")
         if start != -1 and end != -1 and end > start:
+            json_candidate = text[start:end + 1]
             try:
-                return json.loads(text[start:end + 1])
+                return json.loads(json_candidate)
             except Exception:
                 pass
 
-        # 5. Fallback: búsqueda greedy con regex
+            # 4b. Gemini 2.5-flash a veces agrega comentarios // dentro del JSON.
+            #     Eliminarlos y reintentar.
+            try:
+                # Eliminar comentarios de línea (// ...) que no son JSON válido
+                sin_comentarios = re.sub(r'//[^\n"]*(?=\n|,|\}|\])', '', json_candidate)
+                # Eliminar comas finales antes de } o ] (trailing commas)
+                sin_comas = re.sub(r',\s*([}\]])', r'\1', sin_comentarios)
+                return json.loads(sin_comas)
+            except Exception:
+                pass
+
+        # 5. Fallback: búsqueda greedy con regex + limpieza
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if match:
             try:
                 return json.loads(match.group())
             except Exception:
-                pass
+                try:
+                    sin_comentarios = re.sub(r'//[^\n"]*(?=\n|,|\}|\])', '', match.group())
+                    sin_comas = re.sub(r',\s*([}\]])', r'\1', sin_comentarios)
+                    return json.loads(sin_comas)
+                except Exception:
+                    pass
 
         logger.warning(f"No se pudo parsear JSON de Gemini: {text[:300]}")
         return {"raw_response": text}

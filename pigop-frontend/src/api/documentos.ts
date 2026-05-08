@@ -451,6 +451,16 @@ export const documentosApi = {
     return res.data
   },
 
+  convertDocxToPdf: async (file: File): Promise<Blob> => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await apiClient.post('/documentos/convert-docx', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      responseType: 'blob',
+    })
+    return res.data
+  },
+
   crearRecibido: async (data: DocumentoRecibidoCreate): Promise<Documento> => {
     const res = await apiClient.post('/documentos/recibido', data)
     return res.data

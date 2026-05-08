@@ -1194,6 +1194,42 @@ async def preview_ocr(
     )
 
 
+# ---------- Conversión DOCX → PDF usando LibreOffice -------------------------
+
+@router.post(
+    "/convert-docx",
+    summary="Convertir DOCX a PDF para vista previa",
+)
+async def convert_docx_to_pdf(
+    file: UploadFile = File(...),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Recibe un archivo .docx y devuelve el PDF generado por LibreOffice."""
+    import subprocess, tempfile, shutil
+    content = await file.read()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        in_path = os.path.join(tmpdir, file.filename or "documento.docx")
+        with open(in_path, "wb") as f:
+            f.write(content)
+        result = subprocess.run(
+            ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmpdir, in_path],
+            capture_output=True, timeout=60,
+        )
+        if result.returncode != 0:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=500, detail="Error al convertir el archivo a PDF")
+        pdf_name = os.path.splitext(os.path.basename(in_path))[0] + ".pdf"
+        pdf_path = os.path.join(tmpdir, pdf_name)
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+    from fastapi.responses import Response as FastResponse
+    return FastResponse(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{pdf_name}"'},
+    )
+
+
 # ---------- Listar documentos devueltos (ANTES de /{doc_id}) ----------------
 
 @router.get(

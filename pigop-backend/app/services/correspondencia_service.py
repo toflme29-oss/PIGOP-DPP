@@ -953,13 +953,46 @@ class CorrespondenciaService:
                         datos = gemini_service._parse_json_response(raw_text)
                         if not datos or datos.get("raw_response") or datos.get("error"):
                             logger.warning(f"[OCR-WORD] Parseo fallido. raw_text:\n{raw_text[:2000]}")
+                            datos = {"error": "La IA no devolvió datos estructurados válidos del documento Word.", "_mock": True}
                         else:
                             logger.info(f"[OCR-WORD] Campos extraídos: {list(datos.keys())}")
 
                 elif mime_norm in _MIME_VISION:
                     # ── Ruta Vision: PDF / imagen → Gemini Vision ─────────────
                     from google.genai import types
-                    _MODELOS_VISION = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.5-flash-lite"]
+
+                    def _extraer_texto_resp(resp) -> str:
+                        """
+                        Extrae el texto final de una respuesta Gemini.
+                        Gemini 2.5-flash (thinking) puede tener resp.text="" si el output
+                        es solo thinking; en ese caso iteramos parts manualmente.
+                        """
+                        # Intento directo
+                        try:
+                            t = resp.text or ""
+                            if t.strip():
+                                return t
+                        except Exception:
+                            pass
+                        # Iterar parts del primer candidato (saltar partes de thinking)
+                        try:
+                            for part in resp.candidates[0].content.parts:
+                                is_thought = getattr(part, 'thought', False)
+                                if not is_thought:
+                                    t = getattr(part, 'text', '') or ''
+                                    if t.strip():
+                                        return t
+                        except Exception:
+                            pass
+                        return ""
+
+                    _MODELOS_VISION = [
+                        # Empezar con modelos NO-thinking para evitar el bug de resp.text=""
+                        "gemini-2.0-flash",
+                        "gemini-2.0-flash-lite",
+                        "gemini-2.5-flash",
+                        "gemini-2.5-flash-lite",
+                    ]
                     raw_text = ""
                     for _modelo in _MODELOS_VISION:
                         try:
@@ -971,7 +1004,7 @@ class CorrespondenciaService:
                                     _PROMPT_OCR_OFICIO,
                                 ],
                             )
-                            raw_text = resp.text or ""
+                            raw_text = _extraer_texto_resp(resp)
                             if raw_text.strip():
                                 logger.info(f"[OCR] Modelo {_modelo} respondió OK ({len(raw_text)} chars).")
                                 break
@@ -979,11 +1012,17 @@ class CorrespondenciaService:
                                 logger.warning(f"[OCR] Modelo {_modelo} devolvió respuesta vacía, probando siguiente.")
                         except Exception as _em:
                             logger.warning(f"[OCR] Modelo {_modelo} falló: {type(_em).__name__}: {_em}. Probando siguiente.")
-                    datos = gemini_service._parse_json_response(raw_text) if raw_text else {}
-                    if not datos or datos.get("raw_response") or datos.get("error"):
-                        logger.warning(f"[OCR] Parseo fallido o vacío. raw_text completo:\n{raw_text[:2000]}")
+                    if raw_text.strip():
+                        datos = gemini_service._parse_json_response(raw_text)
+                        if not datos or datos.get("raw_response") or datos.get("error"):
+                            logger.warning(f"[OCR] Parseo fallido. raw_text completo:\n{raw_text[:2000]}")
+                            # Si hay raw_response, guardarlo para diagnóstico
+                            datos = {"error": "La IA no devolvió datos estructurados válidos.", "raw_response": raw_text[:500], "_mock": True}
+                        else:
+                            logger.info(f"[OCR] Campos extraídos: {list(datos.keys())}")
                     else:
-                        logger.info(f"[OCR] Campos extraídos: {list(datos.keys())}")
+                        logger.error("[OCR] Todos los modelos fallaron o devolvieron respuesta vacía.")
+                        datos = {"error": "El servicio de IA no pudo procesar este documento. Puede deberse a cuota agotada o un error temporal. Intente de nuevo en unos segundos.", "_mock": True}
 
                 else:
                     logger.warning(f"[OCR] Tipo de archivo no soportado para extracción IA: {mime_norm}")
