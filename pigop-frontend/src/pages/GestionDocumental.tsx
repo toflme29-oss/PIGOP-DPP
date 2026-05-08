@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { useLocation } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { makePermissionChecker } from '../utils/rolePermissions'
 import { usePermissionsVersion } from '../hooks/usePermissionsVersion'
@@ -5565,6 +5566,7 @@ function ExportarExcelRecibidos({ params, totalDocs }: { params: Record<string, 
 export default function GestionDocumental() {
   const { user } = useAuth()
   const qc = useQueryClient()
+  const location = useLocation()
   const [tab, setTab] = useState<'recibidos' | 'emitidos'>('recibidos')
   const [busqueda, setBusqueda] = useState('')
   const [busquedaDebounced, setBusquedaDebounced] = useState('')
@@ -5572,7 +5574,7 @@ export default function GestionDocumental() {
   const [filtroArea, setFiltroArea] = useState('')
   const [filtroUrgente, setFiltroUrgente] = useState(false)
   const [showColFiltros, setShowColFiltros] = useState(false)
-  const [colFiltros, setColFiltros] = useState({ no: '', tipo: '', fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' })
+  const [colFiltros, setColFiltros] = useState({ no: '', tipo: '', fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', atencion: '', vb: '', estado: '' })
   const setColFiltro = (k: keyof typeof colFiltros, v: string) => setColFiltros(p => ({ ...p, [k]: v }))
   const [showColFiltrosEmitidos, setShowColFiltrosEmitidos] = useState(false)
   const [colFiltrosEmitidos, setColFiltrosEmitidos] = useState({ no: '', fecha: '', oficio: '', upp: '', destinatario: '', asunto: '', tipo: '', estado: '' })
@@ -5582,6 +5584,41 @@ export default function GestionDocumental() {
   const [fechaDesdeDebounced, setFechaDesdeDebounced] = useState('')
   const [fechaHastaDebounced, setFechaHastaDebounced] = useState('')
   const [showDateFilters, setShowDateFilters] = useState(false)
+
+  // ── Aplicar filtro al navegar desde el Home ────────────────────────────────
+  useEffect(() => {
+    const filtro = (location.state as { filtro?: string } | null)?.filtro
+    if (!filtro) return
+    const hoy = localToday()
+    switch (filtro) {
+      case 'hoy':
+        setFechaDesde(hoy); setFechaDesdeDebounced(hoy)
+        setFechaHasta(hoy); setFechaHastaDebounced(hoy)
+        setShowDateFilters(true)
+        break
+      case 'urgentes':
+        setFiltroUrgente(true)
+        break
+      case 'vencidos':
+        setFechaHasta(hoy); setFechaHastaDebounced(hoy)
+        setShowDateFilters(true)
+        break
+      case 'por_firmar':
+        setFiltroEstado('respondido')
+        break
+      case 'firmados':
+        setFiltroEstado('firmado')
+        break
+      case 'pendientes_vb':
+        setFiltroEstado('respondido')
+        break
+      case 'en_atencion':
+        setFiltroEstado('en_atencion')
+        break
+    }
+    // Limpiar el state para que no se re-aplique si el usuario navega aquí de nuevo
+    window.history.replaceState({}, '')
+  }, [location.state])
   const [showModalRecibido, setShowModalRecibido] = useState(false)
   const [showModalEmitido, setShowModalEmitido] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -5631,6 +5668,13 @@ export default function GestionDocumental() {
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(15)
 
+  // Cuando hay CUALQUIER filtro de columna activo, traer todos los docs sin paginar
+  // para que el filtro client-side opere sobre el conjunto completo (no solo la página actual)
+  const hasColDropdownFiltros = !!(
+    colFiltros.atencion || colFiltros.vb || colFiltros.estado || colFiltros.area ||
+    colFiltros.fecha || colFiltros.oficio || colFiltros.upp || colFiltros.remitente || colFiltros.asunto
+  )
+
   const params = {
     flujo:               tab === 'recibidos' ? 'recibido' : 'emitido',
     incluir_respuestas:  tab === 'emitidos' ? true : undefined,
@@ -5643,8 +5687,8 @@ export default function GestionDocumental() {
     solo_urgentes:       filtroUrgente || undefined,
     fecha_desde:         fechaDesdeDebounced || undefined,
     fecha_hasta:         fechaHastaDebounced || undefined,
-    skip:  page * pageSize,
-    limit: pageSize,
+    skip:  hasColDropdownFiltros ? 0 : page * pageSize,
+    limit: hasColDropdownFiltros ? 500 : pageSize,
   }
 
   const { data: queryResult, isLoading, refetch } = useQuery({
@@ -5685,7 +5729,7 @@ export default function GestionDocumental() {
   const docsMetricas = metricasResult?.items ?? []
 
   // Reset page cuando cambian filtros
-  useEffect(() => { setPage(0) }, [tab, busquedaDebounced, filtroEstado, filtroArea, filtroUrgente, fechaDesdeDebounced, fechaHastaDebounced, pageSize, colFiltros.tipo, colFiltrosEmitidos.tipo])
+  useEffect(() => { setPage(0) }, [tab, busquedaDebounced, filtroEstado, filtroArea, filtroUrgente, fechaDesdeDebounced, fechaHastaDebounced, pageSize, colFiltros.tipo, colFiltros.area, colFiltros.atencion, colFiltros.vb, colFiltros.estado, colFiltros.fecha, colFiltros.oficio, colFiltros.upp, colFiltros.remitente, colFiltros.asunto, colFiltrosEmitidos.tipo])
 
   // Anchos fijos de columnas
   const colW: Record<string, number> = {
@@ -5816,6 +5860,48 @@ export default function GestionDocumental() {
     }
     return null
   }
+
+  // Contar total filtrado para paginación client-side correcta cuando hay filtros dropdown activos
+  // (debe estar después de formatUpp para poder usarlo)
+  const filteredTotalWhenActive = useMemo(() => {
+    if (!docs || !hasColDropdownFiltros) return totalDocs
+    const cf = colFiltros
+    return docs.filter(doc => {
+      const fechaIso = doc.fecha_recibido || doc.creado_en?.slice(0, 10) || ''
+      const fechaDisplay = formatDate(fechaIso).toLowerCase()
+      const uppLabel = (formatUpp(doc.upp_solicitante_codigo, doc.upp_solicitante, doc.remitente_dependencia) || doc.remitente_dependencia || doc.upp_solicitante || '').toLowerCase()
+      const area = (doc.area_turno_nombre || '').toLowerCase()
+      const pasaUrgente = !filtroUrgente || (doc.prioridad !== 'normal' && doc.prioridad != null && !['firmado', 'archivado', 'de_conocimiento'].includes(doc.estado))
+      return (
+        pasaUrgente &&
+        (!cf.tipo      || doc.tipo === cf.tipo) &&
+        (!cf.fecha     || fechaDisplay.includes(cf.fecha.toLowerCase()) || fechaIso.includes(cf.fecha)) &&
+        (!cf.oficio    || (doc.numero_oficio_origen || '').toLowerCase().includes(cf.oficio.toLowerCase())) &&
+        (!cf.upp       || uppLabel.includes(cf.upp.toLowerCase())) &&
+        (!cf.remitente || (doc.remitente_nombre || '').toLowerCase().includes(cf.remitente.toLowerCase())) &&
+        (!cf.asunto    || (doc.asunto || '').toLowerCase().includes(cf.asunto.toLowerCase())) &&
+        (!cf.area      || (
+          cf.area === '__otro__'
+            ? (!area || !areas.some(a => a.codigo !== 'SEC' && a.nombre.toLowerCase() === area))
+            : area === cf.area
+        )) &&
+        (!cf.estado    || doc.estado === cf.estado) &&
+        (!cf.atencion  || (
+          cf.atencion === 'con_plazo'  ? !!doc.fecha_limite :
+          cf.atencion === 'sin_plazo'  ? !doc.fecha_limite :
+          cf.atencion === 'vencido'    ? (!!doc.fecha_limite && new Date(doc.fecha_limite) < new Date()) :
+          cf.atencion === 'vigente'    ? (!!doc.fecha_limite && new Date(doc.fecha_limite) >= new Date()) :
+          true
+        )) &&
+        (!cf.vb        || (
+          cf.vb === 'con_vb' ? (doc.visto_bueno_subdirector === true && doc.area_turno !== 'DIR') :
+          cf.vb === 'sin_vb' ? (doc.area_turno !== 'DIR' && !doc.visto_bueno_subdirector && doc.estado === 'respondido' && doc.has_borrador) :
+          true
+        ))
+      )
+    }).length
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docs, hasColDropdownFiltros, colFiltros, filtroUrgente, totalDocs])
 
   const { data: selectedDoc } = useQuery({
     queryKey: ['documento', selectedId],
@@ -6260,10 +6346,15 @@ export default function GestionDocumental() {
                     <option value={5}>5</option><option value={10}>10</option><option value={15}>15</option><option value={25}>25</option>
                   </select>
                   <span className="text-[10px] text-gray-500">
-                    {totalFromHeader > 0
-                      ? <>de {totalDocs} registro{totalDocs !== 1 ? 's' : ''} · Página {page + 1} de {totalPages}</>
-                      : <>Página {page + 1}{pageCount ? ` · ${pageCount} registro${pageCount !== 1 ? 's' : ''}` : ''}</>}
+                    {hasColDropdownFiltros
+                      ? <>de {filteredTotalWhenActive} registro{filteredTotalWhenActive !== 1 ? 's' : ''} · Página {page + 1} de {Math.max(1, Math.ceil(filteredTotalWhenActive / pageSize))}</>
+                      : totalFromHeader > 0
+                        ? <>de {totalDocs} registro{totalDocs !== 1 ? 's' : ''} · Página {page + 1} de {totalPages}</>
+                        : <>Página {page + 1}{pageCount ? ` · ${pageCount} registro${pageCount !== 1 ? 's' : ''}` : ''}</>}
                   </span>
+                  {hasColDropdownFiltros && (
+                    <span className="text-[10px] text-amber-600 italic">· Filtro activo</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   <button
@@ -6273,14 +6364,17 @@ export default function GestionDocumental() {
                     className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] rounded-md border font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-[#911A3A]/30 text-[#911A3A] hover:bg-[#911A3A]/10">
                     <ChevronLeft size={11} /> Atrás
                   </button>
-                  {totalPages > 1 && Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-                    let p: number
-                    if (totalPages <= 7) { p = i } else if (page < 3) { p = i } else if (page > totalPages - 4) { p = totalPages - 7 + i } else { p = page - 3 + i }
-                    return (<button key={p} onClick={() => setPage(p)} className={clsx('px-2 py-0.5 text-[10px] rounded border', p === page ? 'bg-[#911A3A] text-white border-[#911A3A]' : 'border-gray-300 hover:bg-gray-100')}>{p + 1}</button>)
-                  })}
+                  {(() => {
+                    const tp = hasColDropdownFiltros ? Math.max(1, Math.ceil(filteredTotalWhenActive / pageSize)) : totalPages
+                    return tp > 1 && Array.from({ length: Math.min(tp, 7) }, (_, i) => {
+                      let p: number
+                      if (tp <= 7) { p = i } else if (page < 3) { p = i } else if (page > tp - 4) { p = tp - 7 + i } else { p = page - 3 + i }
+                      return (<button key={p} onClick={() => setPage(p)} className={clsx('px-2 py-0.5 text-[10px] rounded border', p === page ? 'bg-[#911A3A] text-white border-[#911A3A]' : 'border-gray-300 hover:bg-gray-100')}>{p + 1}</button>)
+                    })
+                  })()}
                   <button
                     onClick={() => setPage(page + 1)}
-                    disabled={!hasNextPage}
+                    disabled={hasColDropdownFiltros ? page >= Math.ceil(filteredTotalWhenActive / pageSize) - 1 : !hasNextPage}
                     title="Página siguiente"
                     className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] rounded-md border font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-[#911A3A]/30 text-[#911A3A] hover:bg-[#911A3A]/10">
                     Adelante <ChevronRight size={11} />
@@ -6475,7 +6569,7 @@ export default function GestionDocumental() {
               <select className="px-2 py-1.5 text-xs border border-gray-300 rounded-lg bg-white"
                 value={filtroArea} onChange={e => setFiltroArea(e.target.value)}>
                 <option value="">Área</option>
-                {areas.map(a => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.titular.split(' ')[0]}</option>)}
+                {areas.filter(a => a.codigo !== 'SEC').map(a => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.titular.split(' ')[0]}</option>)}
               </select>
             )}
             {filtroUrgente && (
@@ -6688,15 +6782,44 @@ export default function GestionDocumental() {
                       </th>
                       {/* Área */}
                       <th className="px-1.5 py-1" style={{ width: colW['area'] }}>
-                        <input type="text" placeholder="Buscar…" value={colFiltros.area}
+                        <select value={colFiltros.area}
                           onChange={e => setColFiltro('area', e.target.value)}
                           onClick={e => e.stopPropagation()}
-                          className="w-full px-1.5 py-0.5 text-[9px] rounded bg-white/15 text-white placeholder-white/50 border border-white/20 focus:outline-none focus:bg-white/25" />
+                          className="w-full px-1 py-0.5 text-[9px] rounded bg-white/15 text-white border border-white/20 focus:outline-none focus:bg-white/25"
+                          style={{ colorScheme: 'dark' }}>
+                          <option value="" className="text-gray-900 bg-white">Todas</option>
+                          {areas.filter(a => a.codigo !== 'SEC').map(a => (
+                            <option key={a.codigo} value={a.nombre.toLowerCase()} className="text-gray-900 bg-white">{a.nombre}</option>
+                          ))}
+                          <option value="__otro__" className="text-gray-900 bg-white">Otro</option>
+                        </select>
                       </th>
-                      {/* Atención — sin filtro */}
-                      <th className="px-1.5 py-1" style={{ width: colW['atencion'] }} />
-                      {/* V°B° — sin filtro */}
-                      <th className="px-1.5 py-1" style={{ width: colW['check'] }} />
+                      {/* Atención */}
+                      <th className="px-1.5 py-1" style={{ width: colW['atencion'] }}>
+                        <select value={colFiltros.atencion}
+                          onChange={e => setColFiltro('atencion', e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          className="w-full px-1 py-0.5 text-[9px] rounded bg-white/15 text-white border border-white/20 focus:outline-none focus:bg-white/25"
+                          style={{ colorScheme: 'dark' }}>
+                          <option value="" className="text-gray-900 bg-white">Todos</option>
+                          <option value="con_plazo" className="text-gray-900 bg-white">Con plazo</option>
+                          <option value="sin_plazo" className="text-gray-900 bg-white">Sin plazo</option>
+                          <option value="vencido" className="text-gray-900 bg-white">Vencido</option>
+                          <option value="vigente" className="text-gray-900 bg-white">Vigente</option>
+                        </select>
+                      </th>
+                      {/* V°B° Sub. */}
+                      <th className="px-1.5 py-1" style={{ width: colW['check'] }}>
+                        <select value={colFiltros.vb}
+                          onChange={e => setColFiltro('vb', e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          className="w-full px-1 py-0.5 text-[9px] rounded bg-white/15 text-white border border-white/20 focus:outline-none focus:bg-white/25"
+                          style={{ colorScheme: 'dark' }}>
+                          <option value="" className="text-gray-900 bg-white">Todos</option>
+                          <option value="con_vb" className="text-gray-900 bg-white">Con V°B°</option>
+                          <option value="sin_vb" className="text-gray-900 bg-white">Pendiente</option>
+                        </select>
+                      </th>
                       {/* Estado — select */}
                       <th className="px-1.5 py-1" style={{ width: colW['estado'] }}>
                         <select value={colFiltros.estado}
@@ -6714,7 +6837,7 @@ export default function GestionDocumental() {
                       <th className="px-1.5 py-1 text-center">
                         {Object.values(colFiltros).some(Boolean) && (
                           <button
-                            onClick={() => setColFiltros({ no: '', tipo: '', fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' })}
+                            onClick={() => setColFiltros({ no: '', tipo: '', fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', atencion: '', vb: '', estado: '' })}
                             title="Limpiar filtros de columna"
                             className="text-[9px] text-white/70 hover:text-white underline">
                             Limpiar
@@ -6731,7 +6854,7 @@ export default function GestionDocumental() {
                       const area = (doc.area_turno_nombre || '').toLowerCase()
                       const cf = colFiltros
                       const pasaUrgente = !filtroUrgente || (doc.prioridad !== 'normal' && doc.prioridad != null && !['firmado', 'archivado', 'de_conocimiento'].includes(doc.estado))
-                      const numGlobal = totalDocs - (page * pageSize + rawIdx)
+                      const numGlobal = totalDocs - (hasColDropdownFiltros ? rawIdx : page * pageSize + rawIdx)
                       return (
                         pasaUrgente &&
                         (!cf.no        || String(numGlobal).includes(cf.no.trim())) &&
@@ -6741,17 +6864,41 @@ export default function GestionDocumental() {
                         (!cf.upp       || uppLabel.includes(cf.upp.toLowerCase())) &&
                         (!cf.remitente || (doc.remitente_nombre || '').toLowerCase().includes(cf.remitente.toLowerCase())) &&
                         (!cf.asunto    || (doc.asunto || '').toLowerCase().includes(cf.asunto.toLowerCase())) &&
-                        (!cf.area      || area.includes(cf.area.toLowerCase())) &&
-                        (!cf.estado    || doc.estado === cf.estado)
+                        (!cf.area      || (
+                          cf.area === '__otro__'
+                            ? (!area || !areas.some(a => a.codigo !== 'SEC' && a.nombre.toLowerCase() === area))
+                            : area === cf.area
+                        )) &&
+                        (!cf.estado    || doc.estado === cf.estado) &&
+                        (!cf.atencion  || (
+                          cf.atencion === 'con_plazo'  ? !!doc.fecha_limite :
+                          cf.atencion === 'sin_plazo'  ? !doc.fecha_limite :
+                          cf.atencion === 'vencido'    ? (!!doc.fecha_limite && new Date(doc.fecha_limite) < new Date()) :
+                          cf.atencion === 'vigente'    ? (!!doc.fecha_limite && new Date(doc.fecha_limite) >= new Date()) :
+                          true
+                        )) &&
+                        (!cf.vb        || (
+                          cf.vb === 'con_vb' ? (doc.visto_bueno_subdirector === true && doc.area_turno !== 'DIR') :
+                          cf.vb === 'sin_vb' ? (doc.area_turno !== 'DIR' && !doc.visto_bueno_subdirector && doc.estado === 'respondido' && doc.has_borrador) :
+                          true
+                        ))
                       )
-                    }).map(doc => {
+                    })
+                    // Paginación client-side cuando hay filtros dropdown activos
+                    .slice(
+                      hasColDropdownFiltros ? page * pageSize : 0,
+                      hasColDropdownFiltros ? (page + 1) * pageSize : undefined
+                    )
+                    .map((doc, filteredIdx) => {
                       const cfg = ESTADO_RECIBIDO_CONFIG[doc.estado as keyof typeof ESTADO_RECIBIDO_CONFIG]
                       const canSelect = (doc.estado === 'en_atencion' || doc.estado === 'respondido') && doc.has_borrador === true && !doc.firmado_digitalmente
                       const isToday = doc.fecha_recibido === localToday() || doc.creado_en?.slice(0, 10) === localToday()
-                      // Número global de registro: posición real en el total de documentos
-                      // El más reciente (top de lista) recibe el número más alto (totalDocs)
+                      // Número de registro: cuando hay filtro activo usa el total filtrado,
+                      // si no usa el total global. El más reciente recibe el número más alto.
                       const docOrigIdx = docs.indexOf(doc)
-                      const folioNum = totalDocs - (page * pageSize + docOrigIdx)
+                      const folioNum = hasColDropdownFiltros
+                        ? filteredTotalWhenActive - (page * pageSize + filteredIdx)
+                        : totalDocs - (page * pageSize + docOrigIdx)
                       return (
                         <tr key={doc.id}
                           onClick={() => {
@@ -6940,10 +7087,15 @@ export default function GestionDocumental() {
                       <option value={50}>50</option>
                     </select>
                     <span className="text-[10px] text-gray-500">
-                      {totalFromHeader > 0
-                        ? <>de {totalDocs} registro{totalDocs !== 1 ? 's' : ''} · Página {page + 1} de {totalPages}</>
-                        : <>Página {page + 1}{pageCount ? ` · ${pageCount} registro${pageCount !== 1 ? 's' : ''}` : ''}</>}
+                      {hasColDropdownFiltros
+                        ? <>de {filteredTotalWhenActive} registro{filteredTotalWhenActive !== 1 ? 's' : ''} · Página {page + 1} de {Math.max(1, Math.ceil(filteredTotalWhenActive / pageSize))}</>
+                        : totalFromHeader > 0
+                          ? <>de {totalDocs} registro{totalDocs !== 1 ? 's' : ''} · Página {page + 1} de {totalPages}</>
+                          : <>Página {page + 1}{pageCount ? ` · ${pageCount} registro${pageCount !== 1 ? 's' : ''}` : ''}</>}
                     </span>
+                    {hasColDropdownFiltros && (
+                      <span className="text-[10px] text-amber-600 italic">· Filtro activo</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
                     <button
@@ -6953,22 +7105,25 @@ export default function GestionDocumental() {
                       className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] rounded-md border font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-[#911A3A]/30 text-[#911A3A] hover:bg-[#911A3A]/10">
                       <ChevronLeft size={11} /> Atrás
                     </button>
-                    {totalPages > 1 && Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-                      let p: number
-                      if (totalPages <= 7) { p = i }
-                      else if (page < 3) { p = i }
-                      else if (page > totalPages - 4) { p = totalPages - 7 + i }
-                      else { p = page - 3 + i }
-                      return (
-                        <button key={p} onClick={() => setPage(p)}
-                          className={clsx('px-2 py-0.5 text-[10px] rounded border', p === page ? 'bg-[#911A3A] text-white border-[#911A3A]' : 'border-gray-300 hover:bg-gray-100')}>
-                          {p + 1}
-                        </button>
-                      )
-                    })}
+                    {(() => {
+                      const tp = hasColDropdownFiltros ? Math.max(1, Math.ceil(filteredTotalWhenActive / pageSize)) : totalPages
+                      return tp > 1 && Array.from({ length: Math.min(tp, 7) }, (_, i) => {
+                        let p: number
+                        if (tp <= 7) { p = i }
+                        else if (page < 3) { p = i }
+                        else if (page > tp - 4) { p = tp - 7 + i }
+                        else { p = page - 3 + i }
+                        return (
+                          <button key={p} onClick={() => setPage(p)}
+                            className={clsx('px-2 py-0.5 text-[10px] rounded border', p === page ? 'bg-[#911A3A] text-white border-[#911A3A]' : 'border-gray-300 hover:bg-gray-100')}>
+                            {p + 1}
+                          </button>
+                        )
+                      })
+                    })()}
                     <button
                       onClick={() => setPage(page + 1)}
-                      disabled={!hasNextPage}
+                      disabled={hasColDropdownFiltros ? page >= Math.ceil(filteredTotalWhenActive / pageSize) - 1 : !hasNextPage}
                       title="Página siguiente"
                       className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] rounded-md border font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-[#911A3A]/30 text-[#911A3A] hover:bg-[#911A3A]/10">
                       Adelante <ChevronRight size={11} />

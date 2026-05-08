@@ -565,12 +565,12 @@ export default function Layout() {
         <div className={clsx(
           'flex-1 min-h-0',
           // Páginas que manejan su propio scroll interno (flex layout)
-          location.pathname.startsWith('/gestion-documental')
+          location.pathname.startsWith('/gestion-documental') || location.pathname === '/'
             ? 'flex flex-col overflow-hidden'
             : 'overflow-y-auto',
         )}>
           <div className={clsx(
-            location.pathname.startsWith('/gestion-documental')
+            location.pathname.startsWith('/gestion-documental') || location.pathname === '/'
               ? 'h-full flex flex-col'
               : 'max-w-screen-2xl mx-auto',
           )}>
