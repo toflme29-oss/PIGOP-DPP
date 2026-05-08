@@ -6214,7 +6214,7 @@ export default function GestionDocumental() {
           <div className="flex gap-0">
             {([['recibidos', 'Correspondencia recibida', InboxIcon], ['emitidos', 'Documentos emitidos', SendIcon]] as const).map(([key, label, Icon]) => (
               <button key={key}
-                onClick={() => { setTab(key); setSelectedId(null); setFiltroEstado(''); setFiltroArea(''); setFiltroUrgente(false); setColFiltros({ no: '', tipo: '', fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' }) }}
+                onClick={() => { setTab(key); setSelectedId(null); setFiltroEstado(''); setFiltroArea(''); setFiltroUrgente(false); setColFiltros({ no: '', tipo: '', fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', atencion: '', vb: '', estado: '' }) }}
                 className={clsx(
                   'flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors',
                   tab === key ? 'border-[#911A3A] text-[#911A3A]' : 'border-transparent text-gray-500 hover:text-gray-700',
@@ -6599,7 +6599,7 @@ export default function GestionDocumental() {
               </button>
             )}
             {tab === 'recibidos' && (
-              <button onClick={() => { setShowColFiltros(p => !p); if (showColFiltros) setColFiltros({ no: '', tipo: '', fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', estado: '' }) }}
+              <button onClick={() => { setShowColFiltros(p => !p); if (showColFiltros) setColFiltros({ no: '', tipo: '', fecha: '', oficio: '', upp: '', remitente: '', asunto: '', area: '', atencion: '', vb: '', estado: '' }) }}
                 title="Filtros por columna"
                 className={clsx('px-2 py-1.5 text-xs border rounded-lg transition-colors',
                   showColFiltros || Object.values(colFiltros).some(Boolean)
