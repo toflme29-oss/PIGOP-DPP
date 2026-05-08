@@ -1145,6 +1145,8 @@ function ModalNuevoEmitido({
   const [ocrOk, setOcrOk] = useState(false)
   const [ocrFalló, setOcrFalló] = useState(false)
   const [ocrErrorMsg, setOcrErrorMsg] = useState('')
+  // Vista previa del documento subido
+  const [pdfPreviewUrlEmitido, setPdfPreviewUrlEmitido] = useState<string | null>(null)
   // Validación de folio
   const [folioDuplicado, setFolioDuplicado] = useState(false)
   const [verificandoFolio, setVerificandoFolio] = useState(false)
@@ -1216,6 +1218,15 @@ function ModalNuevoEmitido({
       const destCargo   = str('destinatario_cargo', 'cargo_destinatario')
       const destDep     = str('destinatario_dependencia', 'dependencia_destino', 'remitente_dependencia', 'dependencia', 'institucion')
       const descripcion = str('cuerpo_resumen', 'resumen', 'cuerpo', 'descripcion', 'contenido')
+      const numeroOficio = str('numero_oficio', 'numero_control', 'folio', 'clave_oficio', 'numero')
+      // Detectar tipo de documento desde la IA
+      const tipoRaw = str('tipo_documento', 'tipo', 'document_type', 'clase')
+      const tipoMap: Record<string, TipoDocumento> = {
+        oficio: 'oficio', circular: 'circular', memorandum: 'memorandum', memorándum: 'memorandum',
+        acuerdo: 'acuerdo', convenio: 'convenio', resolución: 'resolucion', resolucion: 'resolucion',
+        informe: 'informe', otro: 'otro',
+      }
+      const tipoDetectado = tipoMap[tipoRaw.toLowerCase()] ?? null
       const firmantesAd = raw['firmantes_adicionales']
       let elaboro = ''; let reviso = ''
       if (Array.isArray(firmantesAd)) {
@@ -1227,13 +1238,15 @@ function ModalNuevoEmitido({
       const camposExtraídos = [asunto, fecha, destNombre, destCargo, destDep].filter(Boolean)
       setForm(prev => ({
         ...prev,
-        asunto:              asunto     || prev.asunto,
-        fecha_documento:     fecha      || prev.fecha_documento,
-        destinatario_nombre: destNombre || prev.destinatario_nombre,
-        destinatario_cargo:  destCargo  || prev.destinatario_cargo,
-        dependencia_destino: destDep    || prev.dependencia_destino,
-        referencia_elaboro:  elaboro    || prev.referencia_elaboro,
-        referencia_reviso:   reviso     || prev.referencia_reviso,
+        asunto:              asunto        || prev.asunto,
+        fecha_documento:     fecha         || prev.fecha_documento,
+        destinatario_nombre: destNombre    || prev.destinatario_nombre,
+        destinatario_cargo:  destCargo     || prev.destinatario_cargo,
+        dependencia_destino: destDep       || prev.dependencia_destino,
+        referencia_elaboro:  elaboro       || prev.referencia_elaboro,
+        referencia_reviso:   reviso        || prev.referencia_reviso,
+        ...(tipoDetectado ? { tipo: tipoDetectado } : {}),
+        ...(numeroOficio && !folioEditado ? { numero_control: numeroOficio } : {}),
         ...(descripcion ? { descripcion } : {}),
       }))
       setOcrOk(camposExtraídos.length > 0)
@@ -1339,10 +1352,15 @@ function ModalNuevoEmitido({
     catch (e: unknown) { setErr((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Error al crear.') }
   }
 
+  const hasPdfPreviewEmitido = modo === 'subir' && !!pdfPreviewUrlEmitido
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <div className={clsx(
+        'bg-white rounded-2xl shadow-2xl w-full flex flex-col',
+        hasPdfPreviewEmitido ? 'max-w-[92vw] w-[92vw] h-[92vh]' : 'max-w-lg max-h-[90vh] overflow-y-auto',
+      )}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#FDF2F4' }}>
               <SendIcon size={14} style={{ color: GUINDA }} />
@@ -1353,6 +1371,8 @@ function ModalNuevoEmitido({
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
+        <div className="flex flex-1 overflow-hidden rounded-b-2xl">
+        <div className={clsx('overflow-y-auto flex-shrink-0', hasPdfPreviewEmitido ? 'w-[42%] border-r border-gray-100 rounded-bl-2xl' : 'w-full rounded-b-2xl')}>
 
         {/* ── Pantalla de elección ── */}
         {modo === 'elegir' && (
@@ -1406,7 +1426,20 @@ function ModalNuevoEmitido({
               <div className="space-y-2">
                 <input ref={fileRefModal} type="file" accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp,.doc,.docx"
                   className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) { setArchivoSubir(f); setOcrOk(false); setOcrFalló(false) } }} />
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f) {
+                      setArchivoSubir(f)
+                      setOcrOk(false); setOcrFalló(false); setOcrErrorMsg('')
+                      // Generar URL de vista previa
+                      if (pdfPreviewUrlEmitido) URL.revokeObjectURL(pdfPreviewUrlEmitido)
+                      if (f.type === 'application/pdf' || f.type.startsWith('image/')) {
+                        setPdfPreviewUrlEmitido(URL.createObjectURL(f))
+                      } else {
+                        setPdfPreviewUrlEmitido(null)
+                      }
+                    }
+                  }} />
                 {archivoSubir ? (
                   <div className="space-y-2">
                     {/* Fila del archivo */}
@@ -1627,6 +1660,26 @@ function ModalNuevoEmitido({
             </div>
           </form>
         )}
+        </div>{/* fin panel izquierdo */}
+
+        {/* Derecha: vista previa del documento */}
+        {hasPdfPreviewEmitido && (
+          <div className="flex-1 flex flex-col bg-gray-50 rounded-br-2xl overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-gray-200 bg-white flex items-center gap-2 flex-shrink-0">
+              <FileText size={13} className="text-gray-400 flex-shrink-0" />
+              <span className="text-xs font-medium text-gray-600 truncate">{archivoSubir?.name}</span>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <iframe
+                src={pdfPreviewUrlEmitido ?? undefined}
+                title="Vista previa del documento"
+                className="w-full h-full"
+                style={{ border: 'none' }}
+              />
+            </div>
+          </div>
+        )}
+        </div>{/* fin flex row */}
       </div>
     </div>
   )
