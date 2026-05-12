@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, depps, usuarios, normativas, upps, sap, lotes, documentos, firma_lote, certificados, oficios, catalogo, permisos
+from app.api.v1.endpoints import auth, depps, usuarios, normativas, upps, sap, lotes, documentos, firma_lote, certificados, oficios, catalogo, permisos, feedback
 
 api_router = APIRouter()
 
@@ -17,3 +17,4 @@ api_router.include_router(certificados.router, prefix="/certificados", tags=["Ce
 api_router.include_router(oficios.router, prefix="/oficios", tags=["Control de Oficios"])
 api_router.include_router(catalogo.router, tags=["Catálogo UPPs/Funcionarios"])
 api_router.include_router(permisos.router, prefix="/permisos", tags=["Permisos RBAC"])
+api_router.include_router(feedback.router, prefix="/feedback", tags=["Feedback / Bitácora"])

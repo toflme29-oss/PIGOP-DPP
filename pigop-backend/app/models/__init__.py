@@ -13,6 +13,7 @@ from app.models.certificado_firma import CertificadoFirma
 from app.models.bitacora_firma import BitacoraFirma
 from app.models.oficio import OficioRecibido
 from app.models.permiso import PermisoOverride
+from app.models.feedback import FeedbackReporte
 
 __all__ = [
     "Cliente", "Usuario",
@@ -28,4 +29,5 @@ __all__ = [
     "CertificadoFirma", "BitacoraFirma",
     "OficioRecibido",
     "PermisoOverride",
+    "FeedbackReporte",
 ]

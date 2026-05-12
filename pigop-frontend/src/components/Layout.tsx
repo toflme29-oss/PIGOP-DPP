@@ -3,11 +3,12 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   ShieldCheck, FolderOpen, Stamp, ClipboardList,
   LogOut, User, ChevronDown, Lock, Home,
-  FileSpreadsheet, Inbox, Settings, Menu, X, ScanSearch, ArrowLeft,
+  FileSpreadsheet, Inbox, Settings, Menu, X, ScanSearch, ArrowLeft, MessageSquarePlus,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../hooks/useAuth'
 import { usePermissionsBootstrap } from '../hooks/usePermissionsBootstrap'
+import FeedbackModal from './FeedbackModal'
 
 // ── Tipos de navegación ────────────────────────────────────────────────────────
 interface SubModule {
@@ -280,6 +281,7 @@ export default function Layout() {
   const { user, logout } = useAuth()
   const meta = getPageMeta(location.pathname)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
 
   // Hidrata overrides de permisos desde backend + polling de versión
   usePermissionsBootstrap()
@@ -559,6 +561,21 @@ export default function Layout() {
           </div>
         </>
       )}
+
+      {/* ── Botón flotante de Feedback ─────────────────────────────────────── */}
+      <button
+        onClick={() => setFeedbackOpen(true)}
+        title="Reportar un problema o sugerencia"
+        className="fixed bottom-6 right-6 z-[100] flex items-center gap-2 bg-[#6B1029] text-white rounded-full shadow-lg hover:bg-[#8B1535] hover:shadow-xl transition-all group px-4 py-3"
+      >
+        <MessageSquarePlus size={18} />
+        <span className="text-xs font-semibold max-w-0 overflow-hidden group-hover:max-w-[120px] transition-all duration-300 whitespace-nowrap">
+          Reportar / Sugerir
+        </span>
+      </button>
+
+      {/* ── Modal de Feedback ──────────────────────────────────────────────── */}
+      {feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} />}
 
       {/* ── Contenido principal ────────────────────────────────────────────── */}
       <main className="flex-1 overflow-hidden min-h-0 flex flex-col">

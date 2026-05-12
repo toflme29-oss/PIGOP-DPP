@@ -14,6 +14,8 @@ import {
   Shield, UserCheck, Eye, Loader2, X, AlertCircle,
   KeyRound, RefreshCw, Search, ChevronDown, Lock,
   Upload, CheckCircle2, FileImage, Trash2, Settings2, Save,
+  MessageSquarePlus, Bug, Lightbulb, HelpCircle, ImageIcon, ChevronRight,
+  CheckCircle, Clock, SlidersHorizontal,
 } from 'lucide-react'
 import {
   usuariosApi, clientesAdminApi,
@@ -22,6 +24,7 @@ import {
   type UsuarioCreate, type ClienteCreate,
 } from '../api/usuarios'
 import { documentosApi, type MembreteConfig, type MembreteCampo } from '../api/documentos'
+import { feedbackApi, type FeedbackItem, type EstadoFeedback } from '../api/feedback'
 import { useAuth } from '../hooks/useAuth'
 import { formatDate } from '../utils'
 import { TablaPermisos } from './AdminPermisos'
@@ -1671,9 +1674,257 @@ function PanelMembrete() {
   )
 }
 
+// ── Panel Feedback / Bitácora ─────────────────────────────────────────────────
+
+const TIPO_ICON: Record<string, typeof Bug> = { bug: Bug, mejora: Lightbulb, consulta: HelpCircle }
+const TIPO_COLOR: Record<string, string> = {
+  bug:     'bg-red-50 text-red-700 border-red-200',
+  mejora:  'bg-yellow-50 text-yellow-700 border-yellow-200',
+  consulta:'bg-blue-50 text-blue-700 border-blue-200',
+}
+const ESTADO_COLOR: Record<string, string> = {
+  pendiente:   'bg-orange-50 text-orange-700 border-orange-200',
+  en_revision: 'bg-blue-50 text-blue-700 border-blue-200',
+  resuelto:    'bg-green-50 text-green-700 border-green-200',
+}
+const ESTADO_ICON: Record<string, typeof Clock> = { pendiente: Clock, en_revision: SlidersHorizontal, resuelto: CheckCircle }
+
+function PanelFeedback() {
+  const qc = useQueryClient()
+  const [filtroEstado, setFiltroEstado] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState('')
+  const [seleccionado, setSeleccionado] = useState<FeedbackItem | null>(null)
+  const [notasAdmin, setNotasAdmin] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const [capturaUrl, setCapturaUrl] = useState<string | null>(null)
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['admin-feedback', filtroEstado, filtroTipo],
+    queryFn: () => feedbackApi.listar({
+      estado: filtroEstado || undefined,
+      tipo: filtroTipo || undefined,
+      limit: 100,
+    }),
+    staleTime: 30_000,
+  })
+
+  const items = data?.items ?? []
+  const total = data?.total ?? 0
+
+  const abrirDetalle = async (item: FeedbackItem) => {
+    setSeleccionado(item)
+    setNotasAdmin(item.notas_admin ?? '')
+    setCapturaUrl(null)
+    if (item.tiene_captura) {
+      // Obtenemos la captura con autenticación vía el token del apiClient
+      try {
+        const { default: apiClient } = await import('../api/client')
+        const res = await apiClient.get(`/feedback/${item.id}/captura`, { responseType: 'blob' })
+        setCapturaUrl(URL.createObjectURL(res.data))
+      } catch { /* sin captura */ }
+    }
+  }
+
+  const guardarCambios = async (nuevoEstado: EstadoFeedback) => {
+    if (!seleccionado) return
+    setGuardando(true)
+    try {
+      await feedbackApi.actualizar(seleccionado.id, { estado: nuevoEstado, notas_admin: notasAdmin })
+      setSeleccionado(prev => prev ? { ...prev, estado: nuevoEstado, notas_admin: notasAdmin } : prev)
+      qc.invalidateQueries({ queryKey: ['admin-feedback'] })
+    } finally { setGuardando(false) }
+  }
+
+  const pendientes = items.filter(i => i.estado === 'pendiente').length
+
+  return (
+    <div className="flex gap-4 h-[calc(100vh-240px)]">
+      {/* Lista */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Filtros */}
+        <div className="flex items-center gap-2 mb-3">
+          <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#6B1029]/20">
+            <option value="">Todos los estados</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="en_revision">En revisión</option>
+            <option value="resuelto">Resuelto</option>
+          </select>
+          <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#6B1029]/20">
+            <option value="">Todos los tipos</option>
+            <option value="bug">Error / Problema</option>
+            <option value="mejora">Mejora / Sugerencia</option>
+            <option value="consulta">Consulta / Duda</option>
+          </select>
+          <span className="text-xs text-gray-400 ml-auto">{total} reportes{pendientes > 0 && <span className="ml-1 text-orange-600 font-semibold">· {pendientes} pendientes</span>}</span>
+          <button onClick={() => refetch()} className="p-1.5 rounded-lg hover:bg-gray-100"><RefreshCw size={13} className="text-gray-400" /></button>
+        </div>
+
+        {/* Tabla */}
+        <div className="flex-1 overflow-y-auto rounded-xl border border-gray-200 bg-white">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 size={20} className="animate-spin text-gray-400" />
+            </div>
+          ) : items.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+              <MessageSquarePlus size={32} className="mb-3 opacity-40" />
+              <p className="text-sm font-medium">Sin reportes{filtroEstado || filtroTipo ? ' con estos filtros' : ' aún'}</p>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-600">
+                  <th className="px-4 py-2.5 text-left">Usuario / Área</th>
+                  <th className="px-3 py-2.5 text-left">Módulo</th>
+                  <th className="px-3 py-2.5 text-left">Tipo</th>
+                  <th className="px-3 py-2.5 text-left">Descripción</th>
+                  <th className="px-3 py-2.5 text-left">Estado</th>
+                  <th className="px-3 py-2.5 text-left">Fecha</th>
+                  <th className="px-3 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(item => {
+                  const TipoIcon = TIPO_ICON[item.tipo] ?? Bug
+                  const EstIcon = ESTADO_ICON[item.estado] ?? Clock
+                  const esActivo = seleccionado?.id === item.id
+                  return (
+                    <tr key={item.id}
+                      onClick={() => abrirDetalle(item)}
+                      className={`border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${esActivo ? 'bg-[#FDF2F4]' : ''}`}>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-900 text-xs truncate max-w-[140px]">{item.usuario_nombre}</p>
+                        {item.area_codigo && <p className="text-[10px] text-gray-400">{item.area_codigo}</p>}
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className="text-[11px] text-gray-600 truncate max-w-[100px] block">{item.modulo}</span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border ${TIPO_COLOR[item.tipo]}`}>
+                          <TipoIcon size={9} />{item.tipo_label}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 max-w-[200px]">
+                        <p className="text-xs text-gray-700 line-clamp-2">{item.descripcion}</p>
+                        {item.tiene_captura && <span className="inline-flex items-center gap-1 text-[9px] text-gray-400 mt-0.5"><ImageIcon size={9} />captura adjunta</span>}
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border ${ESTADO_COLOR[item.estado]}`}>
+                          <EstIcon size={9} />{item.estado_label}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-[10px] text-gray-400 whitespace-nowrap">
+                        {item.creado_en ? new Date(item.creado_en).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
+                      </td>
+                      <td className="px-3 py-3">
+                        <ChevronRight size={14} className="text-gray-300" />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* Panel de detalle */}
+      {seleccionado ? (
+        <div className="w-96 flex-shrink-0 bg-white rounded-xl border border-gray-200 flex flex-col overflow-hidden">
+          {/* Header del detalle */}
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+            <div className="flex items-center gap-2">
+              {(() => { const Icon = TIPO_ICON[seleccionado.tipo] ?? Bug; return <Icon size={15} className="text-gray-500" /> })()}
+              <span className="text-sm font-semibold text-gray-800">{seleccionado.tipo_label}</span>
+            </div>
+            <button onClick={() => setSeleccionado(null)} className="p-1 rounded hover:bg-gray-200">
+              <X size={14} className="text-gray-500" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+            {/* Info del usuario */}
+            <div className="bg-gray-50 rounded-lg px-3 py-2.5 space-y-1">
+              <p className="text-xs font-semibold text-gray-700">{seleccionado.usuario_nombre}</p>
+              <p className="text-[11px] text-gray-400">
+                {seleccionado.area_codigo && `${seleccionado.area_codigo} · `}{seleccionado.modulo}
+              </p>
+              <p className="text-[11px] text-gray-400">
+                {seleccionado.creado_en ? new Date(seleccionado.creado_en).toLocaleString('es-MX') : ''}
+              </p>
+            </div>
+
+            {/* Descripción */}
+            <div>
+              <p className="text-xs font-semibold text-gray-700 mb-1.5">📋 Descripción</p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed bg-gray-50 rounded-lg px-3 py-2.5">{seleccionado.descripcion}</p>
+            </div>
+
+            {/* Captura */}
+            {seleccionado.tiene_captura && (
+              <div>
+                <p className="text-xs font-semibold text-gray-700 mb-1.5">📷 Captura de pantalla</p>
+                {capturaUrl ? (
+                  <a href={capturaUrl} target="_blank" rel="noreferrer">
+                    <img src={capturaUrl} alt="Captura" className="w-full rounded-lg border border-gray-200 hover:opacity-90 transition-opacity cursor-zoom-in" />
+                  </a>
+                ) : (
+                  <div className="flex items-center gap-2 py-3 text-gray-400">
+                    <Loader2 size={14} className="animate-spin" />
+                    <span className="text-xs">Cargando captura…</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Notas del admin */}
+            <div>
+              <p className="text-xs font-semibold text-gray-700 mb-1.5">🗒 Notas internas</p>
+              <textarea
+                rows={3}
+                value={notasAdmin}
+                onChange={e => setNotasAdmin(e.target.value)}
+                placeholder="Observaciones para el seguimiento interno…"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs resize-y focus:outline-none focus:ring-2 focus:ring-[#6B1029]/20 focus:border-[#6B1029]"
+              />
+            </div>
+          </div>
+
+          {/* Acciones */}
+          <div className="px-4 py-3 border-t border-gray-100 space-y-2">
+            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Cambiar estado</p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(['pendiente', 'en_revision', 'resuelto'] as EstadoFeedback[]).map(est => {
+                const Icon = ESTADO_ICON[est] ?? Clock
+                const activo = seleccionado.estado === est
+                return (
+                  <button key={est}
+                    disabled={guardando || activo}
+                    onClick={() => guardarCambios(est)}
+                    className={`flex flex-col items-center gap-1 py-2 rounded-lg border text-[10px] font-medium transition-all ${activo ? ESTADO_COLOR[est] + ' cursor-default' : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'}`}>
+                    {guardando && !activo ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />}
+                    {est === 'pendiente' ? 'Pendiente' : est === 'en_revision' ? 'En revisión' : 'Resuelto'}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="w-96 flex-shrink-0 bg-gray-50 rounded-xl border border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-400">
+          <MessageSquarePlus size={28} className="mb-2 opacity-40" />
+          <p className="text-xs">Selecciona un reporte para ver el detalle</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Componente principal ───────────────────────────────────────────────────────
 
-type Tab = 'usuarios' | 'clientes' | 'permisos' | 'membrete'
+type Tab = 'usuarios' | 'clientes' | 'permisos' | 'membrete' | 'feedback'
 
 export default function Admin() {
   const { user } = useAuth()
@@ -1796,10 +2047,11 @@ export default function Admin() {
       {/* Tabs */}
       <div className="flex items-center gap-1 mb-5 bg-gray-100 p-1 rounded-xl w-fit">
         {([
-          { key: 'usuarios',  label: 'Usuarios',          icon: Users     },
-          { key: 'clientes',  label: 'Dependencias',      icon: Building2 },
-          { key: 'permisos',  label: 'Roles y Permisos',  icon: Lock      },
-          { key: 'membrete',  label: 'Membrete',           icon: FileImage },
+          { key: 'usuarios',  label: 'Usuarios',          icon: Users              },
+          { key: 'clientes',  label: 'Dependencias',      icon: Building2          },
+          { key: 'permisos',  label: 'Roles y Permisos',  icon: Lock               },
+          { key: 'membrete',  label: 'Membrete',           icon: FileImage          },
+          { key: 'feedback',  label: 'Feedback',           icon: MessageSquarePlus  },
         ] as const).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -1918,6 +2170,8 @@ export default function Admin() {
       {tab === 'permisos' && <TablaPermisos />}
 
       {tab === 'membrete' && <PanelMembrete />}
+
+      {tab === 'feedback' && <PanelFeedback />}
 
       {/* Modales */}
       {showModalUsuario && (
