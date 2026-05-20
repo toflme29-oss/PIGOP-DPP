@@ -16,6 +16,7 @@ export function useAuth() {
       .then(setUser)
       .catch(() => {
         localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
       })
       .finally(() => setLoading(false))
   }, [])
@@ -23,6 +24,10 @@ export function useAuth() {
   const login = async (email: string, password: string) => {
     const res = await authApi.login({ email, password })
     localStorage.setItem('access_token', res.access_token)
+    // Guardar refresh_token para renovación automática de sesión
+    if (res.refresh_token) {
+      localStorage.setItem('refresh_token', res.refresh_token)
+    }
     const me = await authApi.me()
     setUser(me)
     return me
@@ -30,6 +35,7 @@ export function useAuth() {
 
   const logout = () => {
     localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
     setUser(null)
   }
 
