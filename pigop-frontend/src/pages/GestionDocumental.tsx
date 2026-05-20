@@ -5844,6 +5844,38 @@ export default function GestionDocumental() {
     staleTime: 30_000,
   })
   const docs = queryResult?.items
+
+  // Último documento registrado visible en la lista (mayor número de folio)
+  const ultimoDocEmitido = useMemo(() => {
+    if (!docs || docs.length === 0) return null
+    const extractNum = (d: (typeof docs)[0]) => {
+      const noOf = d.flujo === 'recibido' ? d.folio_respuesta : d.numero_control
+      const seg = noOf ? noOf.split('/').slice(-2, -1)[0] : null
+      return seg ? parseInt(seg, 10) : -1
+    }
+    return [...docs].sort((a, b) => extractNum(b) - extractNum(a))[0] ?? null
+  }, [docs])
+
+  const ultimoNumeroEmitido = useMemo(() => {
+    if (!ultimoDocEmitido) return null
+    const noOf = ultimoDocEmitido.flujo === 'recibido'
+      ? ultimoDocEmitido.folio_respuesta
+      : ultimoDocEmitido.numero_control
+    const seg = noOf ? noOf.split('/').slice(-2, -1)[0] : null
+    return seg ? parseInt(seg, 10) : null
+  }, [ultimoDocEmitido])
+
+  const ultimaFechaEmitido = useMemo(() => {
+    if (!ultimoDocEmitido) return null
+    const raw = ultimoDocEmitido.flujo === 'recibido'
+      ? (ultimoDocEmitido.fecha_respuesta || ultimoDocEmitido.fecha_documento || ultimoDocEmitido.creado_en)
+      : (ultimoDocEmitido.fecha_documento || ultimoDocEmitido.creado_en)
+    if (!raw) return null
+    const d = new Date(raw.length === 10 ? raw + 'T12:00:00' : raw)
+    if (isNaN(d.getTime())) return null
+    return d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })
+  }, [ultimoDocEmitido])
+
   // Si el backend no expone X-Total-Count (p.ej. CORS strip), caemos en
   // un estimado defensivo basado en el tamaño del page: así la paginación
   // sigue funcionando aunque el header no llegue.
@@ -7307,20 +7339,23 @@ export default function GestionDocumental() {
           ) : (
             /* Tabla completa para emitidos */
             <>
-            {/* Banner: próximo número de folio disponible (contador global DPP) */}
-            {siguienteFolioData && (
+            {/* Banner: último número de folio registrado visible */}
+            {ultimoNumeroEmitido !== null && (
               <div className="flex items-center gap-3 px-4 py-2.5 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-800 mb-1">
                 <span className="text-base leading-none">📋</span>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5">
                   <span>
                     <span className="text-blue-500 font-medium">Último No. registrado:</span>{' '}
-                    <strong>{String(siguienteFolioData.numero - 1).padStart(4, '0')}</strong>
+                    <strong>{String(ultimoNumeroEmitido).padStart(4, '0')}</strong>
                   </span>
-                  <span className="text-blue-300 hidden sm:inline">|</span>
-                  <span>
-                    <span className="text-blue-500 font-medium">Próximo disponible:</span>{' '}
-                    <strong className="font-mono tracking-wide">{siguienteFolioData.folio}</strong>
-                  </span>
+                  {ultimaFechaEmitido && (
+                    <>
+                      <span className="text-blue-300 hidden sm:inline">|</span>
+                      <span>
+                        <strong>{ultimaFechaEmitido}</strong>
+                      </span>
+                    </>
+                  )}
                 </div>
                 <span className="ml-auto text-[10px] text-blue-400 hidden sm:block">Consecutivo global DPP</span>
               </div>
