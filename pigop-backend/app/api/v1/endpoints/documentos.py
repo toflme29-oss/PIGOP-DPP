@@ -459,7 +459,7 @@ async def siguiente_folio(
     area_codigo: Optional[str] = Query(
         None,
         description="Código del área de origen (DIR, SCG, SPF...). "
-                    "Si se proporciona, genera folio institucional SFA/SF/DPP[/AREA]/XXXX/AÑO.",
+                    "Determina el prefijo del folio. El NÚMERO es siempre global.",
     ),
     db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
@@ -467,18 +467,12 @@ async def siguiente_folio(
     """
     Genera el siguiente folio consecutivo para oficios.
 
-    Formato institucional: `SFA/SF/DPP[/AREA]/XXXX/AÑO`
-    Ejemplo: `SFA/SF/DPP/SPFP/0001/2026`
+    El número es GLOBAL y compartido por TODAS las áreas de la DPP.
+    Solo el prefijo varía según el área emisora.
 
-    Donde:
-      - SFA = Secretaría de Finanzas y Administración
-      - SF  = Subsecretaría de Finanzas
-      - DPP = Dirección de Programación y Presupuesto
-      - AREA = área emisora interna (SPFP, etc.) — opcional según prefijo
-      - XXXX = número consecutivo (4 dígitos)
-      - AÑO  = año en curso
-
-    Sin area_codigo: formato legacy `DPP/{TIPO}/{NNNNN}/{AÑO}`.
+    Formato: `SFA/SF/DPP[/PREFIJO_AREA]/NNNN/AÑO`
+    Ejemplo: DIR → `SFA/SF/DPP/1451/2026`
+             SCG → `SFA/SF/DPP-SCEG/1451/2026`  (mismo número, distinto prefijo)
     """
     from datetime import datetime
     from sqlalchemy import text
@@ -493,81 +487,52 @@ async def siguiente_folio(
         except (ValueError, IndexError):
             return 0
 
+    # ── Determinar prefijo según área ─────────────────────────────────────
     if area_codigo and area_codigo.upper() in PREFIJOS_FOLIO:
-        # ── Formato institucional por área ──────────────────────────────
         area = area_codigo.upper()
         prefijo = PREFIJOS_FOLIO[area]
-        pattern = f"{prefijo}/%/{anio}"
+    else:
+        area = None
+        prefijo = "SFA/SF/DPP"
 
-        # Solo folio_respuesta confirmados (SIN numero_control).
-        # Se excluye estado 'de_conocimiento': esos documentos solo acusan
-        # recibo y nunca generan un oficio de respuesta; si tienen folio_respuesta
-        # es un dato residual que no debe contar.
-        # Se excluye estado 'borrador': el folio en un borrador sin confirmar puede
-        # haber sido asignado por error y se borrará si el borrador es eliminado.
-        query = text(
-            "SELECT folio_respuesta FROM documentos_oficiales "
-            "WHERE folio_respuesta LIKE :pattern "
-            "AND estado NOT IN ('de_conocimiento', 'borrador')"
-        )
-        result = await db.execute(query, {"pattern": pattern})
-        rows = result.fetchall()
-
-        # El folio correcto para este prefijo tiene exactamente:
-        #   len(prefijo.split('/')) partes del prefijo + número + año = len+2 segmentos
-        # Ejemplo DIR: "SFA/SF/DPP" → 3 segmentos → folio esperado "SFA/SF/DPP/NNNN/YYYY" = 5 segs
-        # Esto excluye folios de otras áreas como "SFA/SF/DPP/SCEG/NNNN/YYYY" (6 segs)
-        expected_segs = len(prefijo.split("/")) + 2
-
-        next_num = 1
-        if rows:
-            max_num = max(
-                (
-                    _extraer_numero(r[0])
-                    for r in rows
-                    if r[0] and len(r[0].split("/")) == expected_segs
-                ),
-                default=0,
-            )
-            next_num = max_num + 1
-
-        folio = f"{prefijo}/{str(next_num).zfill(4)}/{anio}"
-        return {
-            "folio": folio,
-            "numero": next_num,
-            "area_codigo": area,
-            "prefijo": prefijo,
-            "anio": anio,
-        }
-
-    # ── Formato legacy (sin área) ───────────────────────────────────────
-    tipo_upper = tipo.upper()[:8]
-    prefix = f"DPP/{tipo_upper}/"
-    suffix = f"/{anio}"
-    pattern_legacy = f"{prefix}%{suffix}"
-
-    # Solo folio_respuesta confirmados (sin numero_control externos ni
-    # estados de_conocimiento/borrador que no representan folios reales)
-    query = text(
-        "SELECT folio_respuesta FROM documentos_oficiales "
-        "WHERE folio_respuesta LIKE :pattern "
-        "AND estado NOT IN ('de_conocimiento', 'borrador')"
-    )
-    result = await db.execute(query, {"pattern": pattern_legacy})
+    # ── Contador GLOBAL: MAX de todas las áreas, ambas columnas ──────────
+    # Se busca en folio_respuesta (respuestas) y numero_control (emitidos directos)
+    # para todos los prefijos DPP del año en curso, excluyendo borradores.
+    global_query = text("""
+        SELECT folio FROM (
+            SELECT folio_respuesta AS folio
+              FROM documentos_oficiales
+             WHERE folio_respuesta IS NOT NULL
+               AND (folio_respuesta LIKE :pat_base OR folio_respuesta LIKE :pat_area)
+               AND folio_respuesta LIKE :pat_anio
+               AND estado NOT IN ('de_conocimiento', 'borrador')
+            UNION ALL
+            SELECT numero_control AS folio
+              FROM documentos_oficiales
+             WHERE numero_control IS NOT NULL
+               AND (numero_control LIKE :pat_base OR numero_control LIKE :pat_area)
+               AND numero_control LIKE :pat_anio
+               AND estado NOT IN ('de_conocimiento', 'borrador')
+        ) t
+    """)
+    result = await db.execute(global_query, {
+        "pat_base": "SFA/SF/DPP/%",
+        "pat_area": "SFA/SF/DPP-%/%",
+        "pat_anio": f"%/{anio}",
+    })
     rows = result.fetchall()
 
     next_num = 1
     if rows:
-        def _num_legacy(folio: str) -> int:
-            try:
-                return int(folio.split("/")[2])
-            except (ValueError, IndexError):
-                return 0
-        max_num = max((_num_legacy(r[0]) for r in rows if r[0]), default=0)
+        max_num = max((_extraer_numero(r[0]) for r in rows if r[0]), default=0)
         next_num = max_num + 1
 
-    folio = f"{prefix}{str(next_num).zfill(5)}{suffix}"
-    return {"folio": folio, "numero": next_num, "tipo": tipo_upper, "anio": anio}
+    folio = f"{prefijo}/{str(next_num).zfill(4)}/{anio}"
+    response = {"folio": folio, "numero": next_num, "anio": anio}
+    if area:
+        response["area_codigo"] = area
+        response["prefijo"] = prefijo
+    return response
 
 
 # ---------- Verificar disponibilidad de folio --------------------------------

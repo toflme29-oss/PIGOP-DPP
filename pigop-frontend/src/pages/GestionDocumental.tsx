@@ -5834,6 +5834,15 @@ export default function GestionDocumental() {
     queryKey: ['documentos', params],
     queryFn:  () => documentosApi.list(params),
   })
+
+  // Siguiente folio disponible — para referencia del usuario en la pestaña Emitidos
+  const areaCodigo = (user as any)?.area_codigo as string | undefined
+  const { data: siguienteFolioData } = useQuery({
+    queryKey: ['siguiente-folio', areaCodigo],
+    queryFn:  () => documentosApi.siguienteFolio('OFICIO', areaCodigo || undefined),
+    enabled:  tab === 'emitidos',
+    staleTime: 30_000,
+  })
   const docs = queryResult?.items
   // Si el backend no expone X-Total-Count (p.ej. CORS strip), caemos en
   // un estimado defensivo basado en el tamaño del page: así la paginación
@@ -6708,7 +6717,7 @@ export default function GestionDocumental() {
                   })
               }
             </select>
-            {tab === 'recibidos' && (
+            {tab === 'recibidos' && ['superadmin', 'admin_cliente', 'secretaria'].includes(user?.rol ?? '') && (
               <select className="px-2 py-1.5 text-xs border border-gray-300 rounded-lg bg-white"
                 value={filtroArea} onChange={e => setFiltroArea(e.target.value)}>
                 <option value="">Área</option>
@@ -7297,6 +7306,25 @@ export default function GestionDocumental() {
             </>
           ) : (
             /* Tabla completa para emitidos */
+            <>
+            {/* Banner: próximo número de folio disponible (contador global DPP) */}
+            {siguienteFolioData && (
+              <div className="flex items-center gap-3 px-4 py-2.5 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-800 mb-1">
+                <span className="text-base leading-none">📋</span>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5">
+                  <span>
+                    <span className="text-blue-500 font-medium">Último No. registrado:</span>{' '}
+                    <strong>{String(siguienteFolioData.numero - 1).padStart(4, '0')}</strong>
+                  </span>
+                  <span className="text-blue-300 hidden sm:inline">|</span>
+                  <span>
+                    <span className="text-blue-500 font-medium">Próximo disponible:</span>{' '}
+                    <strong className="font-mono tracking-wide">{siguienteFolioData.folio}</strong>
+                  </span>
+                </div>
+                <span className="ml-auto text-[10px] text-blue-400 hidden sm:block">Consecutivo global DPP</span>
+              </div>
+            )}
             <div className="bg-white rounded-xl border border-gray-200">
               <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
                 <thead className="sticky top-0 z-10">
@@ -7553,6 +7581,7 @@ export default function GestionDocumental() {
                 </div>
               </div>
             </div>
+            </>
           )}
         </div>
         </>)}
