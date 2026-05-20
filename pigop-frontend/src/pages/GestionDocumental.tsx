@@ -443,7 +443,7 @@ function ModalRegistrarRecibido({
       if (status === 413) {
         errorMsg = 'El archivo excede el tamaño máximo permitido (20 MB).'
       } else if (status === 415 || (msg && msg.toLowerCase().includes('tipo'))) {
-        errorMsg = 'Formato de archivo no soportado. Use PDF, Word, JPG, PNG, TIFF o WEBP.'
+        errorMsg = 'Formato de archivo no soportado. Use PDF, JPG, PNG, TIFF o WEBP.'
       } else if (msg && msg.toLowerCase().includes('gemini')) {
         errorMsg = 'Error en el servicio de OCR (IA). Puedes intentar de nuevo o usar captura manual.'
       } else {
@@ -551,7 +551,7 @@ function ModalRegistrarRecibido({
           {step === 'upload' && (
             <div className="space-y-4">
               <input ref={fileRef} type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp,.doc,.docx"
+                accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp"
                 className="hidden"
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelectOrCrop(f) }}
               />
@@ -588,7 +588,7 @@ function ModalRegistrarRecibido({
                   <Upload size={13} /> Seleccionar archivo
                 </span>
                 <p className="text-[10px] text-gray-400 mt-3">
-                  PDF, Word, JPG, PNG, TIFF, WEBP &mdash; Max. 20 MB
+                  PDF, JPG, PNG, TIFF, WEBP &mdash; Max. 20 MB
                 </p>
               </div>
 
@@ -1793,6 +1793,7 @@ function PanelRecibido({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [loadingPdf, setLoadingPdf] = useState(false)
   const [originalUrl, setOriginalUrl] = useState<string | null>(null)
+  const [originalMime, setOriginalMime] = useState<string | null>(null)
   const [loadingOriginal, setLoadingOriginal] = useState(false)
   const [visorFlotante, setVisorFlotante] = useState<'original' | 'pdf' | null>(null)
   const [showDevolucionForm, setShowDevolucionForm] = useState(false)
@@ -1934,10 +1935,11 @@ function PanelRecibido({
     if (!doc.url_storage) return
     setLoadingOriginal(true)
     setOriginalError(null)
-    documentosApi.obtenerArchivoOriginalUrl(doc.id)
-      .then(url => setOriginalUrl(url))
+    documentosApi.obtenerArchivoOriginalInfo(doc.id)
+      .then(({ url, mimeType }) => { setOriginalUrl(url); setOriginalMime(mimeType) })
       .catch((e: any) => {
         setOriginalUrl(null)
+        setOriginalMime(null)
         setOriginalError(e?.response?.data?.detail || 'No se pudo cargar el archivo.')
       })
       .finally(() => setLoadingOriginal(false))
@@ -2598,7 +2600,15 @@ function PanelRecibido({
                 </div>
               ) : originalUrl ? (
                 <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-100" style={{ height: 450 }}>
-                  <iframe src={originalUrl} title="Oficio original" className="w-full h-full" style={{ border: 'none' }} />
+                  {(originalMime?.startsWith('application/pdf') || originalMime?.startsWith('image/') || !originalMime) ? (
+                    <iframe src={originalUrl} title="Oficio original" className="w-full h-full" style={{ border: 'none' }} />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-400">
+                      <FileText size={32} className="text-gray-300" />
+                      <p className="text-xs text-gray-500 text-center">No se puede previsualizar este tipo de archivo</p>
+                      <a href={originalUrl} download className="px-3 py-1.5 text-xs bg-[#6B1029] text-white rounded-lg hover:bg-[#8B1535] flex items-center gap-1.5 transition-colors">⬇ Descargar</a>
+                    </div>
+                  )}
                 </div>
               ) : originalError ? (
                 <div className="flex flex-col items-center justify-center py-6 px-4 bg-red-50 border border-red-200 rounded-lg space-y-2">
@@ -2927,7 +2937,15 @@ function PanelRecibido({
                 </div>
               ) : originalUrl ? (
                 <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-100" style={{ height: 450 }}>
-                  <iframe src={originalUrl} title="Oficio original" className="w-full h-full" style={{ border: 'none' }} />
+                  {(originalMime?.startsWith('application/pdf') || originalMime?.startsWith('image/') || !originalMime) ? (
+                    <iframe src={originalUrl} title="Oficio original" className="w-full h-full" style={{ border: 'none' }} />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-400">
+                      <FileText size={32} className="text-gray-300" />
+                      <p className="text-xs text-gray-500 text-center">No se puede previsualizar este tipo de archivo</p>
+                      <a href={originalUrl} download className="px-3 py-1.5 text-xs bg-[#6B1029] text-white rounded-lg hover:bg-[#8B1535] flex items-center gap-1.5 transition-colors">⬇ Descargar</a>
+                    </div>
+                  )}
                 </div>
               ) : originalError ? (
                 <div className="flex flex-col items-center justify-center py-6 px-4 bg-red-50 border border-red-200 rounded-lg space-y-2">
@@ -4585,6 +4603,7 @@ function PanelEmitido({
 
   // Error del archivo original (si url_storage existe pero la carga falla)
   const [originalError, setOriginalError] = useState<string | null>(null)
+  const [originalMime, setOriginalMime] = useState<string | null>(null)
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['documentos'] })
@@ -4596,10 +4615,11 @@ function PanelEmitido({
     if (!doc.url_storage) return
     setLoadingOriginal(true)
     setOriginalError(null)
-    documentosApi.obtenerArchivoOriginalUrl(doc.id)
-      .then(url => setOriginalUrl(url))
+    documentosApi.obtenerArchivoOriginalInfo(doc.id)
+      .then(({ url, mimeType }) => { setOriginalUrl(url); setOriginalMime(mimeType) })
       .catch((e: any) => {
         setOriginalUrl(null)
+        setOriginalMime(null)
         setOriginalError(e?.response?.data?.detail || 'No se pudo cargar el archivo.')
       })
       .finally(() => setLoadingOriginal(false))
@@ -5004,7 +5024,15 @@ function PanelEmitido({
                     </div>
                   ) : originalUrl ? (
                     <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-100" style={{ height: 220 }}>
-                      <iframe src={originalUrl} title="Documento adjunto" className="w-full h-full" style={{ border: 'none' }} />
+                      {(originalMime?.startsWith('application/pdf') || originalMime?.startsWith('image/') || !originalMime) ? (
+                        <iframe src={originalUrl} title="Documento adjunto" className="w-full h-full" style={{ border: 'none' }} />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full gap-2 text-gray-400">
+                          <FileText size={28} className="text-gray-300" />
+                          <p className="text-[11px] text-gray-500 text-center">No se puede previsualizar</p>
+                          <a href={originalUrl} download className="px-3 py-1.5 text-xs bg-[#6B1029] text-white rounded-lg hover:bg-[#8B1535] flex items-center gap-1 transition-colors">⬇ Descargar</a>
+                        </div>
+                      )}
                     </div>
                   ) : originalError ? (
                     <div className="flex flex-col items-center justify-center py-4 px-3 bg-red-50 border border-red-200 rounded-lg space-y-2">
@@ -6033,6 +6061,7 @@ export default function GestionDocumental() {
     staleTime: 0,
   })
   const [floatingActiveTab, setFloatingActiveTab] = useState<string>('info')
+  const [floatingPdfMime, setFloatingPdfMime] = useState<string | null>(null)
   // Refs para evitar recargas innecesarias cuando el valor no cambió
   const prevFloatingPdfUrlRef   = useRef<string | null>(null)
   const prevFloatingBorradorRef = useRef<string | null | undefined>(undefined)
@@ -6048,16 +6077,17 @@ export default function GestionDocumental() {
     floatingLoadingForRef.current = docId
     floatingLoadingRef.current = true
     setFloatingPdfLoading(true)
-    const loader = activeTab === 'ocr'
-      ? documentosApi.obtenerOficioPdfUrl(docId)
-      : documentosApi.obtenerArchivoOriginalUrl(docId)
+    const loader: Promise<{ url: string; mimeType: string }> = activeTab === 'ocr'
+      ? documentosApi.obtenerOficioPdfUrl(docId).then(url => ({ url, mimeType: 'application/pdf' }))
+      : documentosApi.obtenerArchivoOriginalInfo(docId)
     loader
-      .then(url => {
+      .then(({ url, mimeType }) => {
         // Ignorar respuesta si ya se cambió a otro documento
         if (floatingLoadingForRef.current !== docId) return
         if (url !== prevFloatingPdfUrlRef.current) {
           prevFloatingPdfUrlRef.current = url
           setFloatingPdfUrl(url)
+          setFloatingPdfMime(mimeType)
         }
       })
       .catch(() => {
@@ -6078,6 +6108,7 @@ export default function GestionDocumental() {
       // Limpiar todo al cerrar
       floatingLoadingForRef.current = null
       setFloatingPdfUrl(null)
+      setFloatingPdfMime(null)
       setFloatingPdfLoading(false)
       prevFloatingPdfUrlRef.current = null
       prevFloatingBorradorRef.current = undefined
@@ -6088,6 +6119,7 @@ export default function GestionDocumental() {
     // Al abrir un nuevo documento: limpiar URL anterior inmediatamente para evitar
     // que el iframe muestre el PDF del documento anterior mientras carga el nuevo
     setFloatingPdfUrl(null)
+    setFloatingPdfMime(null)
     prevFloatingPdfUrlRef.current = null
     prevFloatingBorradorRef.current = undefined
     prevFloatingTablaRef.current = undefined
@@ -7583,12 +7615,22 @@ export default function GestionDocumental() {
               <div className="flex-1 overflow-hidden relative">
                 {floatingPdfUrl ? (
                   <>
-                    <iframe
-                      src={floatingPdfUrl}
-                      title="Vista previa"
-                      className="w-full h-full"
-                      style={{ border: 'none' }}
-                    />
+                    {(floatingPdfMime?.startsWith('application/pdf') || floatingPdfMime?.startsWith('image/') || !floatingPdfMime) ? (
+                      <iframe
+                        src={floatingPdfUrl}
+                        title="Vista previa"
+                        className="w-full h-full"
+                        style={{ border: 'none' }}
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-400">
+                        <FileText size={36} className="text-gray-300" />
+                        <p className="text-xs text-gray-500 text-center px-4">No se puede previsualizar este tipo de archivo</p>
+                        <a href={floatingPdfUrl} download className="px-4 py-2 text-xs bg-[#6B1029] text-white rounded-lg hover:bg-[#8B1535] flex items-center gap-1.5 transition-colors">
+                          ⬇ Descargar documento
+                        </a>
+                      </div>
+                    )}
                     {/* Overlay translúcido sólo en recarga silenciosa — no desmonta el iframe */}
                     {floatingPdfLoading && (
                       <div className="absolute inset-0 flex items-center justify-center bg-white/50 pointer-events-none">

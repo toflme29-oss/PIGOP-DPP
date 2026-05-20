@@ -770,6 +770,16 @@ export const documentosApi = {
     return window.URL.createObjectURL(blob)
   },
 
+  /** Obtener URL + mimeType del archivo original (para visor condicional) */
+  obtenerArchivoOriginalInfo: async (id: string): Promise<{ url: string; mimeType: string }> => {
+    const res = await apiClient.get(`/documentos/${id}/archivo-original`, {
+      responseType: 'blob',
+    })
+    const mimeType = (res.headers['content-type'] as string | undefined)?.split(';')[0]?.trim() || 'application/pdf'
+    const blob = new Blob([res.data], { type: mimeType })
+    return { url: window.URL.createObjectURL(blob), mimeType }
+  },
+
   /** Descargar PDF del oficio directamente */
   descargarOficioPdf: async (id: string): Promise<void> => {
     const res = await apiClient.get(`/documentos/${id}/descargar-oficio-pdf`, {
