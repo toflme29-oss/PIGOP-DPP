@@ -5862,7 +5862,9 @@ export default function GestionDocumental() {
       ? ultimoDocEmitido.folio_respuesta
       : ultimoDocEmitido.numero_control
     const seg = noOf ? noOf.split('/').slice(-2, -1)[0] : null
-    return seg ? parseInt(seg, 10) : null
+    if (!seg) return null
+    const n = parseInt(seg, 10)
+    return isNaN(n) ? null : n
   }, [ultimoDocEmitido])
 
   const ultimaFechaEmitido = useMemo(() => {
@@ -7339,27 +7341,34 @@ export default function GestionDocumental() {
           ) : (
             /* Tabla completa para emitidos */
             <>
-            {/* Banner: último número de folio registrado visible */}
-            {ultimoNumeroEmitido !== null && (
-              <div className="flex items-center gap-3 px-4 py-2.5 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-800 mb-1">
-                <span className="text-base leading-none">📋</span>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5">
-                  <span>
-                    <span className="text-blue-500 font-medium">Último No. registrado:</span>{' '}
-                    <strong>{String(ultimoNumeroEmitido).padStart(4, '0')}</strong>
-                  </span>
-                  {ultimaFechaEmitido && (
-                    <>
-                      <span className="text-blue-300 hidden sm:inline">|</span>
-                      <span>
-                        <strong>{ultimaFechaEmitido}</strong>
-                      </span>
-                    </>
-                  )}
+            {/* Banner: último número de folio global DPP (de API) + fecha del último doc visible */}
+            {(() => {
+              // Número global: viene del API (siguiente - 1); si aún no cargó usa el visible
+              const numGlobal = siguienteFolioData != null
+                ? siguienteFolioData.numero - 1
+                : ultimoNumeroEmitido
+              if (numGlobal == null || numGlobal <= 0) return null
+              return (
+                <div className="flex items-center gap-3 px-4 py-2.5 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-800 mb-1">
+                  <span className="text-base leading-none">📋</span>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5">
+                    <span>
+                      <span className="text-blue-500 font-medium">Último No. registrado:</span>{' '}
+                      <strong>{String(numGlobal).padStart(4, '0')}</strong>
+                    </span>
+                    {ultimaFechaEmitido && (
+                      <>
+                        <span className="text-blue-300 hidden sm:inline">|</span>
+                        <span>
+                          <strong>{ultimaFechaEmitido}</strong>
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  <span className="ml-auto text-[10px] text-blue-400 hidden sm:block">Consecutivo global DPP</span>
                 </div>
-                <span className="ml-auto text-[10px] text-blue-400 hidden sm:block">Consecutivo global DPP</span>
-              </div>
-            )}
+              )
+            })()}
             <div className="bg-white rounded-xl border border-gray-200">
               <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
                 <thead className="sticky top-0 z-10">
